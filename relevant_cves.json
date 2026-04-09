@@ -1,0 +1,1872 @@
+{
+  "generated_at": "2026-04-09T08:10:16Z",
+  "source_file": "/home/yans/safelibs/port-libcurl/all_cves.json",
+  "analysis_scope": "Non-memory-corruption CVEs from all_cves.json that may still matter to a Rust reimplementation of libcurl.",
+  "selection_policy": {
+    "included_when": [
+      "The issue is primarily about protocol logic, authentication, certificate validation, redirect handling, cookie or HSTS policy, parsing, resource exhaustion, concurrency, API contracts, or platform and backend integration.",
+      "The externally visible failure mode could still recur in Rust because it is not fundamentally dependent on raw-memory corruption."
+    ],
+    "excluded_when": [
+      "The issue primarily relies on raw-memory corruption or C-specific memory-lifetime bugs such as buffer overflows, out-of-bounds reads or writes, use-after-free, double free, invalid free, null dereference, expired pointer dereference, or uninitialized-memory disclosure."
+    ],
+    "excluded_cwe_ids": [
+      "CWE-121",
+      "CWE-122",
+      "CWE-124",
+      "CWE-125",
+      "CWE-126",
+      "CWE-131",
+      "CWE-170",
+      "CWE-415",
+      "CWE-416",
+      "CWE-457",
+      "CWE-476",
+      "CWE-590",
+      "CWE-680",
+      "CWE-825"
+    ]
+  },
+  "counts": {
+    "source_total": 170,
+    "selected_relevant_non_memory": 106,
+    "excluded_memory_corruption_or_c_memory_specific": 64,
+    "selected_by_rust_relevance": {
+      "high": 100,
+      "medium": 6
+    },
+    "selected_by_category": {
+      "certificate_and_transport_validation": 28,
+      "concurrency_and_handle_ownership": 3,
+      "connection_reuse_and_auth_isolation": 22,
+      "cookies_hsts_and_origin_policy": 16,
+      "credential_and_data_leakage": 11,
+      "method_and_state_machine_semantics": 2,
+      "parsing_canonicalization_and_injection": 10,
+      "permissions_and_delegation": 2,
+      "platform_loading_and_packaging": 2,
+      "randomness_and_nonce_generation": 2,
+      "resource_exhaustion_and_api_contracts": 8
+    },
+    "excluded_by_cwe": {
+      "CWE-121": 7,
+      "CWE-122": 10,
+      "CWE-124": 2,
+      "CWE-125": 5,
+      "CWE-126": 13,
+      "CWE-131": 6,
+      "CWE-170": 2,
+      "CWE-415": 6,
+      "CWE-416": 7,
+      "CWE-457": 2,
+      "CWE-476": 1,
+      "CWE-590": 1,
+      "CWE-680": 1,
+      "CWE-825": 1
+    }
+  },
+  "cves": [
+    {
+      "cve_id": "CVE-2026-3784",
+      "curl_id": "CURL-CVE-2026-3784",
+      "published": "2026-03-11T08:00:00.00Z",
+      "affects": "both",
+      "summary": "wrong proxy connection reuse with credentials",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2026-3784.html",
+      "last_affected_version": "8.18.0"
+    },
+    {
+      "cve_id": "CVE-2026-3783",
+      "curl_id": "CURL-CVE-2026-3783",
+      "published": "2026-03-11T08:00:00.00Z",
+      "affects": "both",
+      "summary": "token leak with redirect and netrc",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-522",
+        "description": "Insufficiently Protected Credentials"
+      },
+      "category": "credential_and_data_leakage",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Redirect, proxy, header, and metadata forwarding policies remain security-critical behavior in Rust.",
+      "advisory_url": "https://curl.se/docs/CVE-2026-3783.html",
+      "last_affected_version": "8.18.0"
+    },
+    {
+      "cve_id": "CVE-2026-1965",
+      "curl_id": "CURL-CVE-2026-1965",
+      "published": "2026-03-11T08:00:00.00Z",
+      "affects": "both",
+      "summary": "bad reuse of HTTP Negotiate connection",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2026-1965.html",
+      "last_affected_version": "8.18.0"
+    },
+    {
+      "cve_id": "CVE-2025-15224",
+      "curl_id": "CURL-CVE-2025-15224",
+      "published": "2026-01-07T08:00:00.00Z",
+      "affects": "both",
+      "summary": "libssh key passphrase bypass without agent set",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-287",
+        "description": "Improper Authentication"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2025-15224.html",
+      "last_affected_version": "8.17.0"
+    },
+    {
+      "cve_id": "CVE-2025-15079",
+      "curl_id": "CURL-CVE-2025-15079",
+      "published": "2026-01-07T08:00:00.00Z",
+      "affects": "both",
+      "summary": "libssh global known_hosts override",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-297",
+        "description": "Improper Validation of Certificate with Host Mismatch"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2025-15079.html",
+      "last_affected_version": "8.17.0"
+    },
+    {
+      "cve_id": "CVE-2025-14819",
+      "curl_id": "CURL-CVE-2025-14819",
+      "published": "2026-01-07T08:00:00.00Z",
+      "affects": "lib",
+      "summary": "OpenSSL partial chain store policy bypass",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-295",
+        "description": "Improper Certificate Validation"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2025-14819.html",
+      "last_affected_version": "8.17.0"
+    },
+    {
+      "cve_id": "CVE-2025-14524",
+      "curl_id": "CURL-CVE-2025-14524",
+      "published": "2026-01-06T08:00:00.00Z",
+      "affects": "both",
+      "summary": "bearer token leak on cross-protocol redirect",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-522",
+        "description": "Insufficiently Protected Credentials"
+      },
+      "category": "credential_and_data_leakage",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Redirect, proxy, header, and metadata forwarding policies remain security-critical behavior in Rust.",
+      "advisory_url": "https://curl.se/docs/CVE-2025-14524.html",
+      "last_affected_version": "8.17.0"
+    },
+    {
+      "cve_id": "CVE-2025-14017",
+      "curl_id": "CURL-CVE-2025-14017",
+      "published": "2026-01-07T08:00:00.00Z",
+      "affects": "lib",
+      "summary": "broken TLS options for threaded LDAPS",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-567",
+        "description": "Unsynchronized Access to Shared Data in a Multi-threaded Context"
+      },
+      "category": "concurrency_and_handle_ownership",
+      "rust_relevance": "medium",
+      "rust_relevance_reason": "Rust helps, but shared state, backend threading, and OS-handle lifetime still require explicit synchronization and ownership design.",
+      "advisory_url": "https://curl.se/docs/CVE-2025-14017.html",
+      "last_affected_version": "8.17.0"
+    },
+    {
+      "cve_id": "CVE-2025-13034",
+      "curl_id": "CURL-CVE-2025-13034",
+      "published": "2026-01-07T08:00:00.00Z",
+      "affects": "both",
+      "summary": "No QUIC certificate pinning with GnuTLS",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-295",
+        "description": "Improper Certificate Validation"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2025-13034.html",
+      "last_affected_version": "8.17.0"
+    },
+    {
+      "cve_id": "CVE-2025-10966",
+      "curl_id": "CURL-CVE-2025-10966",
+      "published": "2025-11-05T08:00:00.00Z",
+      "affects": "both",
+      "summary": "missing SFTP host verification with wolfSSH",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-322",
+        "description": "Key Exchange without Entity Authentication"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2025-10966.html",
+      "last_affected_version": "8.16.0"
+    },
+    {
+      "cve_id": "CVE-2025-10148",
+      "curl_id": "CURL-CVE-2025-10148",
+      "published": "2025-09-10T08:00:00.00Z",
+      "affects": "both",
+      "summary": "predictable WebSocket mask",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-340",
+        "description": "Generation of Predictable Numbers or Identifiers"
+      },
+      "category": "randomness_and_nonce_generation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Nonce, boundary, and WebSocket mask generation must still use strong entropy and correct application logic.",
+      "advisory_url": "https://curl.se/docs/CVE-2025-10148.html",
+      "last_affected_version": "8.15.0"
+    },
+    {
+      "cve_id": "CVE-2025-5399",
+      "curl_id": "CURL-CVE-2025-5399",
+      "published": "2025-06-04T08:00:00.00Z",
+      "affects": "lib",
+      "summary": "WebSocket endless loop",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-835",
+        "description": "Loop with Unreachable Exit Condition ('Infinite Loop')"
+      },
+      "category": "resource_exhaustion_and_api_contracts",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Rust does not prevent recursion-driven crashes, infinite loops, unbounded allocation, or violations of documented callback limits.",
+      "advisory_url": "https://curl.se/docs/CVE-2025-5399.html",
+      "last_affected_version": "8.14.0"
+    },
+    {
+      "cve_id": "CVE-2025-5025",
+      "curl_id": "CURL-CVE-2025-5025",
+      "published": "2025-05-28T08:00:00.00Z",
+      "affects": "both",
+      "summary": "No QUIC certificate pinning with wolfSSL",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-295",
+        "description": "Improper Certificate Validation"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2025-5025.html",
+      "last_affected_version": "8.13.0"
+    },
+    {
+      "cve_id": "CVE-2025-4947",
+      "curl_id": "CURL-CVE-2025-4947",
+      "published": "2025-05-28T08:00:00.00Z",
+      "affects": "both",
+      "summary": "QUIC certificate check skip with wolfSSL",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-295",
+        "description": "Improper Certificate Validation"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2025-4947.html",
+      "last_affected_version": "8.13.0"
+    },
+    {
+      "cve_id": "CVE-2025-0665",
+      "curl_id": "CURL-CVE-2025-0665",
+      "published": "2025-02-05T08:00:00.00Z",
+      "affects": "both",
+      "summary": "eventfd double close",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-1341",
+        "description": "Multiple Releases of Same Resource or Handle"
+      },
+      "category": "concurrency_and_handle_ownership",
+      "rust_relevance": "medium",
+      "rust_relevance_reason": "Rust helps, but shared state, backend threading, and OS-handle lifetime still require explicit synchronization and ownership design.",
+      "advisory_url": "https://curl.se/docs/CVE-2025-0665.html",
+      "last_affected_version": "8.11.1"
+    },
+    {
+      "cve_id": "CVE-2025-0167",
+      "curl_id": "CURL-CVE-2025-0167",
+      "published": "2025-02-05T08:00:00.00Z",
+      "affects": "both",
+      "summary": "netrc and default credential leak",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-200",
+        "description": "Exposure of Sensitive Information to an Unauthorized Actor"
+      },
+      "category": "credential_and_data_leakage",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Redirect, proxy, header, and metadata forwarding policies remain security-critical behavior in Rust.",
+      "advisory_url": "https://curl.se/docs/CVE-2025-0167.html",
+      "last_affected_version": "8.11.1"
+    },
+    {
+      "cve_id": "CVE-2024-11053",
+      "curl_id": "CURL-CVE-2024-11053",
+      "published": "2024-12-11T08:00:00.00Z",
+      "affects": "both",
+      "summary": "netrc and redirect credential leak",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-200",
+        "description": "Exposure of Sensitive Information to an Unauthorized Actor"
+      },
+      "category": "credential_and_data_leakage",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Redirect, proxy, header, and metadata forwarding policies remain security-critical behavior in Rust.",
+      "advisory_url": "https://curl.se/docs/CVE-2024-11053.html",
+      "last_affected_version": "8.11.0"
+    },
+    {
+      "cve_id": "CVE-2024-9681",
+      "curl_id": "CURL-CVE-2024-9681",
+      "published": "2024-11-05T08:00:00.00Z",
+      "affects": "both",
+      "summary": "HSTS subdomain overwrites parent cache entry",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-1025",
+        "description": "Comparison Using Wrong Factors"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2024-9681.html",
+      "last_affected_version": "8.10.1"
+    },
+    {
+      "cve_id": "CVE-2024-8096",
+      "curl_id": "CURL-CVE-2024-8096",
+      "published": "2024-09-11T08:00:00.00Z",
+      "affects": "both",
+      "summary": "OCSP stapling bypass with GnuTLS",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-295",
+        "description": "Improper Certificate Validation"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2024-8096.html",
+      "last_affected_version": "8.9.1"
+    },
+    {
+      "cve_id": "CVE-2024-2466",
+      "curl_id": "CURL-CVE-2024-2466",
+      "published": "2024-03-27T08:00:00.00Z",
+      "affects": "both",
+      "summary": "TLS certificate check bypass with mbedTLS",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-297",
+        "description": "Improper Validation of Certificate with Host Mismatch"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2024-2466.html",
+      "last_affected_version": "8.6.0"
+    },
+    {
+      "cve_id": "CVE-2024-2398",
+      "curl_id": "CURL-CVE-2024-2398",
+      "published": "2024-03-27T08:00:00.00Z",
+      "affects": "lib",
+      "summary": "HTTP/2 push headers memory-leak",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-772",
+        "description": "Missing Release of Resource after Effective Lifetime"
+      },
+      "category": "resource_exhaustion_and_api_contracts",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Rust does not prevent recursion-driven crashes, infinite loops, unbounded allocation, or violations of documented callback limits.",
+      "advisory_url": "https://curl.se/docs/CVE-2024-2398.html",
+      "last_affected_version": "8.6.0"
+    },
+    {
+      "cve_id": "CVE-2024-2379",
+      "curl_id": "CURL-CVE-2024-2379",
+      "published": "2024-03-27T08:00:00.00Z",
+      "affects": "both",
+      "summary": "QUIC certificate check bypass with wolfSSL",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-295",
+        "description": "Improper Certificate Validation"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2024-2379.html",
+      "last_affected_version": "8.6.0"
+    },
+    {
+      "cve_id": "CVE-2024-2004",
+      "curl_id": "CURL-CVE-2024-2004",
+      "published": "2024-03-27T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Usage of disabled protocol",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-115",
+        "description": "Misinterpretation of Input"
+      },
+      "category": "parsing_canonicalization_and_injection",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "URL, path, and protocol parsing rules must be specified explicitly to avoid cross-protocol access, smuggling, injection, or trust-boundary breaks in Rust too.",
+      "advisory_url": "https://curl.se/docs/CVE-2024-2004.html",
+      "last_affected_version": "8.6.0"
+    },
+    {
+      "cve_id": "CVE-2024-0853",
+      "curl_id": "CURL-CVE-2024-0853",
+      "published": "2024-01-31T08:00:00.00Z",
+      "affects": "both",
+      "summary": "OCSP verification bypass with TLS session reuse",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-299",
+        "description": "Improper Check for Certificate Revocation"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2024-0853.html",
+      "last_affected_version": "8.5.0"
+    },
+    {
+      "cve_id": "CVE-2023-46219",
+      "curl_id": "CURL-CVE-2023-46219",
+      "published": "2023-12-06T08:00:00.00Z",
+      "affects": "both",
+      "summary": "HSTS long filename clears contents",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-311",
+        "description": "Missing Encryption of Sensitive Data"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-46219.html",
+      "last_affected_version": "8.4.0"
+    },
+    {
+      "cve_id": "CVE-2023-46218",
+      "curl_id": "CURL-CVE-2023-46218",
+      "published": "2023-12-06T08:00:00.00Z",
+      "affects": "both",
+      "summary": "cookie mixed case PSL bypass",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-201",
+        "description": "Information Exposure Through Sent Data"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-46218.html",
+      "last_affected_version": "8.4.0"
+    },
+    {
+      "cve_id": "CVE-2023-38546",
+      "curl_id": "CURL-CVE-2023-38546",
+      "published": "2023-10-11T08:00:00.00Z",
+      "affects": "lib",
+      "summary": "cookie injection with none file",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-73",
+        "description": "External Control of filename or Path"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-38546.html",
+      "last_affected_version": "8.3.0"
+    },
+    {
+      "cve_id": "CVE-2023-38039",
+      "curl_id": "CURL-CVE-2023-38039",
+      "published": "2023-09-13T08:00:00.00Z",
+      "affects": "both",
+      "summary": "HTTP headers eat all memory",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-770",
+        "description": "Allocation of Resources Without Limits or Throttling"
+      },
+      "category": "resource_exhaustion_and_api_contracts",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Rust does not prevent recursion-driven crashes, infinite loops, unbounded allocation, or violations of documented callback limits.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-38039.html",
+      "last_affected_version": "8.2.1"
+    },
+    {
+      "cve_id": "CVE-2023-28322",
+      "curl_id": "CURL-CVE-2023-28322",
+      "published": "2023-05-17T08:00:00.00Z",
+      "affects": "lib",
+      "summary": "more POST-after-PUT confusion",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-440",
+        "description": "Expected Behavior Violation"
+      },
+      "category": "method_and_state_machine_semantics",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "HTTP method and request-state invariants must be enforced explicitly in Rust to avoid semantic confusion.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-28322.html",
+      "last_affected_version": "8.0.1"
+    },
+    {
+      "cve_id": "CVE-2023-28321",
+      "curl_id": "CURL-CVE-2023-28321",
+      "published": "2023-05-17T08:00:00.00Z",
+      "affects": "both",
+      "summary": "IDN wildcard match",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-295",
+        "description": "Improper Certificate Validation"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-28321.html",
+      "last_affected_version": "8.0.1"
+    },
+    {
+      "cve_id": "CVE-2023-28320",
+      "curl_id": "CURL-CVE-2023-28320",
+      "published": "2023-05-17T08:00:00.00Z",
+      "affects": "lib",
+      "summary": "siglongjmp race condition",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-662",
+        "description": "Improper Synchronization"
+      },
+      "category": "concurrency_and_handle_ownership",
+      "rust_relevance": "medium",
+      "rust_relevance_reason": "Rust helps, but shared state, backend threading, and OS-handle lifetime still require explicit synchronization and ownership design.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-28320.html",
+      "last_affected_version": "8.0.1"
+    },
+    {
+      "cve_id": "CVE-2023-27538",
+      "curl_id": "CURL-CVE-2023-27538",
+      "published": "2023-03-20T08:00:00.00Z",
+      "affects": "both",
+      "summary": "SSH connection too eager reuse still",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-27538.html",
+      "last_affected_version": "7.88.1"
+    },
+    {
+      "cve_id": "CVE-2023-27536",
+      "curl_id": "CURL-CVE-2023-27536",
+      "published": "2023-03-20T08:00:00.00Z",
+      "affects": "lib",
+      "summary": "GSS delegation too eager connection reuse",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-27536.html",
+      "last_affected_version": "7.88.1"
+    },
+    {
+      "cve_id": "CVE-2023-27535",
+      "curl_id": "CURL-CVE-2023-27535",
+      "published": "2023-03-20T08:00:00.00Z",
+      "affects": "both",
+      "summary": "FTP too eager connection reuse",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-27535.html",
+      "last_affected_version": "7.88.1"
+    },
+    {
+      "cve_id": "CVE-2023-27534",
+      "curl_id": "CURL-CVE-2023-27534",
+      "published": "2023-03-20T08:00:00.00Z",
+      "affects": "both",
+      "summary": "SFTP path ~ resolving discrepancy",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-22",
+        "description": "Improper Limitation of a Pathname to a Restricted Directory"
+      },
+      "category": "parsing_canonicalization_and_injection",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "URL, path, and protocol parsing rules must be specified explicitly to avoid cross-protocol access, smuggling, injection, or trust-boundary breaks in Rust too.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-27534.html",
+      "last_affected_version": "7.88.1"
+    },
+    {
+      "cve_id": "CVE-2023-27533",
+      "curl_id": "CURL-CVE-2023-27533",
+      "published": "2023-03-20T08:00:00.00Z",
+      "affects": "both",
+      "summary": "TELNET option IAC injection",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-75",
+        "description": "Failure to Sanitize Special Elements into a Different Plane"
+      },
+      "category": "parsing_canonicalization_and_injection",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "URL, path, and protocol parsing rules must be specified explicitly to avoid cross-protocol access, smuggling, injection, or trust-boundary breaks in Rust too.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-27533.html",
+      "last_affected_version": "7.88.1"
+    },
+    {
+      "cve_id": "CVE-2023-23916",
+      "curl_id": "CURL-CVE-2023-23916",
+      "published": "2023-02-15T08:00:00.00Z",
+      "affects": "both",
+      "summary": "HTTP multi-header compression denial of service",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-770",
+        "description": "Allocation of Resources Without Limits or Throttling"
+      },
+      "category": "resource_exhaustion_and_api_contracts",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Rust does not prevent recursion-driven crashes, infinite loops, unbounded allocation, or violations of documented callback limits.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-23916.html",
+      "last_affected_version": "7.87.0"
+    },
+    {
+      "cve_id": "CVE-2023-23915",
+      "curl_id": "CURL-CVE-2023-23915",
+      "published": "2023-02-15T08:00:00.00Z",
+      "affects": "both",
+      "summary": "HSTS amnesia with --parallel",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-319",
+        "description": "Cleartext Transmission of Sensitive Information"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-23915.html",
+      "last_affected_version": "7.87.0"
+    },
+    {
+      "cve_id": "CVE-2023-23914",
+      "curl_id": "CURL-CVE-2023-23914",
+      "published": "2023-02-15T08:00:00.00Z",
+      "affects": "both",
+      "summary": "HSTS ignored on multiple requests",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-319",
+        "description": "Cleartext Transmission of Sensitive Information"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2023-23914.html",
+      "last_affected_version": "7.87.0"
+    },
+    {
+      "cve_id": "CVE-2022-43551",
+      "curl_id": "CURL-CVE-2022-43551",
+      "published": "2022-12-21T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Another HSTS bypass via IDN",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-319",
+        "description": "Cleartext Transmission of Sensitive Information"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-43551.html",
+      "last_affected_version": "7.86.0"
+    },
+    {
+      "cve_id": "CVE-2022-42916",
+      "curl_id": "CURL-CVE-2022-42916",
+      "published": "2022-10-26T08:00:00.00Z",
+      "affects": "both",
+      "summary": "HSTS bypass via IDN",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-319",
+        "description": "Cleartext Transmission of Sensitive Information"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-42916.html",
+      "last_affected_version": "7.85.0"
+    },
+    {
+      "cve_id": "CVE-2022-32221",
+      "curl_id": "CURL-CVE-2022-32221",
+      "published": "2022-10-26T08:00:00.00Z",
+      "affects": "lib",
+      "summary": "POST following PUT confusion",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-440",
+        "description": "Expected Behavior Violation"
+      },
+      "category": "method_and_state_machine_semantics",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "HTTP method and request-state invariants must be enforced explicitly in Rust to avoid semantic confusion.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-32221.html",
+      "last_affected_version": "7.85.0"
+    },
+    {
+      "cve_id": "CVE-2022-35252",
+      "curl_id": "CURL-CVE-2022-35252",
+      "published": "2022-08-31T08:00:00.00Z",
+      "affects": "both",
+      "summary": "control code in cookie denial of service",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-1286",
+        "description": "Improper Validation of Syntactic Correctness of Input"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-35252.html",
+      "last_affected_version": "7.84.0"
+    },
+    {
+      "cve_id": "CVE-2022-32208",
+      "curl_id": "CURL-CVE-2022-32208",
+      "published": "2022-06-27T08:00:00.00Z",
+      "affects": "both",
+      "summary": "FTP-KRB bad message verification",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-924",
+        "description": "Improper Enforcement of Message Integrity During Transmission in a Communication Channel"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-32208.html",
+      "last_affected_version": "7.83.1"
+    },
+    {
+      "cve_id": "CVE-2022-32207",
+      "curl_id": "CURL-CVE-2022-32207",
+      "published": "2022-06-27T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Non-preserved file permissions",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-281",
+        "description": "Improper Preservation of Permissions"
+      },
+      "category": "permissions_and_delegation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Permission bits and delegated-credential behavior are external security policy decisions that Rust does not solve automatically.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-32207.html",
+      "last_affected_version": "7.83.1"
+    },
+    {
+      "cve_id": "CVE-2022-32206",
+      "curl_id": "CURL-CVE-2022-32206",
+      "published": "2022-06-27T08:00:00.00Z",
+      "affects": "both",
+      "summary": "HTTP compression denial of service",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-770",
+        "description": "Allocation of Resources Without Limits or Throttling"
+      },
+      "category": "resource_exhaustion_and_api_contracts",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Rust does not prevent recursion-driven crashes, infinite loops, unbounded allocation, or violations of documented callback limits.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-32206.html",
+      "last_affected_version": "7.83.1"
+    },
+    {
+      "cve_id": "CVE-2022-32205",
+      "curl_id": "CURL-CVE-2022-32205",
+      "published": "2022-06-27T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Set-Cookie denial of service",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-770",
+        "description": "Allocation of Resources Without Limits or Throttling"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-32205.html",
+      "last_affected_version": "7.83.1"
+    },
+    {
+      "cve_id": "CVE-2022-30115",
+      "curl_id": "CURL-CVE-2022-30115",
+      "published": "2022-05-11T08:00:00.00Z",
+      "affects": "both",
+      "summary": "HSTS bypass via trailing dot",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-319",
+        "description": "Cleartext Transmission of Sensitive Information"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-30115.html",
+      "last_affected_version": "7.83.0"
+    },
+    {
+      "cve_id": "CVE-2022-27782",
+      "curl_id": "CURL-CVE-2022-27782",
+      "published": "2022-05-11T08:00:00.00Z",
+      "affects": "both",
+      "summary": "TLS and SSH connection too eager reuse",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-27782.html",
+      "last_affected_version": "7.83.0"
+    },
+    {
+      "cve_id": "CVE-2022-27781",
+      "curl_id": "CURL-CVE-2022-27781",
+      "published": "2022-05-11T08:00:00.00Z",
+      "affects": "lib",
+      "summary": "CERTINFO never-ending busy-loop",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-835",
+        "description": "Loop with Unreachable Exit Condition ('Infinite Loop')"
+      },
+      "category": "resource_exhaustion_and_api_contracts",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Rust does not prevent recursion-driven crashes, infinite loops, unbounded allocation, or violations of documented callback limits.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-27781.html",
+      "last_affected_version": "7.83.0"
+    },
+    {
+      "cve_id": "CVE-2022-27780",
+      "curl_id": "CURL-CVE-2022-27780",
+      "published": "2022-05-11T08:00:00.00Z",
+      "affects": "both",
+      "summary": "percent-encoded path separator in URL host",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-177",
+        "description": "Improper Handling of URL Encoding"
+      },
+      "category": "parsing_canonicalization_and_injection",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "URL, path, and protocol parsing rules must be specified explicitly to avoid cross-protocol access, smuggling, injection, or trust-boundary breaks in Rust too.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-27780.html",
+      "last_affected_version": "7.83.0"
+    },
+    {
+      "cve_id": "CVE-2022-27779",
+      "curl_id": "CURL-CVE-2022-27779",
+      "published": "2022-05-11T08:00:00.00Z",
+      "affects": "both",
+      "summary": "cookie for trailing dot TLD",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-201",
+        "description": "Information Exposure Through Sent Data"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-27779.html",
+      "last_affected_version": "7.83.0"
+    },
+    {
+      "cve_id": "CVE-2022-27776",
+      "curl_id": "CURL-CVE-2022-27776",
+      "published": "2022-04-27T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Auth/cookie leak on redirect",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-522",
+        "description": "Insufficiently Protected Credentials"
+      },
+      "category": "credential_and_data_leakage",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Redirect, proxy, header, and metadata forwarding policies remain security-critical behavior in Rust.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-27776.html",
+      "last_affected_version": "7.82.0"
+    },
+    {
+      "cve_id": "CVE-2022-27775",
+      "curl_id": "CURL-CVE-2022-27775",
+      "published": "2022-04-27T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Bad local IPv6 connection reuse",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-200",
+        "description": "Exposure of Sensitive Information to an Unauthorized Actor"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-27775.html",
+      "last_affected_version": "7.82.0"
+    },
+    {
+      "cve_id": "CVE-2022-27774",
+      "curl_id": "CURL-CVE-2022-27774",
+      "published": "2022-04-27T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Credential leak on redirect",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-522",
+        "description": "Insufficiently Protected Credentials"
+      },
+      "category": "credential_and_data_leakage",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Redirect, proxy, header, and metadata forwarding policies remain security-critical behavior in Rust.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-27774.html",
+      "last_affected_version": "7.82.0"
+    },
+    {
+      "cve_id": "CVE-2022-22576",
+      "curl_id": "CURL-CVE-2022-22576",
+      "published": "2022-04-27T08:00:00.00Z",
+      "affects": "both",
+      "summary": "OAUTH2 bearer bypass in connection reuse",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2022-22576.html",
+      "last_affected_version": "7.82.0"
+    },
+    {
+      "cve_id": "CVE-2021-22947",
+      "curl_id": "CURL-CVE-2021-22947",
+      "published": "2021-09-15T08:00:00.00Z",
+      "affects": "both",
+      "summary": "STARTTLS protocol injection via MITM",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-349",
+        "description": "Acceptance of Extraneous Untrusted Data With Trusted Data"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2021-22947.html",
+      "last_affected_version": "7.78.0"
+    },
+    {
+      "cve_id": "CVE-2021-22946",
+      "curl_id": "CURL-CVE-2021-22946",
+      "published": "2021-09-15T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Protocol downgrade required TLS bypassed",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-325",
+        "description": "Missing Cryptographic Step"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2021-22946.html",
+      "last_affected_version": "7.78.0"
+    },
+    {
+      "cve_id": "CVE-2021-22926",
+      "curl_id": "CURL-CVE-2021-22926",
+      "published": "2021-07-21T08:00:00.00Z",
+      "affects": "both",
+      "summary": "CURLOPT_SSLCERT mix-up with Secure Transport",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-295",
+        "description": "Improper Certificate Validation"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2021-22926.html",
+      "last_affected_version": "7.77.0"
+    },
+    {
+      "cve_id": "CVE-2021-22924",
+      "curl_id": "CURL-CVE-2021-22924",
+      "published": "2021-07-21T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Bad connection reuse due to flawed path name checks",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-295",
+        "description": "Improper Certificate Validation"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2021-22924.html",
+      "last_affected_version": "7.77.0"
+    },
+    {
+      "cve_id": "CVE-2021-22897",
+      "curl_id": "CURL-CVE-2021-22897",
+      "published": "2021-05-26T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Schannel cipher selection surprise",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-488",
+        "description": "Exposure of Data Element to Wrong Session"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2021-22897.html",
+      "last_affected_version": "7.76.1"
+    },
+    {
+      "cve_id": "CVE-2021-22890",
+      "curl_id": "CURL-CVE-2021-22890",
+      "published": "2021-03-31T08:00:00.00Z",
+      "affects": "both",
+      "summary": "TLS 1.3 session ticket proxy host mix-up",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-290",
+        "description": "Authentication Bypass by Spoofing"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2021-22890.html",
+      "last_affected_version": "7.75.0"
+    },
+    {
+      "cve_id": "CVE-2021-22876",
+      "curl_id": "CURL-CVE-2021-22876",
+      "published": "2021-03-31T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Automatic referer leaks credentials",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-359",
+        "description": "Exposure of Private Personal Information to an Unauthorized Actor"
+      },
+      "category": "credential_and_data_leakage",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Redirect, proxy, header, and metadata forwarding policies remain security-critical behavior in Rust.",
+      "advisory_url": "https://curl.se/docs/CVE-2021-22876.html",
+      "last_affected_version": "7.75.0"
+    },
+    {
+      "cve_id": "CVE-2020-8286",
+      "curl_id": "CURL-CVE-2020-8286",
+      "published": "2020-12-09T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Inferior OCSP verification",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-299",
+        "description": "Improper Check for Certificate Revocation"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2020-8286.html",
+      "last_affected_version": "7.73.0"
+    },
+    {
+      "cve_id": "CVE-2020-8285",
+      "curl_id": "CURL-CVE-2020-8285",
+      "published": "2020-12-09T08:00:00.00Z",
+      "affects": "lib",
+      "summary": "FTP wildcard stack overflow",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-674",
+        "description": "Uncontrolled Recursion"
+      },
+      "category": "resource_exhaustion_and_api_contracts",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Rust does not prevent recursion-driven crashes, infinite loops, unbounded allocation, or violations of documented callback limits.",
+      "advisory_url": "https://curl.se/docs/CVE-2020-8285.html",
+      "last_affected_version": "7.73.0"
+    },
+    {
+      "cve_id": "CVE-2020-8284",
+      "curl_id": "CURL-CVE-2020-8284",
+      "published": "2020-12-09T08:00:00.00Z",
+      "affects": "both",
+      "summary": "trusting FTP PASV responses",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-200",
+        "description": "Exposure of Sensitive Information to an Unauthorized Actor"
+      },
+      "category": "parsing_canonicalization_and_injection",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "URL, path, and protocol parsing rules must be specified explicitly to avoid cross-protocol access, smuggling, injection, or trust-boundary breaks in Rust too.",
+      "advisory_url": "https://curl.se/docs/CVE-2020-8284.html",
+      "last_affected_version": "7.73.0"
+    },
+    {
+      "cve_id": "CVE-2020-8169",
+      "curl_id": "CURL-CVE-2020-8169",
+      "published": "2020-06-24T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Partial password leak over DNS on HTTP redirect",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-200",
+        "description": "Exposure of Sensitive Information to an Unauthorized Actor"
+      },
+      "category": "credential_and_data_leakage",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Redirect, proxy, header, and metadata forwarding policies remain security-critical behavior in Rust.",
+      "advisory_url": "https://curl.se/docs/CVE-2020-8169.html",
+      "last_affected_version": "7.70.0"
+    },
+    {
+      "cve_id": "CVE-2019-5443",
+      "curl_id": "CURL-CVE-2019-5443",
+      "published": "2019-06-24T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Windows OpenSSL engine code injection",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-94",
+        "description": "Improper Control of Generation of Code ('Code Injection')"
+      },
+      "category": "platform_loading_and_packaging",
+      "rust_relevance": "medium",
+      "rust_relevance_reason": "Build and runtime loading behavior on Windows remains security relevant regardless of implementation language.",
+      "advisory_url": "https://curl.se/docs/CVE-2019-5443.html",
+      "last_affected_version": "7.65.1"
+    },
+    {
+      "cve_id": "CVE-2018-1000007",
+      "curl_id": "CURL-CVE-2018-1000007",
+      "published": "2018-01-24T08:00:00.00Z",
+      "affects": "both",
+      "summary": "HTTP authentication leak in redirects",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-522",
+        "description": "Insufficiently Protected Credentials"
+      },
+      "category": "credential_and_data_leakage",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Redirect, proxy, header, and metadata forwarding policies remain security-critical behavior in Rust.",
+      "advisory_url": "https://curl.se/docs/CVE-2018-1000007.html",
+      "last_affected_version": "7.57.0"
+    },
+    {
+      "cve_id": "CVE-2017-7468",
+      "curl_id": "CURL-CVE-2017-7468",
+      "published": "2017-04-19T08:00:00.00Z",
+      "affects": "both",
+      "summary": "TLS session resumption client cert bypass (again)",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2017-7468.html",
+      "last_affected_version": "7.53.1"
+    },
+    {
+      "cve_id": "CVE-2017-2629",
+      "curl_id": "CURL-CVE-2017-2629",
+      "published": "2017-02-22T08:00:00.00Z",
+      "affects": "both",
+      "summary": "SSL_VERIFYSTATUS ignored",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-304",
+        "description": "Missing Critical Step in Authentication"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2017-2629.html",
+      "last_affected_version": "7.52.1"
+    },
+    {
+      "cve_id": "CVE-2016-9594",
+      "curl_id": "CURL-CVE-2016-9594",
+      "published": "2016-12-23T08:00:00.00Z",
+      "affects": "both",
+      "summary": "uninitialized random",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-330",
+        "description": "Use of Insufficiently Random Values"
+      },
+      "category": "randomness_and_nonce_generation",
+      "rust_relevance": "medium",
+      "rust_relevance_reason": "Nonce, boundary, and WebSocket mask generation must still use strong entropy and correct application logic.",
+      "advisory_url": "https://curl.se/docs/CVE-2016-9594.html",
+      "last_affected_version": "7.52.0"
+    },
+    {
+      "cve_id": "CVE-2016-9952",
+      "curl_id": "CURL-CVE-2016-9952",
+      "published": "2016-12-21T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Win CE Schannel cert wildcard matches too much",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-295",
+        "description": "Improper Certificate Validation"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2016-9952.html",
+      "last_affected_version": "7.51.0"
+    },
+    {
+      "cve_id": "CVE-2016-8615",
+      "curl_id": "CURL-CVE-2016-8615",
+      "published": "2016-11-02T08:00:00.00Z",
+      "affects": "both",
+      "summary": "cookie injection for other servers",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-187",
+        "description": "Partial Comparison"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2016-8615.html",
+      "last_affected_version": "7.50.3"
+    },
+    {
+      "cve_id": "CVE-2016-8616",
+      "curl_id": "CURL-CVE-2016-8616",
+      "published": "2016-11-02T08:00:00.00Z",
+      "affects": "both",
+      "summary": "case insensitive password comparison",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-178",
+        "description": "Improper Handling of Case Sensitivity"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2016-8616.html",
+      "last_affected_version": "7.50.3"
+    },
+    {
+      "cve_id": "CVE-2016-8624",
+      "curl_id": "CURL-CVE-2016-8624",
+      "published": "2016-11-02T08:00:00.00Z",
+      "affects": "both",
+      "summary": "invalid URL parsing with '#'",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-172",
+        "description": "Encoding Error"
+      },
+      "category": "parsing_canonicalization_and_injection",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "URL, path, and protocol parsing rules must be specified explicitly to avoid cross-protocol access, smuggling, injection, or trust-boundary breaks in Rust too.",
+      "advisory_url": "https://curl.se/docs/CVE-2016-8624.html",
+      "last_affected_version": "7.50.3"
+    },
+    {
+      "cve_id": "CVE-2016-8625",
+      "curl_id": "CURL-CVE-2016-8625",
+      "published": "2016-11-02T08:00:00.00Z",
+      "affects": "both",
+      "summary": "IDNA 2003 makes curl use wrong host",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-838",
+        "description": "Inappropriate Encoding for Output Context"
+      },
+      "category": "parsing_canonicalization_and_injection",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "URL, path, and protocol parsing rules must be specified explicitly to avoid cross-protocol access, smuggling, injection, or trust-boundary breaks in Rust too.",
+      "advisory_url": "https://curl.se/docs/CVE-2016-8625.html",
+      "last_affected_version": "7.50.3"
+    },
+    {
+      "cve_id": "CVE-2016-7141",
+      "curl_id": "CURL-CVE-2016-7141",
+      "published": "2016-09-07T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Incorrect reuse of client certificates",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2016-7141.html",
+      "last_affected_version": "7.50.1"
+    },
+    {
+      "cve_id": "CVE-2016-5419",
+      "curl_id": "CURL-CVE-2016-5419",
+      "published": "2016-08-03T08:00:00.00Z",
+      "affects": "both",
+      "summary": "TLS session resumption client cert bypass",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2016-5419.html",
+      "last_affected_version": "7.50.0"
+    },
+    {
+      "cve_id": "CVE-2016-5420",
+      "curl_id": "CURL-CVE-2016-5420",
+      "published": "2016-08-03T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Reusing connections with wrong client cert",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2016-5420.html",
+      "last_affected_version": "7.50.0"
+    },
+    {
+      "cve_id": "CVE-2016-4802",
+      "curl_id": "CURL-CVE-2016-4802",
+      "published": "2016-05-30T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Windows DLL hijacking",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-94",
+        "description": "Improper Control of Generation of Code ('Code Injection')"
+      },
+      "category": "platform_loading_and_packaging",
+      "rust_relevance": "medium",
+      "rust_relevance_reason": "Build and runtime loading behavior on Windows remains security relevant regardless of implementation language.",
+      "advisory_url": "https://curl.se/docs/CVE-2016-4802.html",
+      "last_affected_version": "7.49.0"
+    },
+    {
+      "cve_id": "CVE-2016-3739",
+      "curl_id": "CURL-CVE-2016-3739",
+      "published": "2016-05-18T08:00:00.00Z",
+      "affects": "both",
+      "summary": "TLS certificate check bypass with mbedTLS/PolarSSL",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-297",
+        "description": "Improper Validation of Certificate with Host Mismatch"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2016-3739.html",
+      "last_affected_version": "7.48.0"
+    },
+    {
+      "cve_id": "CVE-2016-0755",
+      "curl_id": "CURL-CVE-2016-0755",
+      "published": "2016-01-27T08:00:00.00Z",
+      "affects": "both",
+      "summary": "NTLM credentials not-checked for proxy connection reuse",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2016-0755.html",
+      "last_affected_version": "7.46.0"
+    },
+    {
+      "cve_id": "CVE-2015-3236",
+      "curl_id": "CURL-CVE-2015-3236",
+      "published": "2015-06-17T08:00:00.00Z",
+      "affects": "both",
+      "summary": "lingering HTTP credentials in connection reuse",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2015-3236.html",
+      "last_affected_version": "7.42.1"
+    },
+    {
+      "cve_id": "CVE-2015-3153",
+      "curl_id": "CURL-CVE-2015-3153",
+      "published": "2015-04-29T08:00:00.00Z",
+      "affects": "both",
+      "summary": "sensitive HTTP server headers also sent to proxies",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-201",
+        "description": "Information Exposure Through Sent Data"
+      },
+      "category": "credential_and_data_leakage",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Redirect, proxy, header, and metadata forwarding policies remain security-critical behavior in Rust.",
+      "advisory_url": "https://curl.se/docs/CVE-2015-3153.html",
+      "last_affected_version": "7.42.0"
+    },
+    {
+      "cve_id": "CVE-2015-3148",
+      "curl_id": "CURL-CVE-2015-3148",
+      "published": "2015-04-22T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Negotiate not treated as connection-oriented",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2015-3148.html",
+      "last_affected_version": "7.41.0"
+    },
+    {
+      "cve_id": "CVE-2015-3143",
+      "curl_id": "CURL-CVE-2015-3143",
+      "published": "2015-04-22T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Reusing authenticated connection when unauthenticated",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2015-3143.html",
+      "last_affected_version": "7.41.0"
+    },
+    {
+      "cve_id": "CVE-2014-8151",
+      "curl_id": "CURL-CVE-2014-8151",
+      "published": "2015-01-08T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Secure Transport certificate check bypass",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-297",
+        "description": "Improper Validation of Certificate with Host Mismatch"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2014-8151.html",
+      "last_affected_version": "7.39.0"
+    },
+    {
+      "cve_id": "CVE-2014-8150",
+      "curl_id": "CURL-CVE-2014-8150",
+      "published": "2015-01-08T08:00:00.00Z",
+      "affects": "both",
+      "summary": "URL request injection",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-444",
+        "description": "Inconsistent Interpretation of HTTP Requests ('HTTP Request Smuggling')"
+      },
+      "category": "parsing_canonicalization_and_injection",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "URL, path, and protocol parsing rules must be specified explicitly to avoid cross-protocol access, smuggling, injection, or trust-boundary breaks in Rust too.",
+      "advisory_url": "https://curl.se/docs/CVE-2014-8150.html",
+      "last_affected_version": "7.39.0"
+    },
+    {
+      "cve_id": "CVE-2014-3620",
+      "curl_id": "CURL-CVE-2014-3620",
+      "published": "2014-09-10T08:00:00.00Z",
+      "affects": "both",
+      "summary": "cookie leak for TLDs",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-201",
+        "description": "Information Exposure Through Sent Data"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2014-3620.html",
+      "last_affected_version": "7.37.1"
+    },
+    {
+      "cve_id": "CVE-2014-3613",
+      "curl_id": "CURL-CVE-2014-3613",
+      "published": "2014-09-10T08:00:00.00Z",
+      "affects": "both",
+      "summary": "cookie leak with IP address as domain",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-201",
+        "description": "Information Exposure Through Sent Data"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2014-3613.html",
+      "last_affected_version": "7.37.1"
+    },
+    {
+      "cve_id": "CVE-2014-2522",
+      "curl_id": "CURL-CVE-2014-2522",
+      "published": "2014-03-26T08:00:00.00Z",
+      "affects": "both",
+      "summary": "not verifying certs for TLS to IP address / Schannel",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-297",
+        "description": "Improper Validation of Certificate with Host Mismatch"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2014-2522.html",
+      "last_affected_version": "7.35.0"
+    },
+    {
+      "cve_id": "CVE-2014-1263",
+      "curl_id": "CURL-CVE-2014-1263",
+      "published": "2014-03-26T08:00:00.00Z",
+      "affects": "both",
+      "summary": "not verifying certs for TLS to IP address / Secure Transport",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-297",
+        "description": "Improper Validation of Certificate with Host Mismatch"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2014-1263.html",
+      "last_affected_version": "7.35.0"
+    },
+    {
+      "cve_id": "CVE-2014-0139",
+      "curl_id": "CURL-CVE-2014-0139",
+      "published": "2014-03-26T08:00:00.00Z",
+      "affects": "both",
+      "summary": "IP address wildcard certificate validation",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-297",
+        "description": "Improper Validation of Certificate with Host Mismatch"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2014-0139.html",
+      "last_affected_version": "7.35.0"
+    },
+    {
+      "cve_id": "CVE-2014-0138",
+      "curl_id": "CURL-CVE-2014-0138",
+      "published": "2014-03-26T08:00:00.00Z",
+      "affects": "both",
+      "summary": "wrong reuse of connections",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2014-0138.html",
+      "last_affected_version": "7.35.0"
+    },
+    {
+      "cve_id": "CVE-2014-0015",
+      "curl_id": "CURL-CVE-2014-0015",
+      "published": "2014-01-29T08:00:00.00Z",
+      "affects": "both",
+      "summary": "reuse of wrong HTTP NTLM connection",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-305",
+        "description": "Authentication Bypass by Primary Weakness"
+      },
+      "category": "connection_reuse_and_auth_isolation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Connection-pool keys and authentication context isolation must still be correct in Rust; memory safety does not prevent cross-identity reuse.",
+      "advisory_url": "https://curl.se/docs/CVE-2014-0015.html",
+      "last_affected_version": "7.34.0"
+    },
+    {
+      "cve_id": "CVE-2013-6422",
+      "curl_id": "CURL-CVE-2013-6422",
+      "published": "2013-12-17T08:00:00.00Z",
+      "affects": "lib",
+      "summary": "cert name check ignore with GnuTLS",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-297",
+        "description": "Improper Validation of Certificate with Host Mismatch"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2013-6422.html",
+      "last_affected_version": "7.33.0"
+    },
+    {
+      "cve_id": "CVE-2013-4545",
+      "curl_id": "CURL-CVE-2013-4545",
+      "published": "2013-11-15T08:00:00.00Z",
+      "affects": "lib",
+      "summary": "cert name check ignore OpenSSL",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-297",
+        "description": "Improper Validation of Certificate with Host Mismatch"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2013-4545.html",
+      "last_affected_version": "7.32.0"
+    },
+    {
+      "cve_id": "CVE-2013-1944",
+      "curl_id": "CURL-CVE-2013-1944",
+      "published": "2013-04-12T08:00:00.00Z",
+      "affects": "both",
+      "summary": "cookie domain tailmatch",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-201",
+        "description": "Information Exposure Through Sent Data"
+      },
+      "category": "cookies_hsts_and_origin_policy",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Domain matching, PSL rules, trailing-dot handling, and HSTS cache semantics are policy logic that a Rust port must still get right.",
+      "advisory_url": "https://curl.se/docs/CVE-2013-1944.html",
+      "last_affected_version": "7.29.0"
+    },
+    {
+      "cve_id": "CVE-2011-3389",
+      "curl_id": "CURL-CVE-2011-3389",
+      "published": "2012-01-24T08:00:00.00Z",
+      "affects": "both",
+      "summary": "SSL CBC IV vulnerability",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-924",
+        "description": "Improper Enforcement of Message Integrity During Transmission in a Communication Channel"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2011-3389.html",
+      "last_affected_version": "7.23.1"
+    },
+    {
+      "cve_id": "CVE-2012-0036",
+      "curl_id": "CURL-CVE-2012-0036",
+      "published": "2012-01-24T08:00:00.00Z",
+      "affects": "both",
+      "summary": "URL sanitization vulnerability",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-93",
+        "description": "Improper Neutralization of CRLF Sequences ('CRLF Injection')"
+      },
+      "category": "parsing_canonicalization_and_injection",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "URL, path, and protocol parsing rules must be specified explicitly to avoid cross-protocol access, smuggling, injection, or trust-boundary breaks in Rust too.",
+      "advisory_url": "https://curl.se/docs/CVE-2012-0036.html",
+      "last_affected_version": "7.23.1"
+    },
+    {
+      "cve_id": "CVE-2011-2192",
+      "curl_id": "CURL-CVE-2011-2192",
+      "published": "2011-06-23T08:00:00.00Z",
+      "affects": "both",
+      "summary": "inappropriate GSSAPI delegation",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-281",
+        "description": "Improper Preservation of Permissions"
+      },
+      "category": "permissions_and_delegation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Permission bits and delegated-credential behavior are external security policy decisions that Rust does not solve automatically.",
+      "advisory_url": "https://curl.se/docs/CVE-2011-2192.html",
+      "last_affected_version": "7.21.6"
+    },
+    {
+      "cve_id": "CVE-2010-0734",
+      "curl_id": "CURL-CVE-2010-0734",
+      "published": "2010-02-09T08:00:00.00Z",
+      "affects": "lib",
+      "summary": "data callback excessive length",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-628",
+        "description": "Function Call with Incorrectly Specified Arguments"
+      },
+      "category": "resource_exhaustion_and_api_contracts",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Rust does not prevent recursion-driven crashes, infinite loops, unbounded allocation, or violations of documented callback limits.",
+      "advisory_url": "https://curl.se/docs/CVE-2010-0734.html",
+      "last_affected_version": "7.19.7"
+    },
+    {
+      "cve_id": "CVE-2009-0037",
+      "curl_id": "CURL-CVE-2009-0037",
+      "published": "2009-03-03T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Arbitrary File Access",
+      "severity": "Medium",
+      "cwe": {
+        "id": "CWE-142",
+        "description": "Improper Neutralization of Value Delimiters"
+      },
+      "category": "parsing_canonicalization_and_injection",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "URL, path, and protocol parsing rules must be specified explicitly to avoid cross-protocol access, smuggling, injection, or trust-boundary breaks in Rust too.",
+      "advisory_url": "https://curl.se/docs/CVE-2009-0037.html",
+      "last_affected_version": "7.19.3"
+    },
+    {
+      "cve_id": "CVE-2007-3564",
+      "curl_id": "CURL-CVE-2007-3564",
+      "published": "2007-07-10T08:00:00.00Z",
+      "affects": "both",
+      "summary": "GnuTLS insufficient cert verification",
+      "severity": "Low",
+      "cwe": {
+        "id": "CWE-298",
+        "description": "Improper Validation of Certificate Expiration"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "advisory_url": "https://curl.se/docs/CVE-2007-3564.html",
+      "last_affected_version": "7.16.3"
+    },
+    {
+      "cve_id": "CVE-2003-1605",
+      "curl_id": "CURL-CVE-2003-1605",
+      "published": "2003-08-03T08:00:00.00Z",
+      "affects": "both",
+      "summary": "Proxy Authentication Header Information Leakage",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-201",
+        "description": "Information Exposure Through Sent Data"
+      },
+      "category": "credential_and_data_leakage",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "Redirect, proxy, header, and metadata forwarding policies remain security-critical behavior in Rust.",
+      "advisory_url": "https://curl.se/docs/CVE-2003-1605.html",
+      "last_affected_version": "7.10.6"
+    }
+  ]
+}
