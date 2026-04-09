@@ -13,7 +13,6 @@ netrc
 ftp
 </server>
 <features>
-unittest
 netrc
 </features>
 <name>

@@ -11,7 +11,6 @@ infof
 none
 </server>
 <features>
-unittest
 </features>
 <name>
 infof

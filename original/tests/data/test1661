@@ -13,7 +13,6 @@ bufref
 none
 </server>
 <features>
-unittest
 </features>
 <name>
 bufref unit tests

@@ -13,7 +13,6 @@ curl_get_line
 none
 </server>
 <features>
-unittest
 </features>
 <name>
 curl_get_line unit tests

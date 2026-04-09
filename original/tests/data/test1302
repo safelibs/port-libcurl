@@ -13,7 +13,6 @@ base64
 none
 </server>
 <features>
-unittest
 </features>
 <name>
 base64 encode/decode unit tests

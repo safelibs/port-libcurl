@@ -13,7 +13,6 @@ bufq
 none
 </server>
 <features>
-unittest
 </features>
 <name>
 bufq unit tests

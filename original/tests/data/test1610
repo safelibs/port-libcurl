@@ -13,7 +13,6 @@ SHA256
 none
 </server>
 <features>
-unittest
 </features>
 <name>
 SHA256 unit tests

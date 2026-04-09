@@ -13,7 +13,6 @@ hash
 none
 </server>
 <features>
-unittest
 </features>
 <name>
 Internal hash add, retrieval, deletion testing

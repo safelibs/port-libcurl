@@ -13,7 +13,6 @@ MD5
 none
 </server>
 <features>
-unittest
 </features>
 <name>
 MD5 unit tests

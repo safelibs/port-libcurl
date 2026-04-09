@@ -13,7 +13,6 @@ DOH
 none
 </server>
 <features>
-unittest
 DoH
 </features>
 <name>

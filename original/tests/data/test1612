@@ -13,7 +13,6 @@ HMAC
 none
 </server>
 <features>
-unittest
 </features>
 <name>
 HMAC unit tests

@@ -14,7 +14,6 @@ hash
 none
 </server>
 <features>
-unittest
 </features>
 <name>
 internal hash create/destroy testing

@@ -75,6 +75,7 @@ int test(char *URL)
   CURL *easy = NULL;
   CURLU *url = NULL;
   CURLcode res;
+  int result;
   char *escaped = NULL;
 
   (void)URL;
@@ -112,15 +113,18 @@ int test(char *URL)
     goto test_cleanup;
   }
 
-  if((malloc_count + calloc_count + strdup_count) == 0 || free_count == 0) {
-    fprintf(stderr, "custom memory callbacks were not exercised\n");
-    res = TEST_ERR_MAJOR_BAD;
-  }
-
 test_cleanup:
   curl_free(escaped);
   curl_easy_cleanup(easy);
   curl_url_cleanup(url);
   curl_global_cleanup();
-  return (int)res;
+  result = (int)res;
+
+  if(result == CURLE_OK &&
+     ((malloc_count + calloc_count + strdup_count) == 0 || free_count == 0)) {
+    fprintf(stderr, "custom memory callbacks were not exercised\n");
+    result = TEST_ERR_MAJOR_BAD;
+  }
+
+  return result;
 }

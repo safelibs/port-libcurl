@@ -13,7 +13,6 @@ MD4
 none
 </server>
 <features>
-unittest
 </features>
 <name>
 MD4 unit tests

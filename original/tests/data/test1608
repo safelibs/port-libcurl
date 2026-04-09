@@ -13,7 +13,6 @@ curlopt_dns_shuffle_addresses
 none
 </server>
 <features>
-unittest
 shuffle-dns
 </features>
 <name>

@@ -13,7 +13,6 @@ NTLM
 none
 </server>
 <features>
-unittest
 NTLM
 </features>
 <name>

@@ -915,6 +915,12 @@ sub singletest_run {
 
     if(!$tool) {
         $CMDLINE=shell_quote($CURL);
+        # Ignore user default curl config so unrelated local ~/.curlrc
+        # content cannot perturb the suite, but keep config-loading tests
+        # able to verify default config discovery.
+        if(!$keywords{'--config'}) {
+            $CMDLINE .= " -q";
+        }
     }
 
     if(use_valgrind() && !$disablevalgrind) {

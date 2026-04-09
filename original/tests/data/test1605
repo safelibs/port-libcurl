@@ -12,7 +12,6 @@ unittest
 none
 </server>
 <features>
-unittest
 </features>
 <name>
 Test negative data lengths as input to libcurl functions

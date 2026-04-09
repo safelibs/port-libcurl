@@ -13,7 +13,6 @@ URL
 none
 </server>
 <features>
-unittest
 </features>
 <name>
 unit tests for url.c

@@ -13,7 +13,6 @@ splay
 none
 </server>
 <features>
-unittest
 </features>
 <name>
 splay public API smoke replacement

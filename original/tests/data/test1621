@@ -13,7 +13,6 @@ stripcredentials
 none
 </server>
 <features>
-unittest
 https
 </features>
 <name>
