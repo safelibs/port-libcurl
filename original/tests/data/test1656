@@ -18,19 +18,20 @@ HTTP GET
 <client>
 <features>
 SSL
+!OpenSSL
 !bearssl
 !mbedtls
 !rustls
 !wolfssl
 </features>
 <server>
-https
+https Server-localhost-gt-sv.pem
 </server>
 <tool>
 lib%TESTNUMBER
 </tool>
 <name>
-public certinfo replacement for x509 time formatting
+public certinfo replacement for x509 GeneralizedTime formatting
 </name>
 <command>
 https://%HOSTIP:%HTTPSPORT/%TESTNUMBER

@@ -53,7 +53,7 @@ noinst_PROGRAMS = chkhostname libauthretry libntlmconnect libprereq      \
  lib670 lib671 lib672 lib673 lib674 lib676 lib677 lib678 \
  lib1156 \
  lib1301 lib1302 lib1303 lib1304 lib1307 \
- lib1323 lib1330 \
+ lib1330 \
  lib1395 lib1397 lib1399 \
  lib1500 lib1501 lib1502 lib1503 lib1504 lib1505 lib1506 lib1507 lib1508 \
  lib1509 lib1510 lib1511 lib1512 lib1513 lib1514 lib1515         lib1517 \
@@ -360,7 +360,7 @@ lib1304_SOURCES = lib1304.c $(SUPPORTFILES)
 
 lib1307_SOURCES = lib574.c $(SUPPORTFILES)
 
-lib1323_SOURCES = lib517.c $(SUPPORTFILES)
+lib1323_SOURCES =
 
 lib1330_SOURCES = lib1330.c $(SUPPORTFILES)
 
@@ -596,7 +596,7 @@ lib1653_LDADD = $(TESTUTIL_LIBS)
 lib1654_SOURCES = lib1654.c $(SUPPORTFILES) $(TESTUTIL) $(WARNLESS)
 lib1654_LDADD = $(TESTUTIL_LIBS)
 
-lib1656_SOURCES = lib3102.c $(SUPPORTFILES)
+lib1656_SOURCES = lib1656.c $(SUPPORTFILES)
 
 lib1660_SOURCES = lib1915.c $(SUPPORTFILES) $(TESTUTIL) $(WARNLESS)
 lib1660_LDADD = $(TESTUTIL_LIBS)
