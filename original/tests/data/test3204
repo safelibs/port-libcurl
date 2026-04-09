@@ -22,6 +22,9 @@ hello
 
 # Client-side
 <client>
+<features>
+verbose-strings
+</features>
 <server>
 http
 </server>
