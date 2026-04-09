@@ -126,7 +126,8 @@ noinst_PROGRAMS = chkhostname$(EXEEXT) libauthretry$(EXEEXT) \
 	lib674$(EXEEXT) lib676$(EXEEXT) lib677$(EXEEXT) \
 	lib678$(EXEEXT) lib1156$(EXEEXT) lib1301$(EXEEXT) \
 	lib1302$(EXEEXT) lib1303$(EXEEXT) lib1304$(EXEEXT) \
-	lib1307$(EXEEXT) lib1330$(EXEEXT) \
+	lib1305$(EXEEXT) lib1306$(EXEEXT) lib1307$(EXEEXT) \
+	lib1330$(EXEEXT) \
 	lib1395$(EXEEXT) lib1397$(EXEEXT) \
 	lib1399$(EXEEXT) lib1500$(EXEEXT) lib1501$(EXEEXT) \
 	lib1502$(EXEEXT) lib1503$(EXEEXT) lib1504$(EXEEXT) \
@@ -277,10 +278,14 @@ am_lib1304_OBJECTS = lib1304.$(OBJEXT) $(am__objects_2)
 lib1304_OBJECTS = $(am_lib1304_OBJECTS)
 lib1304_LDADD = $(LDADD)
 lib1304_DEPENDENCIES = $(am__DEPENDENCIES_1)
-am_lib1305_OBJECTS =
+am_lib1305_OBJECTS = lib1305.$(OBJEXT) $(am__objects_2)
 lib1305_OBJECTS = $(am_lib1305_OBJECTS)
 lib1305_LDADD = $(LDADD)
 lib1305_DEPENDENCIES = $(am__DEPENDENCIES_1)
+am_lib1306_OBJECTS = lib1305.$(OBJEXT) $(am__objects_2)
+lib1306_OBJECTS = $(am_lib1306_OBJECTS)
+lib1306_LDADD = $(LDADD)
+lib1306_DEPENDENCIES = $(am__DEPENDENCIES_1)
 am_lib1307_OBJECTS = lib574.$(OBJEXT) $(am__objects_2)
 lib1307_OBJECTS = $(am_lib1307_OBJECTS)
 lib1307_LDADD = $(LDADD)
@@ -1472,7 +1477,8 @@ am__depfiles_remade = ../../lib/$(DEPDIR)/curl_gethostname.Po \
 	../../lib/$(DEPDIR)/timediff.Po \
 	../../lib/$(DEPDIR)/warnless.Po ./$(DEPDIR)/chkhostname.Po \
 	./$(DEPDIR)/first.Po ./$(DEPDIR)/lib1156.Po \
-	./$(DEPDIR)/lib1301.Po ./$(DEPDIR)/lib1304.Po \
+	./$(DEPDIR)/lib1301.Po ./$(DEPDIR)/lib1305.Po \
+	./$(DEPDIR)/lib1304.Po \
 	./$(DEPDIR)/lib1330.Po ./$(DEPDIR)/lib1397.Po \
 	./$(DEPDIR)/lib1500.Po ./$(DEPDIR)/lib1501.Po \
 	./$(DEPDIR)/lib1502-first.Po ./$(DEPDIR)/lib1502-lib1502.Po \
@@ -1634,8 +1640,9 @@ am__v_CCLD_1 =
 SOURCES = $(libhostname_la_SOURCES) $(libstubgss_la_SOURCES) \
 	$(chkhostname_SOURCES) $(lib1156_SOURCES) $(lib1300_SOURCES) \
 	$(lib1301_SOURCES) $(lib1302_SOURCES) $(lib1303_SOURCES) \
-	$(lib1304_SOURCES) $(lib1305_SOURCES) $(lib1307_SOURCES) \
-	$(lib1309_SOURCES) $(lib1323_SOURCES) $(lib1330_SOURCES) \
+	$(lib1304_SOURCES) $(lib1305_SOURCES) $(lib1306_SOURCES) \
+	$(lib1307_SOURCES) $(lib1309_SOURCES) $(lib1323_SOURCES) \
+	$(lib1330_SOURCES) \
 	$(lib1394_SOURCES) $(lib1395_SOURCES) $(lib1397_SOURCES) \
 	$(lib1399_SOURCES) $(lib1500_SOURCES) $(lib1501_SOURCES) \
 	$(lib1502_SOURCES) $(lib1503_SOURCES) $(lib1504_SOURCES) \
@@ -1727,8 +1734,9 @@ DIST_SOURCES = $(libhostname_la_SOURCES) \
 	$(am__libstubgss_la_SOURCES_DIST) $(chkhostname_SOURCES) \
 	$(lib1156_SOURCES) $(lib1300_SOURCES) $(lib1301_SOURCES) \
 	$(lib1302_SOURCES) $(lib1303_SOURCES) $(lib1304_SOURCES) \
-	$(lib1305_SOURCES) $(lib1307_SOURCES) $(lib1309_SOURCES) \
-	$(lib1323_SOURCES) $(lib1330_SOURCES) $(lib1394_SOURCES) \
+	$(lib1305_SOURCES) $(lib1306_SOURCES) $(lib1307_SOURCES) \
+	$(lib1309_SOURCES) $(lib1323_SOURCES) $(lib1330_SOURCES) \
+	$(lib1394_SOURCES) \
 	$(lib1395_SOURCES) $(lib1397_SOURCES) $(lib1399_SOURCES) \
 	$(lib1500_SOURCES) $(lib1501_SOURCES) $(lib1502_SOURCES) \
 	$(lib1503_SOURCES) $(lib1504_SOURCES) $(lib1505_SOURCES) \
@@ -2312,7 +2320,8 @@ lib1302_SOURCES = lib1302.c $(SUPPORTFILES) $(TESTUTIL) $(WARNLESS)
 lib1302_LDADD = $(TESTUTIL_LIBS)
 lib1303_SOURCES = lib1523.c $(SUPPORTFILES)
 lib1304_SOURCES = lib1304.c $(SUPPORTFILES)
-lib1305_SOURCES =
+lib1305_SOURCES = lib1305.c $(SUPPORTFILES)
+lib1306_SOURCES = lib1305.c $(SUPPORTFILES)
 lib1307_SOURCES = lib574.c $(SUPPORTFILES)
 lib1309_SOURCES =
 lib1323_SOURCES =
@@ -2726,6 +2735,14 @@ lib1303$(EXEEXT): $(lib1303_OBJECTS) $(lib1303_DEPENDENCIES) $(EXTRA_lib1303_DEP
 lib1304$(EXEEXT): $(lib1304_OBJECTS) $(lib1304_DEPENDENCIES) $(EXTRA_lib1304_DEPENDENCIES)
 	@rm -f lib1304$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(lib1304_OBJECTS) $(lib1304_LDADD) $(LIBS)
+
+lib1305$(EXEEXT): $(lib1305_OBJECTS) $(lib1305_DEPENDENCIES) $(EXTRA_lib1305_DEPENDENCIES)
+	@rm -f lib1305$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(lib1305_OBJECTS) $(lib1305_LDADD) $(LIBS)
+
+lib1306$(EXEEXT): $(lib1306_OBJECTS) $(lib1306_DEPENDENCIES) $(EXTRA_lib1306_DEPENDENCIES)
+	@rm -f lib1306$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(lib1306_OBJECTS) $(lib1306_LDADD) $(LIBS)
 
 lib1307$(EXEEXT): $(lib1307_OBJECTS) $(lib1307_DEPENDENCIES) $(EXTRA_lib1307_DEPENDENCIES)
 	@rm -f lib1307$(EXEEXT)
@@ -3865,6 +3882,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/first.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lib1156.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lib1301.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lib1305.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lib1304.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lib1330.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lib1397.Po@am__quote@ # am--include-marker
@@ -5925,6 +5943,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/first.Po
 	-rm -f ./$(DEPDIR)/lib1156.Po
 	-rm -f ./$(DEPDIR)/lib1301.Po
+	-rm -f ./$(DEPDIR)/lib1305.Po
 	-rm -f ./$(DEPDIR)/lib1304.Po
 	-rm -f ./$(DEPDIR)/lib1330.Po
 	-rm -f ./$(DEPDIR)/lib1397.Po
@@ -6297,6 +6316,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/first.Po
 	-rm -f ./$(DEPDIR)/lib1156.Po
 	-rm -f ./$(DEPDIR)/lib1301.Po
+	-rm -f ./$(DEPDIR)/lib1305.Po
 	-rm -f ./$(DEPDIR)/lib1304.Po
 	-rm -f ./$(DEPDIR)/lib1330.Po
 	-rm -f ./$(DEPDIR)/lib1397.Po

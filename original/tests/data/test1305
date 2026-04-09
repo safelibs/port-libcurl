@@ -2,8 +2,8 @@
 <!-- This replaces test 558 -->
 <info>
 <keywords>
-unittest
-hash
+dns cache
+share
 </keywords>
 </info>
 
@@ -16,7 +16,7 @@ none
 <features>
 </features>
 <name>
-internal hash create/destroy testing
+public DNS share create/destroy replacement
 </name>
 <tool>
 lib%TESTNUMBER
@@ -25,4 +25,10 @@ lib%TESTNUMBER
 %TESTNUMBER
 </command>
 </client>
+
+<verify>
+<errorcode>
+0
+</errorcode>
+</verify>
 </testcase>

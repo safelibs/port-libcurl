@@ -52,7 +52,6 @@
 # no honest public API equivalent for their original coverage, so keep them
 # disabled instead of pretending they are meaningful libcurl API tests.
 1300
-1305
 1309
 1323
 1602
