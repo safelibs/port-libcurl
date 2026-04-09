@@ -1,44 +1,55 @@
 <testcase>
 <info>
 <keywords>
-unittest
+HTTP
 netrc
 </keywords>
 </info>
 
 #
+# Server-side
+<reply>
+<data nocheck="yes">
+HTTP/1.1 200 OK
+Date: Fri, 05 Aug 2022 10:09:00 GMT
+Server: test-server/fake
+Content-Type: text/plain
+Content-Length: 6
+Connection: close
+
+-foo-
+</data>
+</reply>
+
+#
 # Client-side
 <client>
 <server>
-ftp
+http
 </server>
 <features>
 netrc
 </features>
 <name>
-netrc parsing public API replacement
+netrc host and exact-login matching public API replacement
 </name>
 <tool>
 lib%TESTNUMBER
 </tool>
 <command>
-ftp://mary:drfrank@%HOSTIP:%FTPPORT/ %LOGDIR/netrc%TESTNUMBER
+http://%HOSTIP:%HTTPPORT/ %LOGDIR/netrc%TESTNUMBER
 </command>
 <file name="%LOGDIR/netrc%TESTNUMBER" >
-machine %HOSTIP login frankenstein password wrongone
-machine %HOSTIP login mary password yram
+machine netrc1304.example login admin password passwd
+machine curl1304.example login none password none
 </file>
 </client>
 
 <verify>
-<protocol crlf="yes">
-USER mary
-PASS drfrank
-PWD
-EPSV
-TYPE A
-LIST
-QUIT
-</protocol>
+<errorcode>
+0
+</errorcode>
+<stdout>
+</stdout>
 </verify>
 </testcase>
