@@ -1,0 +1,315 @@
+{
+  "schema_version": 1,
+  "library": "libcurl",
+  "ubuntu_release": "24.04.3 LTS (noble)",
+  "generated_on": "2026-04-09",
+  "generated_at_utc": "2026-04-09T22:54:05Z",
+  "metadata_source": "Ubuntu 24.04 package and source metadata from local apt-cache and /var/lib/apt/lists, plus targeted source inspection of extracted Noble source packages under /tmp/libcurl-dependents-src",
+  "selection_policy": "Representative direct build-and-runtime dependents on libcurl from different domains: version control, build tooling, language bindings, data libraries, repository and package management, immutable-system updates, filesystems, and firmware updates. This list is intentionally diverse rather than exhaustive.",
+  "scan_summary": {
+    "direct_runtime_binary_packages_on_libcurl": 453,
+    "source_packages_building_against_libcurl_dev": 434
+  },
+  "dependents": [
+    {
+      "name": "Git",
+      "source_package": "git",
+      "category": "distributed version control",
+      "dependency_kind": "build-and-runtime",
+      "runtime_dependency_type": "direct",
+      "package_dependencies": [
+        {
+          "package": "git (source)",
+          "usage": "compile-time",
+          "libcurl_dependency": "libcurl4-gnutls-dev"
+        },
+        {
+          "package": "git",
+          "usage": "runtime",
+          "libcurl_dependency": "libcurl3t64-gnutls"
+        }
+      ],
+      "runtime_functionality": "Uses libcurl for HTTP(S), FTP, and FTPS remotes, including clone, fetch, push, smart-HTTP RPCs, and pack/object transfers.",
+      "evidence": [
+        "Ubuntu Noble metadata shows git Build-Depends on libcurl4-gnutls-dev and the git binary Depends on libcurl3t64-gnutls.",
+        "git source contains remote-curl.c, which posts to service URLs with CURLOPT_URL, CURLOPT_POST, request headers, and read/write callbacks for remote operations.",
+        "git http.c configures libcurl for HTTP authentication, proxies, redirects, SSL settings, and FTP options used by network remotes."
+      ]
+    },
+    {
+      "name": "CMake",
+      "source_package": "cmake",
+      "category": "build system",
+      "dependency_kind": "build-and-runtime",
+      "runtime_dependency_type": "direct",
+      "package_dependencies": [
+        {
+          "package": "cmake (source)",
+          "usage": "compile-time",
+          "libcurl_dependency": "libcurl4-openssl-dev"
+        },
+        {
+          "package": "cmake",
+          "usage": "runtime",
+          "libcurl_dependency": "libcurl4t64"
+        }
+      ],
+      "runtime_functionality": "Provides network transfers for file(DOWNLOAD) and file(UPLOAD), and submits or uploads test results and artifacts through CTest/CDash paths.",
+      "evidence": [
+        "Ubuntu Noble metadata shows cmake Build-Depends on libcurl4-openssl-dev and the cmake binary Depends on libcurl4t64.",
+        "Help/command/file.rst documents file(DOWNLOAD <url> ...) and file(UPLOAD <file> <url> ...).",
+        "CMake source ships cmCurl.cxx and cmCTestSubmitHandler.cxx, which wrap libcurl for URL access, TLS handling, and CDash submission/upload requests."
+      ]
+    },
+    {
+      "name": "PHP cURL extension",
+      "source_package": "php8.3",
+      "category": "language binding",
+      "dependency_kind": "build-and-runtime",
+      "runtime_dependency_type": "direct",
+      "package_dependencies": [
+        {
+          "package": "php8.3 (source)",
+          "usage": "compile-time",
+          "libcurl_dependency": "libcurl4-openssl-dev"
+        },
+        {
+          "package": "php8.3-curl",
+          "usage": "runtime",
+          "libcurl_dependency": "libcurl4t64"
+        }
+      ],
+      "runtime_functionality": "Exposes libcurl easy, multi, and related transfer capabilities to PHP scripts for HTTP(S) and other URL-based client operations.",
+      "evidence": [
+        "Ubuntu Noble source metadata shows php8.3 Build-Depends on libcurl4-openssl-dev.",
+        "Ubuntu package metadata shows php8.3-curl Depends on libcurl4t64.",
+        "The php8.3-curl package description explicitly says it provides the CURL module for PHP."
+      ]
+    },
+    {
+      "name": "PycURL",
+      "source_package": "pycurl",
+      "category": "language binding",
+      "dependency_kind": "build-and-runtime",
+      "runtime_dependency_type": "direct",
+      "package_dependencies": [
+        {
+          "package": "pycurl (source)",
+          "usage": "compile-time",
+          "libcurl_dependency": "libcurl4-gnutls-dev"
+        },
+        {
+          "package": "python3-pycurl",
+          "usage": "runtime",
+          "libcurl_dependency": "libcurl3t64-gnutls"
+        }
+      ],
+      "runtime_functionality": "Lets Python programs fetch URLs and use libcurl features such as multiple protocols, SSL, authentication, and the multi interface.",
+      "evidence": [
+        "Ubuntu Noble metadata shows pycurl Build-Depends on libcurl4-gnutls-dev and python3-pycurl Depends on libcurl3t64-gnutls.",
+        "pycurl README.rst says PycURL is a Python interface to libcurl that can fetch objects identified by a URL and exposes most libcurl functionality.",
+        "pycurl quickstart examples create Curl handles and call perform() to execute network transfers."
+      ]
+    },
+    {
+      "name": "R curl package",
+      "source_package": "r-cran-curl",
+      "category": "language binding",
+      "dependency_kind": "build-and-runtime",
+      "runtime_dependency_type": "direct",
+      "package_dependencies": [
+        {
+          "package": "r-cran-curl (source)",
+          "usage": "compile-time",
+          "libcurl_dependency": "libcurl4-openssl-dev"
+        },
+        {
+          "package": "r-cran-curl",
+          "usage": "runtime",
+          "libcurl_dependency": "libcurl4t64"
+        }
+      ],
+      "runtime_functionality": "Provides R URL connections, downloads, streaming callbacks, multipart form uploads, and concurrent multi transfers backed by libcurl.",
+      "evidence": [
+        "Ubuntu Noble metadata shows r-cran-curl Build-Depends on libcurl4-openssl-dev and the r-cran-curl binary Depends on libcurl4t64.",
+        "The package description says curl() and curl_download() add HTTPS, FTPS, gzip, authentication, and streaming support for R.",
+        "The package manpages document curl_fetch_memory, curl_fetch_disk, curl_fetch_stream, curl_fetch_multi, multi_run, and multi_download."
+      ]
+    },
+    {
+      "name": "GDAL",
+      "source_package": "gdal",
+      "category": "geospatial data library",
+      "dependency_kind": "build-and-runtime",
+      "runtime_dependency_type": "direct",
+      "package_dependencies": [
+        {
+          "package": "gdal (source)",
+          "usage": "compile-time",
+          "libcurl_dependency": "libcurl4-gnutls-dev"
+        },
+        {
+          "package": "libgdal34t64",
+          "usage": "runtime",
+          "libcurl_dependency": "libcurl4t64"
+        }
+      ],
+      "runtime_functionality": "Enables remote dataset access over HTTP/FTP and cloud/object-store virtual filesystems such as /vsicurl/, /vsicurl_streaming/, /vsis3/, and /vsigs/, plus HTTP-backed service drivers.",
+      "evidence": [
+        "Ubuntu Noble metadata shows gdal Build-Depends on libcurl4-gnutls-dev and libgdal34t64 Depends on libcurl4t64.",
+        "GDAL's cpl_http.h describes an interface for downloading HTTP and FTP documents, and cpl_http.cpp identifies itself as a libcurl-based HTTP client.",
+        "GDAL source installs curl-backed virtual filesystem handlers in cpl_vsil_curl_streaming.cpp and uses CPLHTTPFetch() in AWS and Google Cloud support code."
+      ]
+    },
+    {
+      "name": "OSTree",
+      "source_package": "ostree",
+      "category": "immutable system and image update tooling",
+      "dependency_kind": "build-and-runtime",
+      "runtime_dependency_type": "direct",
+      "package_dependencies": [
+        {
+          "package": "ostree (source)",
+          "usage": "compile-time",
+          "libcurl_dependency": "libcurl4-gnutls-dev"
+        },
+        {
+          "package": "libostree-1-1",
+          "usage": "runtime",
+          "libcurl_dependency": "libcurl3t64-gnutls"
+        }
+      ],
+      "runtime_functionality": "Pulls commit objects, summary files, and static deltas from remote OSTree repositories over HTTP(S) during atomic operating-system or application-image update workflows.",
+      "evidence": [
+        "Ubuntu Noble metadata shows ostree Build-Depends on libcurl4-gnutls-dev and libostree-1-1 Depends on libcurl3t64-gnutls.",
+        "OSTree ships a dedicated src/libostree/ostree-fetcher-curl.c that sets libcurl URL, authentication, proxy, TLS, and protocol options for fetch requests.",
+        "OSTree code paths such as ostree_repo_remote_fetch_summary(), ostree_repo_pull_from_remotes_async(), and ostree_sysroot_upgrader_pull() fetch remote update data."
+      ]
+    },
+    {
+      "name": "librepo",
+      "source_package": "librepo",
+      "category": "repository downloader library",
+      "dependency_kind": "build-and-runtime",
+      "runtime_dependency_type": "direct",
+      "package_dependencies": [
+        {
+          "package": "librepo (source)",
+          "usage": "compile-time",
+          "libcurl_dependency": "libcurl4-gnutls-dev"
+        },
+        {
+          "package": "librepo0",
+          "usage": "runtime",
+          "libcurl_dependency": "libcurl3t64-gnutls"
+        }
+      ],
+      "runtime_functionality": "Downloads RPM repository metadata such as repomd.xml, mirrorlists, and metalinks, and can fetch packages from repository mirrors.",
+      "evidence": [
+        "Ubuntu Noble metadata shows librepo Build-Depends on libcurl4-gnutls-dev and librepo0 Depends on libcurl3t64-gnutls.",
+        "The librepo package description says it provides C and Python APIs to download repository metadata.",
+        "librepo examples such as examples/c/download_repo.c and download_packages.c use LR_YUMREPO to fetch repository metadata and packages, while internal headers track mirrorlist and metalink handling."
+      ]
+    },
+    {
+      "name": "HTSlib",
+      "source_package": "htslib",
+      "category": "bioinformatics data access library",
+      "dependency_kind": "build-and-runtime",
+      "runtime_dependency_type": "direct",
+      "package_dependencies": [
+        {
+          "package": "htslib (source)",
+          "usage": "compile-time",
+          "libcurl_dependency": "libcurl4-gnutls-dev"
+        },
+        {
+          "package": "libhts3t64",
+          "usage": "runtime",
+          "libcurl_dependency": "libcurl3t64-gnutls"
+        }
+      ],
+      "runtime_functionality": "Streams remote genomics files and indexes over HTTP(S) and FTP, and supports cloud backends such as Amazon S3 and Google Cloud Storage.",
+      "evidence": [
+        "Ubuntu Noble metadata shows htslib Build-Depends on libcurl4-gnutls-dev and libhts3t64 Depends on libcurl3t64-gnutls.",
+        "HTSlib's hfile_libcurl.c is the libcurl backend for low-level file streams and handles HTTP headers, HTTP requests, and FTP behavior.",
+        "HTSlib NEWS states that HTTPS, HTTP, FTP, Amazon S3, and GCS access are available when HTSlib is configured to use libcurl, and the source tree includes hfile_s3.c, hfile_s3_write.c, and hfile_gcs.c."
+      ]
+    },
+    {
+      "name": "pacman/libalpm",
+      "source_package": "pacman-package-manager",
+      "category": "package manager core library",
+      "dependency_kind": "build-and-runtime",
+      "runtime_dependency_type": "direct",
+      "package_dependencies": [
+        {
+          "package": "pacman-package-manager (source)",
+          "usage": "compile-time",
+          "libcurl_dependency": "libcurl4-openssl-dev"
+        },
+        {
+          "package": "libalpm13t64",
+          "usage": "runtime",
+          "libcurl_dependency": "libcurl4t64"
+        }
+      ],
+      "runtime_functionality": "Synchronizes package databases, downloads package files from configured servers, and supports parallel package downloads during package manager operations.",
+      "evidence": [
+        "Ubuntu Noble metadata shows pacman-package-manager Build-Depends on libcurl4-openssl-dev and libalpm13t64 Depends on libcurl4t64.",
+        "pacman's package description says it can download packages from a remote server.",
+        "lib/libalpm/alpm.c includes curl/curl.h, initializes curl_multi, and tracks parallel downloads, while pacman source and docs describe sync database updates, repository servers, and concurrent download streams."
+      ]
+    },
+    {
+      "name": "HTTPDirFS",
+      "source_package": "httpdirfs-fuse",
+      "category": "FUSE filesystem",
+      "dependency_kind": "build-and-runtime",
+      "runtime_dependency_type": "direct",
+      "package_dependencies": [
+        {
+          "package": "httpdirfs-fuse (source)",
+          "usage": "compile-time",
+          "libcurl_dependency": "libcurl4-openssl-dev"
+        },
+        {
+          "package": "httpdirfs",
+          "usage": "runtime",
+          "libcurl_dependency": "libcurl4t64"
+        }
+      ],
+      "runtime_functionality": "Mounts HTTP directory listings as a FUSE filesystem and serves file reads through authenticated and ranged HTTP requests.",
+      "evidence": [
+        "Ubuntu Noble metadata shows httpdirfs-fuse Build-Depends on libcurl4-openssl-dev and the httpdirfs binary Depends on libcurl4t64.",
+        "The package description and README say HTTPDirFS mounts HTTP directory listings through FUSE and supports HTTP basic authentication.",
+        "HTTPDirFS README documents the need for HTTP Range Requests, and src/link.c sets libcurl URL, authentication, proxy, and CURLOPT_RANGE options while checking for Accept-Ranges support."
+      ]
+    },
+    {
+      "name": "fwupd",
+      "source_package": "fwupd",
+      "category": "firmware update daemon",
+      "dependency_kind": "build-and-runtime",
+      "runtime_dependency_type": "direct",
+      "package_dependencies": [
+        {
+          "package": "fwupd (source)",
+          "usage": "compile-time",
+          "libcurl_dependency": "libcurl4-gnutls-dev"
+        },
+        {
+          "package": "fwupd",
+          "usage": "runtime",
+          "libcurl_dependency": "libcurl3t64-gnutls"
+        }
+      ],
+      "runtime_functionality": "Downloads LVFS or vendor remote metadata and firmware update payloads so the daemon can stage and apply device firmware updates.",
+      "evidence": [
+        "Ubuntu Noble metadata shows fwupd Build-Depends on libcurl4-gnutls-dev and the fwupd binary Depends on libcurl3t64-gnutls.",
+        "fwupd README says the project is configured by default to download firmware from the Linux Vendor Firmware Service, and documents commands that download LVFS metadata and then download and apply updates.",
+        "fwupd source implements metadata download paths such as fu_util_download_metadata() and persists downloaded remote metadata and signatures in remotes.d."
+      ]
+    }
+  ]
+}
