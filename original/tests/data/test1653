@@ -16,5 +16,11 @@ unittest
 <name>
 urlapi port number parsing
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
 </client>
 </testcase>

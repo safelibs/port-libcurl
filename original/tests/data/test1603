@@ -18,5 +18,11 @@ unittest
 <name>
 Internal hash add, retrieval, deletion testing
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
 </client>
 </testcase>

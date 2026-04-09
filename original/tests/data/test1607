@@ -1,22 +1,53 @@
 <testcase>
 <info>
 <keywords>
-unittest
+HTTP
+HTTP GET
+multi
 CURLOPT_RESOLVE
 </keywords>
 </info>
+
+<reply>
+<data>
+HTTP/1.1 200 OK
+Date: Tue, 09 Nov 2010 14:49:00 GMT
+Server: test-server/fake
+Last-Modified: Tue, 13 Jun 2000 12:10:00 GMT
+ETag: "21025-dc7-39462498"
+Accept-Ranges: bytes
+Content-Length: 6
+Connection: close
+Content-Type: text/html
+Funny-head: yesyes
+
+-foo-
+</data>
+</reply>
 
 #
 # Client-side
 <client>
 <server>
-none
+http
 </server>
-<features>
-unittest
-</features>
+<tool>
+lib%TESTNUMBER
+</tool>
 <name>
-CURLOPT_RESOLVE parsing
+public CURLOPT_RESOLVE replacement
 </name>
+<command>
+http://google.com:%HTTPPORT/%TESTNUMBER %HTTPPORT %HOSTIP
+</command>
 </client>
+
+<verify>
+<protocol crlf="yes">
+GET /%TESTNUMBER HTTP/1.1
+Host: google.com:%HTTPPORT
+Accept: */*
+
+</protocol>
+</verify>
 </testcase>

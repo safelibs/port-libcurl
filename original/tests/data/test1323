@@ -23,6 +23,12 @@ unittest
 <name>
 curlx_tvdiff
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
 </client>
 
 #

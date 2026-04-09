@@ -17,5 +17,11 @@ unittest
 <name>
 Curl_dedotdotify
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
 </client>
 </testcase>

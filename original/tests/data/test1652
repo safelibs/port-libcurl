@@ -16,5 +16,11 @@ unittest
 <name>
 infof
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
 </client>
 </testcase>

@@ -18,5 +18,11 @@ unittest
 <name>
 base64 encode/decode unit tests
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
 </client>
 </testcase>

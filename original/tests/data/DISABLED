@@ -43,8 +43,6 @@
 1184
 1209
 1211
-# fnmatch differences are just too common to make testing them sensible
-1307
 1316
 # test 1510 causes problems on the CI on github
 # example: https://travis-ci.org/curl/curl/builds/81633600

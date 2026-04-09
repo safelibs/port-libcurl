@@ -19,6 +19,9 @@ unittest
 <name>
 internal hash create/destroy testing
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
 <command>
 %TESTNUMBER
 </command>

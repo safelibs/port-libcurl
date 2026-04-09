@@ -19,5 +19,11 @@ DoH
 <name>
 DOH
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
 </client>
 </testcase>

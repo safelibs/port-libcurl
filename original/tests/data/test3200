@@ -18,6 +18,9 @@ unittest
 <name>
 curl_get_line unit tests
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
 <command>
 %LOGDIR/curl_get_line%TESTNUMBER
 </command>

@@ -10,21 +10,36 @@ netrc
 # Client-side
 <client>
 <server>
-none
+ftp
 </server>
 <features>
 unittest
 netrc
 </features>
 <name>
-netrc parsing unit tests
+netrc parsing public API replacement
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
 <command>
-%LOGDIR/netrc%TESTNUMBER
+ftp://mary:drfrank@%HOSTIP:%FTPPORT/ %LOGDIR/netrc%TESTNUMBER
 </command>
-<file name="%LOGDIR/netrc%TESTNUMBER">
-machine example.com login admin password passwd
-machine curl.example.com login none password none
+<file name="%LOGDIR/netrc%TESTNUMBER" >
+machine %HOSTIP login frankenstein password wrongone
+machine %HOSTIP login mary password yram
 </file>
 </client>
+
+<verify>
+<protocol crlf="yes">
+USER mary
+PASS drfrank
+PWD
+EPSV
+TYPE A
+LIST
+QUIT
+</protocol>
+</verify>
 </testcase>

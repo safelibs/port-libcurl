@@ -19,5 +19,11 @@ NTLM
 <name>
 NTLM unit tests
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
 </client>
 </testcase>

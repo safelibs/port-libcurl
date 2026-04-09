@@ -51,9 +51,9 @@ LIBS = $(BLANK_AT_MAKETIME)
 
 # Dependencies
 if USE_EXPLICIT_LIB_DEPS
-LDADD = $(LIBDIR)/libcurl-gnutls.la @LIBCURL_LIBS@
+LDADD = $(LIBDIR)/libcurl.la @LIBCURL_LIBS@
 else
-LDADD = $(LIBDIR)/libcurl-gnutls.la
+LDADD = $(LIBDIR)/libcurl.la
 endif
 
 # This might hold -Werror

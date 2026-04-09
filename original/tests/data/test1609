@@ -1,22 +1,60 @@
 <testcase>
+
 <info>
 <keywords>
-unittest
-CURLOPT_RESOLVE
+HTTP
+multi
+FAILURE
+resolve
 </keywords>
 </info>
 
-#
-# Client-side
+<reply>
+<data1>
+HTTP/1.1 200 OK
+Date: Thu, 03 Feb 2014 17:04:00 GMT
+Server: test-server/fake swsclose
+Connection: close
+Content-Type: text/html
+Content-Length: 6
+
+hello
+</data1>
+<data2>
+HTTP/1.1 200 OK
+Date: Thu, 03 Feb 2014 17:04:02 GMT
+Server: test-server/fake swsclose
+Connection: close
+Content-Type: text/html
+Content-Length: 6
+
+hello
+</data2>
+<datacheck>
+hello
+hello
+</datacheck>
+</reply>
+
 <client>
 <server>
-none
+http
 </server>
-<features>
-unittest
-</features>
+<tool>
+lib%TESTNUMBER
+</tool>
 <name>
-CURLOPT_RESOLVE parsing
+public DNS cache lifetime replacement for CURLOPT_RESOLVE internals
 </name>
+<command>
+path/%TESTNUMBER %HOSTIP %HTTPPORT
+</command>
 </client>
+
+<verify>
+<errorcode>
+0
+</errorcode>
+</verify>
+
 </testcase>

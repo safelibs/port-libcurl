@@ -18,5 +18,11 @@ unittest
 <name>
 unit tests for url.c
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
 </client>
 </testcase>

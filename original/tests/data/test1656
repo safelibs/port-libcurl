@@ -1,22 +1,48 @@
 <testcase>
 <info>
 <keywords>
-unittest
-Curl_x509_GTime2str
+HTTPS
+HTTP GET
 </keywords>
 </info>
 
 #
+# Server-side
+<reply>
+<data>
+</data>
+</reply>
+
+#
 # Client-side
 <client>
-<server>
-none
-</server>
 <features>
-unittest
+SSL
+!bearssl
+!mbedtls
+!rustls
+!wolfssl
 </features>
+<server>
+https
+</server>
+<tool>
+lib%TESTNUMBER
+</tool>
 <name>
-Curl_x509_GTime2str unit tests
+public certinfo replacement for x509 time formatting
 </name>
+<command>
+https://%HOSTIP:%HTTPSPORT/%TESTNUMBER
+</command>
 </client>
+
+<verify>
+<protocol>
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPSPORT
+Accept: */*
+
+</protocol>
+</verify>
 </testcase>

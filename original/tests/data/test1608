@@ -19,5 +19,11 @@ shuffle-dns
 <name>
 verify DNS shuffling
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
 </client>
 </testcase>

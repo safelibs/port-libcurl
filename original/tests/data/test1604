@@ -17,5 +17,11 @@ unittest
 <name>
 Test WIN32/MSDOS filename sanitization
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
 </client>
 </testcase>

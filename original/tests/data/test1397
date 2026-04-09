@@ -1,22 +1,43 @@
 <testcase>
 <info>
 <keywords>
-unittest
-Curl_cert_hostcheck
+HTTPS
+HTTP GET
+PEM certificate
 </keywords>
 </info>
 
 #
+# Server-side
+<reply>
+</reply>
+
+#
 # Client-side
 <client>
-<server>
-none
-</server>
 <features>
-unittest
+SSL
 </features>
+<server>
+https Server-localhost0h-sv.pem
+</server>
 <name>
-Curl_cert_hostcheck unit tests
+public verifyhost replacement for Curl_cert_hostcheck
 </name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+https://localhost:%HTTPSPORT/%TESTNUMBER %SRCDIR/certs/EdelCurlRoot-ca.crt
+</command>
+<precheck>
+perl -e "print 'Test requires default test server host' if ( '%HOSTIP' ne '127.0.0.1' );"
+</precheck>
 </client>
+
+<verify>
+<errorcode>
+60
+</errorcode>
+</verify>
 </testcase>
