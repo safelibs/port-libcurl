@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-09T08:10:16Z",
+  "generated_at": "2026-04-09T08:16:15Z",
   "source_file": "/home/yans/safelibs/port-libcurl/all_cves.json",
   "analysis_scope": "Non-memory-corruption CVEs from all_cves.json that may still matter to a Rust reimplementation of libcurl.",
   "selection_policy": {
@@ -25,14 +25,17 @@
       "CWE-590",
       "CWE-680",
       "CWE-825"
-    ]
+    ],
+    "explicit_inclusion_cves": {
+      "CVE-2009-2417": "Although tagged CWE-170, this is a certificate-name validation bypass caused by embedded NUL handling rather than a memory-corruption flaw."
+    }
   },
   "counts": {
     "source_total": 170,
-    "selected_relevant_non_memory": 106,
-    "excluded_memory_corruption_or_c_memory_specific": 64,
+    "selected_relevant_non_memory": 107,
+    "excluded_memory_corruption_or_c_memory_specific": 63,
     "selected_by_rust_relevance": {
-      "high": 100,
+      "high": 101,
       "medium": 6
     },
     "selected_by_category": {
@@ -42,7 +45,7 @@
       "cookies_hsts_and_origin_policy": 16,
       "credential_and_data_leakage": 11,
       "method_and_state_machine_semantics": 2,
-      "parsing_canonicalization_and_injection": 10,
+      "parsing_canonicalization_and_injection": 11,
       "permissions_and_delegation": 2,
       "platform_loading_and_packaging": 2,
       "randomness_and_nonce_generation": 2,
@@ -55,7 +58,7 @@
       "CWE-125": 5,
       "CWE-126": 13,
       "CWE-131": 6,
-      "CWE-170": 2,
+      "CWE-170": 1,
       "CWE-415": 6,
       "CWE-416": 7,
       "CWE-457": 2,
@@ -1046,9 +1049,9 @@
         "id": "CWE-325",
         "description": "Missing Cryptographic Step"
       },
-      "category": "certificate_and_transport_validation",
+      "category": "parsing_canonicalization_and_injection",
       "rust_relevance": "high",
-      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks.",
+      "rust_relevance_reason": "URL, path, and protocol parsing rules must be specified explicitly to avoid cross-protocol access, smuggling, injection, or trust-boundary breaks in Rust too.",
       "advisory_url": "https://curl.se/docs/CVE-2021-22946.html",
       "last_affected_version": "7.78.0"
     },
@@ -1816,6 +1819,23 @@
       "rust_relevance_reason": "Rust does not prevent recursion-driven crashes, infinite loops, unbounded allocation, or violations of documented callback limits.",
       "advisory_url": "https://curl.se/docs/CVE-2010-0734.html",
       "last_affected_version": "7.19.7"
+    },
+    {
+      "cve_id": "CVE-2009-2417",
+      "curl_id": "CURL-CVE-2009-2417",
+      "published": "2009-08-12T08:00:00.00Z",
+      "affects": "both",
+      "summary": "embedded zero in cert name",
+      "severity": "High",
+      "cwe": {
+        "id": "CWE-170",
+        "description": "Improper Null Termination"
+      },
+      "category": "certificate_and_transport_validation",
+      "rust_relevance": "high",
+      "rust_relevance_reason": "A Rust port will still broker TLS/SSH backends and must preserve identity, revocation, pinning, cipher, and downgrade checks. Although tagged CWE-170, this is a certificate-name validation bypass caused by embedded NUL handling rather than a memory-corruption flaw.",
+      "advisory_url": "https://curl.se/docs/CVE-2009-2417.html",
+      "last_affected_version": "7.19.5"
     },
     {
       "cve_id": "CVE-2009-0037",
