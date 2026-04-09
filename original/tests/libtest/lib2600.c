@@ -72,14 +72,20 @@ struct delayed_release {
   bool released;
 };
 
-static size_t discard_data(char *ptr, size_t size, size_t nmemb, void *userdata)
+static size_t discard_data(char *ptr,
+                           size_t size,
+                           size_t nmemb,
+                           void *userdata)
 {
   (void)ptr;
   (void)userdata;
   return size * nmemb;
 }
 
-static int set_socket_opt(curl_socket_t sock, int level, int optname, int value)
+static int set_socket_opt(curl_socket_t sock,
+                          int level,
+                          int optname,
+                          int value)
 {
   return setsockopt(sock, level, optname, (void *)&value, sizeof(value));
 }
@@ -605,7 +611,8 @@ static int run_happy_eyeballs_case(void)
 
   res = open_listener_v6(&slow, "::1", fast.port, SLOW_BACKLOG);
   if(res == TEST_ERR_FAILURE) {
-    fprintf(stderr, "IPv6 loopback unavailable, skipping Happy Eyeballs case\n");
+    fprintf(stderr,
+            "IPv6 loopback unavailable, skipping Happy Eyeballs case\n");
     close_socket_if_needed(&fast.sock);
     return 0;
   }
@@ -616,7 +623,8 @@ static int run_happy_eyeballs_case(void)
 
   res = saturate_v6_listener(&release, &slow);
   if(res == TEST_ERR_FAILURE) {
-    fprintf(stderr, "IPv6 backlog setup unavailable, skipping Happy Eyeballs case\n");
+    fprintf(stderr,
+            "IPv6 backlog setup unavailable, skipping Happy Eyeballs case\n");
     close_socket_if_needed(&slow.sock);
     close_socket_if_needed(&fast.sock);
     return 0;

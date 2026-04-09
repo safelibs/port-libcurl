@@ -25,7 +25,9 @@
 
 #include "memdebug.h"
 
-static int perform_auth_request(const char *url, long auth, const char *userpwd)
+static int perform_auth_request(const char *url,
+                                long auth,
+                                const char *userpwd)
 {
   CURL *curl = NULL;
   CURLcode res = CURLE_OK;
