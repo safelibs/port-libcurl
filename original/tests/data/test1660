@@ -31,11 +31,8 @@ Strict-Transport-Security: max-age=604800; includeSubDomains
 HSTS
 https
 </features>
-<setenv>
-CURL_HSTS_HTTP=yes
-</setenv>
 <server>
-http
+https
 </server>
 <name>
 public HSTS file load save and reload replacement
@@ -44,7 +41,7 @@ public HSTS file load save and reload replacement
 lib%TESTNUMBER
 </tool>
 <command>
-%TESTNUMBER %HOSTIP %HTTPPORT %NOLISTENPORT %LOGDIR/hsts-%TESTNUMBER.txt
+%TESTNUMBER %HOSTIP %HTTPSPORT %NOLISTENPORT %LOGDIR/hsts-%TESTNUMBER.txt
 </command>
 <file name="%LOGDIR/hsts-%TESTNUMBER.txt" mode="text">
 # Your HSTS cache. https://curl.se/docs/hsts.html
@@ -59,11 +56,11 @@ keep.example "20370319 01:02:03"
 </errorcode>
 <protocol crlf="yes">
 GET /%TESTNUMBER0001 HTTP/1.1
-Host: clear.example:%HTTPPORT
+Host: clear.example:%HTTPSPORT
 Accept: */*
 
 GET /%TESTNUMBER0002 HTTP/1.1
-Host: goodhsts.example:%HTTPPORT
+Host: goodhsts.example:%HTTPSPORT
 Accept: */*
 
 </protocol>

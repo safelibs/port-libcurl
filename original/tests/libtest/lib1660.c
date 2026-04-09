@@ -44,7 +44,7 @@ static CURLcode do_store_request(const char *host, const char *hostip,
   char url[256];
   char entry[256];
 
-  msnprintf(url, sizeof(url), "http://%s:%s/%s", host, port, path);
+  msnprintf(url, sizeof(url), "https://%s:%s/%s", host, port, path);
   msnprintf(entry, sizeof(entry), "%s:%s:%s", host, port, hostip);
 
   resolve = curl_slist_append(NULL, entry);
@@ -64,6 +64,8 @@ static CURLcode do_store_request(const char *host, const char *hostip,
   easy_setopt(curl, CURLOPT_HSTS, hstsfile);
   easy_setopt(curl, CURLOPT_HSTS_CTRL, CURLHSTS_ENABLE);
   easy_setopt(curl, CURLOPT_RESOLVE, resolve);
+  easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+  easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
   easy_setopt(curl, CURLOPT_PROXY, "");
   easy_setopt(curl, CURLOPT_NOPROXY, "*");
   easy_setopt(curl, CURLOPT_WRITEFUNCTION, discard_cb);
@@ -97,6 +99,8 @@ static CURLcode do_reload_request(const char *port, const char *hstsfile,
   easy_setopt(curl, CURLOPT_URL, url);
   easy_setopt(curl, CURLOPT_HSTS, hstsfile);
   easy_setopt(curl, CURLOPT_HSTS_CTRL, CURLHSTS_ENABLE);
+  easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+  easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
   easy_setopt(curl, CURLOPT_PROXY, "");
   easy_setopt(curl, CURLOPT_NOPROXY, "*");
   easy_setopt(curl, CURLOPT_WRITEFUNCTION, discard_cb);
@@ -179,14 +183,14 @@ int test(char *URL)
 {
   CURLcode res = CURLE_OK;
   const char *hostip = libtest_arg2;
-  const char *httpport = libtest_arg3;
+  const char *httpsport = libtest_arg3;
   const char *nlistenport = test_argc > 4 ? test_argv[4] : NULL;
   const char *hstsfile = test_argc > 5 ? test_argv[5] : NULL;
   char setpath[64];
   char addpath[64];
 
-  if(!hostip || !httpport || !nlistenport || !hstsfile) {
-    fprintf(stderr, "Pass hostip, httpport, nlistenport and hstsfile\n");
+  if(!hostip || !httpsport || !nlistenport || !hstsfile) {
+    fprintf(stderr, "Pass hostip, httpsport, nlistenport and hstsfile\n");
     return TEST_ERR_USAGE;
   }
 
@@ -196,7 +200,7 @@ int test(char *URL)
   }
 
   msnprintf(setpath, sizeof(setpath), "%s0001", URL);
-  res = do_store_request("clear.example", hostip, httpport, hstsfile,
+  res = do_store_request("clear.example", hostip, httpsport, hstsfile,
                          setpath);
   if(res)
     goto test_cleanup;
@@ -208,7 +212,7 @@ int test(char *URL)
     goto test_cleanup;
 
   msnprintf(addpath, sizeof(addpath), "%s0002", URL);
-  res = do_store_request("goodhsts.example", hostip, httpport, hstsfile,
+  res = do_store_request("goodhsts.example", hostip, httpsport, hstsfile,
                          addpath);
   if(res)
     goto test_cleanup;
