@@ -1,60 +1,25 @@
 <testcase>
 <info>
 <keywords>
-HTTP
-verbose logs
+Happy Eyeballs
+CURLOPT_RESOLVE
+connect timing
 </keywords>
 </info>
-
-# Server-side
-<reply>
-<data1>
-HTTP/1.1 200 OK
-Date: Tue, 09 Nov 2010 14:49:00 GMT
-Server: test-server/fake
-Content-Length: 47
-
-file contents should appear once for each file
-</data1>
-<data2>
-HTTP/1.1 200 OK
-Date: Tue, 09 Nov 2010 14:49:00 GMT
-Server: test-server/fake
-Content-Length: 47
-
-file contents should appear once for each file
-</data2>
-<data3>
-HTTP/1.1 200 OK
-Date: Tue, 09 Nov 2010 14:49:00 GMT
-Server: test-server/fake
-Content-Length: 47
-
-file contents should appear once for each file
-</data3>
-<data4>
-HTTP/1.1 200 OK
-Date: Tue, 09 Nov 2010 14:49:00 GMT
-Server: test-server/fake
-Content-Length: 47
-
-file contents should appear once for each file
-</data4>
-</reply>
 
 # Client-side
 <client>
 <server>
-http
+none
 </server>
 <tool>
 lib%TESTNUMBER
 </tool>
 <name>
-public connection management replacement
+public Happy Eyeballs timing replacement
 </name>
 <command>
-http://%HOSTIP:%HTTPPORT/path/%TESTNUMBER %HOSTIP %HTTPPORT
+nothing
 </command>
 </client>
 </testcase>
