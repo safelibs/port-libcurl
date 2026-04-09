@@ -1,7 +1,6 @@
 <testcase>
 <info>
 <keywords>
-unittest
 curlopt_dns_shuffle_addresses
 </keywords>
 </info>
@@ -16,7 +15,7 @@ none
 shuffle-dns
 </features>
 <name>
-verify DNS shuffling
+public DNS shuffle replacement
 </name>
 <tool>
 lib%TESTNUMBER

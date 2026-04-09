@@ -1,0 +1,71 @@
+/***************************************************************************
+ *                                  _   _ ____  _
+ *  Project                     ___| | | |  _ \| |
+ *                             / __| | | | |_) | |
+ *                            | (__| |_| |  _ <| |___
+ *                             \___|\___/|_| \_\_____|
+ *
+ * Copyright (C) Daniel Stenberg, <daniel@haxx.se>, et al.
+ *
+ * This software is licensed as described in the file COPYING, which
+ * you should have received as part of this distribution. The terms
+ * are also available at https://curl.se/docs/copyright.html.
+ *
+ * You may opt to use, copy, modify, merge, publish, distribute and/or sell
+ * copies of the Software, and permit persons to whom the Software is
+ * furnished to do so, under the terms of the COPYING file.
+ *
+ * This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
+ * KIND, either express or implied.
+ *
+ * SPDX-License-Identifier: curl
+ *
+ ***************************************************************************/
+#include "test.h"
+
+#include "memdebug.h"
+
+static size_t discard_response(char *ptr, size_t size, size_t nmemb,
+                               void *userdata)
+{
+  (void)ptr;
+  (void)userdata;
+  return size * nmemb;
+}
+
+int test(char *URL)
+{
+  CURL *curl = NULL;
+  CURLcode res = TEST_ERR_MAJOR_BAD;
+
+  if(curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK) {
+    fprintf(stderr, "curl_global_init() failed\n");
+    return TEST_ERR_MAJOR_BAD;
+  }
+
+  curl = curl_easy_init();
+  if(!curl) {
+    fprintf(stderr, "curl_easy_init() failed\n");
+    goto test_cleanup;
+  }
+
+  test_setopt(curl, CURLOPT_URL, URL);
+  test_setopt(curl, CURLOPT_DOH_URL, libtest_arg2);
+  test_setopt(curl, CURLOPT_DOH_SSL_VERIFYPEER, 0L);
+  test_setopt(curl, CURLOPT_DOH_SSL_VERIFYHOST, 0L);
+  test_setopt(curl, CURLOPT_IPRESOLVE, (long)CURL_IPRESOLVE_V4);
+  test_setopt(curl, CURLOPT_HEADER, 1L);
+  test_setopt(curl, CURLOPT_WRITEFUNCTION, discard_response);
+  test_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+  test_setopt(curl, CURLOPT_TIMEOUT_MS, 3000L);
+  test_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 3000L);
+  test_setopt(curl, CURLOPT_PROXY, "");
+  test_setopt(curl, CURLOPT_NOPROXY, "*");
+
+  res = curl_easy_perform(curl);
+
+test_cleanup:
+  curl_easy_cleanup(curl);
+  curl_global_cleanup();
+  return (int)res;
+}
