@@ -2,52 +2,28 @@
 
 <info>
 <keywords>
-HTTP
-multi
-FAILURE
-resolve
+CURLOPT_RESOLVE
+DNS
+share
+replacement
 </keywords>
 </info>
 
-<reply>
-<data1>
-HTTP/1.1 200 OK
-Date: Thu, 03 Feb 2014 17:04:00 GMT
-Server: test-server/fake swsclose
-Connection: close
-Content-Type: text/html
-Content-Length: 6
-
-hello
-</data1>
-<data2>
-HTTP/1.1 200 OK
-Date: Thu, 03 Feb 2014 17:04:02 GMT
-Server: test-server/fake swsclose
-Connection: close
-Content-Type: text/html
-Content-Length: 6
-
-hello
-</data2>
-<datacheck>
-hello
-hello
-</datacheck>
-</reply>
-
 <client>
-<server>
+<features>
 http
+</features>
+<server>
+none
 </server>
 <tool>
 lib%TESTNUMBER
 </tool>
 <name>
-public DNS cache lifetime replacement for CURLOPT_RESOLVE internals
+public CURLOPT_RESOLVE cached replacement entry update
 </name>
 <command>
-path/%TESTNUMBER %HOSTIP %HTTPPORT
+%TESTNUMBER
 </command>
 </client>
 
