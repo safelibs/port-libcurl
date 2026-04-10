@@ -33,4 +33,29 @@ impl super::TlsBackendAdapter for OpenSslBackend {
             session_cache_scope: cache_fragment().to_string(),
         }
     }
+
+    fn session_cache_key(&self, policy: &super::TlsPolicy, host: &str, port: u16) -> String {
+        format!(
+            "{};openssl;{};{};verify={};host={};alpn={}",
+            policy.session_cache_scope,
+            host,
+            port,
+            policy.verify_peer,
+            policy.verify_host,
+            policy.alpn
+        )
+    }
+
+    fn classify_connect_error(&self, message: &str) -> crate::abi::CURLcode {
+        if message.contains("pinned public key") {
+            90
+        } else if message.contains("certificate")
+            || message.contains("verify")
+            || message.contains("host")
+        {
+            60
+        } else {
+            super::default_connect_error()
+        }
+    }
 }

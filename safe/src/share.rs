@@ -5,6 +5,7 @@ use crate::abi::{
     CURL_LOCK_DATA_DNS, CURL_LOCK_DATA_HSTS, CURL_LOCK_DATA_PSL, CURL_LOCK_DATA_SSL_SESSION,
 };
 use core::ffi::{c_char, c_int, c_void};
+use std::collections::HashMap;
 
 type CurlShareLockFn =
     Option<unsafe extern "C" fn(*mut CURL, curl_lock_data, curl_lock_access, *mut c_void)>;
@@ -18,6 +19,7 @@ struct ShareHandle {
     state: ShareState,
     cookies: crate::http::cookies::CookieStore,
     hsts: crate::http::hsts::HstsStore,
+    ssl_sessions: HashMap<String, Vec<u8>>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -79,6 +81,7 @@ pub(crate) unsafe fn share_init() -> *mut CURLSH {
         state: ShareState::default(),
         cookies: crate::http::cookies::CookieStore::default(),
         hsts: crate::http::hsts::HstsStore::default(),
+        ssl_sessions: HashMap::new(),
     }))
     .cast()
 }
@@ -126,8 +129,11 @@ pub(crate) fn share_setopt_int(
             }
             handle.state.unshare(data);
             match data {
-                CURL_LOCK_DATA_COOKIE => handle.cookies = crate::http::cookies::CookieStore::default(),
+                CURL_LOCK_DATA_COOKIE => {
+                    handle.cookies = crate::http::cookies::CookieStore::default()
+                }
                 CURL_LOCK_DATA_HSTS => handle.hsts = crate::http::hsts::HstsStore::default(),
+                CURL_LOCK_DATA_SSL_SESSION => handle.ssl_sessions.clear(),
                 _ => {}
             }
             CURLSHE_OK
@@ -218,6 +224,17 @@ pub(crate) fn with_shared_hsts_mut<R>(
         return None;
     }
     Some(f(&mut share.hsts))
+}
+
+pub(crate) fn with_shared_ssl_sessions_mut<R>(
+    share_handle: Option<usize>,
+    f: impl FnOnce(&mut HashMap<String, Vec<u8>>) -> R,
+) -> Option<R> {
+    let share = unsafe { handle_mut(share_handle? as *mut CURLSH) }?;
+    if !share.state.is_shared(CURL_LOCK_DATA_SSL_SESSION) {
+        return None;
+    }
+    Some(f(&mut share.ssl_sessions))
 }
 
 fn touch_state(

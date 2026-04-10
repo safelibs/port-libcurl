@@ -29,6 +29,7 @@ fn main() {
     let forwarders = manifest_dir.join("c_shim/forwarders.c");
     let variadic = manifest_dir.join("c_shim/variadic.c");
     let mprintf = manifest_dir.join("c_shim/mprintf.c");
+    let tls_backend = manifest_dir.join("c_shim/tls_backend.c");
     let reference_script = manifest_dir.join("scripts/build-reference-curl.sh");
 
     for path in [
@@ -38,6 +39,7 @@ fn main() {
         &forwarders,
         &variadic,
         &mprintf,
+        &tls_backend,
         &reference_script,
         &manifest_dir.join("src/lib.rs"),
         &manifest_dir.join("src/abi/connect_only.rs"),
@@ -73,6 +75,16 @@ fn main() {
     compile_c_shims(&manifest_dir, flavor);
 
     println!("cargo:rustc-link-lib=dl");
+    match flavor {
+        "openssl" => {
+            println!("cargo:rustc-link-lib=ssl");
+            println!("cargo:rustc-link-lib=crypto");
+        }
+        "gnutls" => {
+            println!("cargo:rustc-link-lib=gnutls");
+        }
+        _ => unreachable!(),
+    }
     println!(
         "cargo:rustc-cdylib-link-arg=-Wl,-soname,{}",
         symbol_manifest.soname
@@ -190,6 +202,7 @@ fn compile_c_shims(manifest_dir: &Path, flavor: &str) {
         .file(manifest_dir.join("c_shim/forwarders.c"))
         .file(manifest_dir.join("c_shim/variadic.c"))
         .file(manifest_dir.join("c_shim/mprintf.c"))
+        .file(manifest_dir.join("c_shim/tls_backend.c"))
         .flag_if_supported("-std=c11")
         .flag_if_supported("-fPIC")
         .flag_if_supported("-Wall")
@@ -204,6 +217,14 @@ fn compile_c_shims(manifest_dir: &Path, flavor: &str) {
             Some(reference_abs_define.as_str()),
         )
         .define("BRIDGE_FLAVOR", Some(flavor_define.as_str()))
+        .define(
+            if flavor == "openssl" {
+                "SAFE_TLS_OPENSSL"
+            } else {
+                "SAFE_TLS_GNUTLS"
+            },
+            Some("1"),
+        )
         .compile("port_libcurl_safe_shims");
 }
 

@@ -12,8 +12,9 @@ use crate::http::hsts;
 use crate::http::request::{self, Origin};
 use crate::http::response::{self, HEADER_ORIGIN_1XX, HEADER_ORIGIN_HEADER};
 use core::ffi::{c_int, c_long, c_void};
+use std::fs::File;
 use std::collections::HashMap;
-use std::io::{ErrorKind, Read, Write};
+use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream, ToSocketAddrs};
 use std::os::fd::AsRawFd;
 use std::sync::{Mutex, OnceLock};
@@ -33,6 +34,7 @@ const CURLE_WRITE_ERROR: CURLcode = 23;
 const CURLE_READ_ERROR: CURLcode = 26;
 const CURLE_OPERATION_TIMEDOUT: CURLcode = 28;
 const CURLE_RANGE_ERROR: CURLcode = 33;
+const CURLE_FILE_COULDNT_READ_FILE: CURLcode = 37;
 const CURLE_ABORTED_BY_CALLBACK: CURLcode = 42;
 const CURLE_SEND_ERROR: CURLcode = 55;
 const CURLE_RECV_ERROR: CURLcode = 56;
@@ -50,6 +52,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const IO_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const HEADER_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 const REDIRECT_LIMIT: usize = 8;
+const CURL_HTTP_VERSION_1_0: c_long = 1;
+const CURL_HTTP_VERSION_1_1: c_long = 2;
 
 unsafe extern "C" {
     static mut stdin: *mut c_void;
@@ -93,6 +97,52 @@ pub(crate) struct ConnectOnlySession {
 struct ConnectedStream {
     stream: TcpStream,
     info: RecordedTransferInfo,
+}
+
+enum TransportStream {
+    Plain(TcpStream),
+    Tls(crate::tls::TlsConnection),
+}
+
+impl TransportStream {
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        match self {
+            Self::Plain(stream) => stream.set_read_timeout(timeout),
+            Self::Tls(stream) => stream.set_read_timeout(timeout),
+        }
+    }
+
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        match self {
+            Self::Plain(stream) => stream.set_write_timeout(timeout),
+            Self::Tls(stream) => stream.set_write_timeout(timeout),
+        }
+    }
+}
+
+impl Read for TransportStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Plain(stream) => stream.read(buf),
+            Self::Tls(stream) => stream.read(buf),
+        }
+    }
+}
+
+impl Write for TransportStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Plain(stream) => stream.write(buf),
+            Self::Tls(stream) => stream.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Plain(stream) => stream.flush(),
+            Self::Tls(stream) => stream.flush(),
+        }
+    }
 }
 
 struct ParsedUrl {
@@ -491,6 +541,9 @@ fn perform_transfer(handle_key: usize, plan: TransferPlan) -> CURLcode {
 
     let metadata = perform::snapshot_metadata(handle);
     let callbacks = perform::snapshot_callbacks(handle);
+    if matches!(plan.route.handler, crate::protocols::SchemeHandler::File) {
+        return perform_file_transfer(handle, &metadata, callbacks);
+    }
     let Some(initial_url) = metadata.url.clone() else {
         perform::set_error_buffer(handle, "No URL set");
         return CURLE_URL_MALFORMAT;
@@ -683,6 +736,100 @@ fn finalize_hsts(
     result
 }
 
+fn perform_file_transfer(
+    handle: *mut CURL,
+    metadata: &EasyMetadata,
+    callbacks: EasyCallbacks,
+) -> CURLcode {
+    let Some(url) = metadata.url.as_deref() else {
+        perform::set_error_buffer(handle, "No URL set");
+        return CURLE_URL_MALFORMAT;
+    };
+    let path = match crate::protocols::file::decode_url_path(url) {
+        Ok(path) => path,
+        Err(code) => {
+            perform::set_error_buffer(handle, "Malformed file:// URL");
+            return code;
+        }
+    };
+    let started = Instant::now();
+    let mut info = RecordedTransferInfo::default();
+
+    if metadata.upload {
+        let mut file = match File::create(&path) {
+            Ok(file) => file,
+            Err(_) => {
+                perform::set_error_buffer(handle, "Failed to open local file for upload");
+                return CURLE_READ_ERROR;
+            }
+        };
+        let mut buf = vec![0u8; 16 * 1024];
+        loop {
+            let read = match read_request_body_chunk(handle, callbacks, &mut buf) {
+                Ok(read) => read,
+                Err(code) => return code,
+            };
+            if read == 0 {
+                break;
+            }
+            if file.write_all(&buf[..read]).is_err() {
+                perform::set_error_buffer(handle, "Failed writing local file data");
+                return CURLE_WRITE_ERROR;
+            }
+        }
+    } else {
+        let mut file = match File::open(&path) {
+            Ok(file) => file,
+            Err(_) => {
+                perform::set_error_buffer(handle, "Failed to open local file");
+                return CURLE_FILE_COULDNT_READ_FILE;
+            }
+        };
+        let file_len = match file.metadata() {
+            Ok(metadata) => metadata.len() as usize,
+            Err(_) => 0,
+        };
+        if metadata.resume_from > 0
+            && file
+                .seek(SeekFrom::Start(metadata.resume_from.max(0) as u64))
+                .is_err()
+        {
+            perform::set_error_buffer(handle, "Failed seeking local file");
+            return CURLE_RANGE_ERROR;
+        }
+        if !metadata.nobody {
+            let mut low_speed = LowSpeedGuard::new(metadata.low_speed);
+            let announced = file_len.saturating_sub(metadata.resume_from.max(0) as usize);
+            if let Err(code) = invoke_progress_callback(callbacks, 0, Some(announced)) {
+                return code;
+            }
+            let mut buf = vec![0u8; 16 * 1024];
+            loop {
+                match file.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(read) => {
+                        let mut chunk = buf[..read].to_vec();
+                        if let Err(code) = deliver_write(handle, callbacks, &mut chunk) {
+                            return code;
+                        }
+                        if let Err(code) = low_speed.observe_progress(read) {
+                            return code;
+                        }
+                    }
+                    Err(_) => {
+                        perform::set_error_buffer(handle, "Failed reading local file");
+                        return CURLE_FILE_COULDNT_READ_FILE;
+                    }
+                }
+            }
+        }
+    }
+
+    info.total_time_us = elapsed_us(started.elapsed());
+    perform::record_transfer_info(handle, info);
+    crate::abi::CURLE_OK
+}
+
 fn connect_only_transfer(
     handle: *mut CURL,
     request: &RequestContext,
@@ -752,6 +899,17 @@ fn execute_http_transfer(
         establish_proxy_tunnel(&mut stream, handle, callbacks, metadata, request)?
     } else {
         Vec::new()
+    };
+    let mut stream = if let Some(policy) = plan.tls.as_ref() {
+        TransportStream::Tls(crate::tls::connect(
+            stream,
+            &request.target_host,
+            request.target_port,
+            metadata,
+            policy,
+        )?)
+    } else {
+        TransportStream::Plain(stream)
     };
     write_request(&mut stream, request)?;
     if metadata.upload {
@@ -826,7 +984,7 @@ fn flush_cookie_jar(handle: *mut CURL, metadata: &EasyMetadata) {
 }
 
 fn transfer_body(
-    stream: &mut TcpStream,
+    stream: &mut TransportStream,
     handle: *mut CURL,
     callbacks: EasyCallbacks,
     mut body_prefix: Vec<u8>,
@@ -940,7 +1098,7 @@ fn write_proxy_connect_request(
         .map_err(|_| CURLE_SEND_ERROR)
 }
 
-fn write_request(stream: &mut TcpStream, request: &RequestContext) -> Result<(), CURLcode> {
+fn write_request(stream: &mut TransportStream, request: &RequestContext) -> Result<(), CURLcode> {
     let mut encoded = String::new();
     encoded.push_str(&request.method);
     encoded.push(' ');
@@ -992,7 +1150,7 @@ fn append_headers(encoded: &mut String, headers: &[String]) {
 }
 
 fn write_request_body(
-    stream: &mut TcpStream,
+    stream: &mut TransportStream,
     handle: *mut CURL,
     callbacks: EasyCallbacks,
     request: &RequestContext,
@@ -1019,7 +1177,7 @@ fn write_request_body(
 }
 
 fn write_chunked_request_body(
-    stream: &mut TcpStream,
+    stream: &mut TransportStream,
     handle: *mut CURL,
     callbacks: EasyCallbacks,
 ) -> Result<(), CURLcode> {
@@ -1045,7 +1203,7 @@ fn write_chunked_request_body(
 }
 
 fn write_request_trailers(
-    stream: &mut TcpStream,
+    stream: &mut TransportStream,
     callbacks: EasyCallbacks,
 ) -> Result<(), CURLcode> {
     let Some(callback) = callbacks.trailer_function else {
@@ -1115,7 +1273,7 @@ fn read_proxy_connect_response(
 }
 
 fn read_response_meta_with_prefix(
-    stream: &mut TcpStream,
+    stream: &mut TransportStream,
     handle: *mut CURL,
     callbacks: EasyCallbacks,
     metadata: &EasyMetadata,
@@ -1315,9 +1473,36 @@ fn requires_reference_backend(
         return false;
     };
     let _ = authority;
-    route.requires_reference_multi(metadata.http_version)
-        || route.tls
-        || !route.uses_shared_http() && !route.uses_shared_websocket()
+    if route.requires_reference_multi(metadata.http_version) {
+        return true;
+    }
+
+    match route.handler {
+        crate::protocols::SchemeHandler::Http => {
+            route.tls
+                && !matches!(
+                    metadata.http_version,
+                    CURL_HTTP_VERSION_1_0 | CURL_HTTP_VERSION_1_1
+                )
+        }
+        crate::protocols::SchemeHandler::WebSocket => route.tls,
+        crate::protocols::SchemeHandler::File => false,
+        crate::protocols::SchemeHandler::Ftp
+        | crate::protocols::SchemeHandler::Imap
+        | crate::protocols::SchemeHandler::Pop3
+        | crate::protocols::SchemeHandler::Smtp
+        | crate::protocols::SchemeHandler::Ldap
+        | crate::protocols::SchemeHandler::Smb
+        | crate::protocols::SchemeHandler::Telnet
+        | crate::protocols::SchemeHandler::Tftp
+        | crate::protocols::SchemeHandler::Dict
+        | crate::protocols::SchemeHandler::Gopher
+        | crate::protocols::SchemeHandler::Rtsp
+        | crate::protocols::SchemeHandler::Mqtt
+        | crate::protocols::SchemeHandler::Scp
+        | crate::protocols::SchemeHandler::Sftp
+        | crate::protocols::SchemeHandler::Unknown => true,
+    }
 }
 
 fn read_request_body_chunk(
