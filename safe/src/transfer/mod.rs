@@ -5,7 +5,7 @@ use crate::abi::{
 use crate::conn::cache::{parse_proxy_authority, parse_url_authority, ConnectionCacheKey};
 use crate::conn::filter::{ConnectionFilterChain, ConnectionFilterStep};
 use crate::dns::{ConnectOverride, ResolveOverride, ResolverLease, ResolverOwner};
-use crate::easy::perform::{self, EasyCallbacks, EasyMetadata};
+use crate::easy::perform::{self, EasyCallbacks, EasyMetadata, RecordedTransferInfo};
 use core::ffi::{c_int, c_long, c_void};
 use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
@@ -77,6 +77,11 @@ struct ConnectOnlySession {
     paused: c_int,
 }
 
+struct ConnectedStream {
+    stream: TcpStream,
+    info: RecordedTransferInfo,
+}
+
 struct ParsedUrl {
     scheme: String,
     host: String,
@@ -114,6 +119,7 @@ struct TransferOutcome {
     response_code: u16,
     retry_after: Option<curl_off_t>,
     location: Option<String>,
+    info: RecordedTransferInfo,
 }
 
 struct LowSpeedGuard {
@@ -464,7 +470,10 @@ fn perform_transfer(handle_key: usize, plan: TransferPlan) -> CURLcode {
             Err(code) => return code,
         };
 
-        perform::record_transfer_info(handle, outcome.response_code as c_long, outcome.retry_after);
+        let mut recorded_info = outcome.info.clone();
+        recorded_info.response_code = outcome.response_code as c_long;
+        recorded_info.retry_after = outcome.retry_after;
+        perform::record_transfer_info(handle, recorded_info);
 
         if let Some(next_url) = redirected_url(
             &current_url,
@@ -488,10 +497,13 @@ fn connect_only_transfer(
     handle: *mut CURL,
     request: &RequestContext,
 ) -> Result<TransferOutcome, CURLcode> {
-    let stream = connect_stream(request, &[])?;
+    let ConnectedStream { stream, mut info } = connect_stream(request, &[])?;
     stream
         .set_nonblocking(true)
         .map_err(|_| CURLE_COULDNT_CONNECT)?;
+    info.pretransfer_time_us = info.connect_time_us;
+    info.starttransfer_time_us = info.connect_time_us;
+    info.total_time_us = info.connect_time_us;
     connect_only_registry()
         .lock()
         .expect("connect-only registry mutex poisoned")
@@ -502,6 +514,7 @@ fn connect_only_transfer(
         response_code: 0,
         retry_after: None,
         location: None,
+        info,
     })
 }
 
@@ -512,7 +525,11 @@ fn execute_http_transfer(
     metadata: &EasyMetadata,
     callbacks: EasyCallbacks,
 ) -> Result<TransferOutcome, CURLcode> {
-    let mut stream = connect_stream(request, &plan.resolve_overrides)?;
+    let request_started = Instant::now();
+    let ConnectedStream {
+        mut stream,
+        mut info,
+    } = connect_stream(request, &plan.resolve_overrides)?;
     stream
         .set_read_timeout(Some(IO_POLL_INTERVAL))
         .map_err(|_| CURLE_COULDNT_CONNECT)?;
@@ -525,11 +542,14 @@ fn execute_http_transfer(
     }
 
     let response = read_response_meta(&mut stream, handle, callbacks, metadata)?;
+    info.pretransfer_time_us = info.connect_time_us;
+    info.starttransfer_time_us = elapsed_us(request_started.elapsed());
     let mut outcome = TransferOutcome {
         result: crate::abi::CURLE_OK,
         response_code: response.status_code,
         retry_after: response.retry_after,
         location: response.location,
+        info,
     };
 
     let resume_requested = metadata.resume_from > 0;
@@ -554,6 +574,7 @@ fn execute_http_transfer(
         } else if outcome.result == CURLE_HTTP_RETURNED_ERROR {
             perform::set_error_buffer(handle, "The requested URL returned error");
         }
+        outcome.info.total_time_us = elapsed_us(request_started.elapsed());
         return Ok(outcome);
     }
 
@@ -567,6 +588,7 @@ fn execute_http_transfer(
         response.content_length,
         &mut low_speed,
     )?;
+    outcome.info.total_time_us = elapsed_us(request_started.elapsed());
     Ok(outcome)
 }
 
@@ -617,18 +639,26 @@ fn transfer_body(
 fn connect_stream(
     request: &RequestContext,
     resolve_overrides: &[ResolveOverride],
-) -> Result<TcpStream, CURLcode> {
+) -> Result<ConnectedStream, CURLcode> {
     let (host, port) = request
         .proxy
         .as_ref()
         .map(|(host, port)| (host.as_str(), *port))
         .unwrap_or((&request.target_host, request.target_port));
+    let resolve_started = Instant::now();
     let addrs = resolve_addresses(host, port, resolve_overrides)?;
+    let namelookup_time_us = elapsed_us(resolve_started.elapsed());
 
     let mut last_error = None;
     for addr in addrs {
         match TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT) {
-            Ok(stream) => return Ok(stream),
+            Ok(stream) => {
+                let connect_time_us = elapsed_us(resolve_started.elapsed());
+                return Ok(ConnectedStream {
+                    info: describe_connection(&stream, namelookup_time_us, connect_time_us),
+                    stream,
+                });
+            }
             Err(error) => last_error = Some(error),
         }
     }
@@ -885,6 +915,28 @@ fn deliver_write(
         perform::set_error_buffer(handle, "Failed writing received data");
         Err(CURLE_WRITE_ERROR)
     }
+}
+
+fn describe_connection(
+    stream: &TcpStream,
+    namelookup_time_us: curl_off_t,
+    connect_time_us: curl_off_t,
+) -> RecordedTransferInfo {
+    let peer_addr = stream.peer_addr().ok();
+    let local_addr = stream.local_addr().ok();
+    RecordedTransferInfo {
+        primary_ip: peer_addr.as_ref().map(|addr| addr.ip().to_string()),
+        primary_port: peer_addr.as_ref().map(|addr| addr.port()),
+        local_ip: local_addr.as_ref().map(|addr| addr.ip().to_string()),
+        local_port: local_addr.as_ref().map(|addr| addr.port()),
+        namelookup_time_us,
+        connect_time_us,
+        ..RecordedTransferInfo::default()
+    }
+}
+
+fn elapsed_us(duration: Duration) -> curl_off_t {
+    duration.as_micros().min(curl_off_t::MAX as u128) as curl_off_t
 }
 
 fn read_request_body_chunk(

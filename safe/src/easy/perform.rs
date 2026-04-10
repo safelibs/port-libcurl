@@ -7,7 +7,7 @@ use crate::multi::state::MultiState;
 use crate::transfer::{map_multi_code, LowSpeedWindow, EASY_PERFORM_WAIT_TIMEOUT_MS};
 use core::ffi::{c_char, c_int, c_long, c_void};
 use std::collections::HashMap;
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::sync::{Mutex, OnceLock};
 
 pub(crate) type CurlWriteCallback =
@@ -69,7 +69,16 @@ const CURLOPT_TRAILERFUNCTION: CURLoption = 20283;
 const CURLOPT_TRAILERDATA: CURLoption = 10284;
 
 const CURLINFO_RESPONSE_CODE: u32 = 0x200000 + 2;
+const CURLINFO_PRIMARY_IP: u32 = 0x100000 + 32;
+const CURLINFO_PRIMARY_PORT: u32 = 0x200000 + 40;
+const CURLINFO_LOCAL_IP: u32 = 0x100000 + 41;
+const CURLINFO_LOCAL_PORT: u32 = 0x200000 + 42;
 const CURLINFO_SCHEME: u32 = 0x100000 + 49;
+const CURLINFO_TOTAL_TIME_T: u32 = 0x600000 + 50;
+const CURLINFO_NAMELOOKUP_TIME_T: u32 = 0x600000 + 51;
+const CURLINFO_CONNECT_TIME_T: u32 = 0x600000 + 52;
+const CURLINFO_PRETRANSFER_TIME_T: u32 = 0x600000 + 53;
+const CURLINFO_STARTTRANSFER_TIME_T: u32 = 0x600000 + 54;
 const CURLINFO_RETRY_AFTER: u32 = 0x600000 + 57;
 const CURL_ERROR_SIZE: usize = 256;
 
@@ -197,8 +206,32 @@ pub(crate) struct EasyCallbacks {
 #[derive(Clone, Default)]
 struct EasyInfo {
     response_code: c_long,
+    primary_ip: Option<CString>,
+    primary_port: c_long,
+    local_ip: Option<CString>,
+    local_port: c_long,
+    total_time_us: curl_off_t,
+    namelookup_time_us: curl_off_t,
+    connect_time_us: curl_off_t,
+    pretransfer_time_us: curl_off_t,
+    starttransfer_time_us: curl_off_t,
     retry_after: curl_off_t,
     retry_after_set: bool,
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct RecordedTransferInfo {
+    pub response_code: c_long,
+    pub primary_ip: Option<String>,
+    pub primary_port: Option<u16>,
+    pub local_ip: Option<String>,
+    pub local_port: Option<u16>,
+    pub total_time_us: curl_off_t,
+    pub namelookup_time_us: curl_off_t,
+    pub connect_time_us: curl_off_t,
+    pub pretransfer_time_us: curl_off_t,
+    pub starttransfer_time_us: curl_off_t,
+    pub retry_after: Option<curl_off_t>,
 }
 
 #[derive(Clone)]
@@ -484,11 +517,7 @@ pub(crate) fn clear_transfer_info(handle: *mut CURL) {
     }
 }
 
-pub(crate) fn record_transfer_info(
-    handle: *mut CURL,
-    response_code: c_long,
-    retry_after: Option<curl_off_t>,
-) {
+pub(crate) fn record_transfer_info(handle: *mut CURL, info: RecordedTransferInfo) {
     if handle.is_null() {
         return;
     }
@@ -497,8 +526,17 @@ pub(crate) fn record_transfer_info(
         .expect("easy registry mutex poisoned")
         .get_mut(&(handle as usize))
     {
-        shadow.info.response_code = response_code;
-        if let Some(retry_after) = retry_after {
+        shadow.info.response_code = info.response_code;
+        shadow.info.primary_ip = info.primary_ip.and_then(to_c_string);
+        shadow.info.primary_port = info.primary_port.map(c_long::from).unwrap_or(0);
+        shadow.info.local_ip = info.local_ip.and_then(to_c_string);
+        shadow.info.local_port = info.local_port.map(c_long::from).unwrap_or(0);
+        shadow.info.total_time_us = info.total_time_us;
+        shadow.info.namelookup_time_us = info.namelookup_time_us;
+        shadow.info.connect_time_us = info.connect_time_us;
+        shadow.info.pretransfer_time_us = info.pretransfer_time_us;
+        shadow.info.starttransfer_time_us = info.starttransfer_time_us;
+        if let Some(retry_after) = info.retry_after {
             shadow.info.retry_after = retry_after;
             shadow.info.retry_after_set = true;
         }
@@ -513,17 +551,15 @@ pub(crate) fn easy_getinfo_long(
     if handle.is_null() || value.is_null() {
         return Some(CURLE_BAD_FUNCTION_ARGUMENT);
     }
-    if info != CURLINFO_RESPONSE_CODE {
-        return None;
-    }
-
-    let response_code = registry()
-        .lock()
-        .expect("easy registry mutex poisoned")
-        .get(&(handle as usize))
-        .map(|shadow| shadow.info.response_code)
-        .unwrap_or(0);
-    unsafe { *value = response_code };
+    let guard = registry().lock().expect("easy registry mutex poisoned");
+    let info_values = guard.get(&(handle as usize)).map(|shadow| &shadow.info);
+    let result = match info {
+        CURLINFO_RESPONSE_CODE => info_values.map(|info| info.response_code).unwrap_or(0),
+        CURLINFO_PRIMARY_PORT => info_values.map(|info| info.primary_port).unwrap_or(0),
+        CURLINFO_LOCAL_PORT => info_values.map(|info| info.local_port).unwrap_or(0),
+        _ => return None,
+    };
+    unsafe { *value = result };
     Some(crate::abi::CURLE_OK)
 }
 
@@ -535,22 +571,31 @@ pub(crate) fn easy_getinfo_string(
     if handle.is_null() || value.is_null() {
         return Some(CURLE_BAD_FUNCTION_ARGUMENT);
     }
-    if info != CURLINFO_SCHEME {
-        return None;
-    }
 
-    let scheme = registry()
-        .lock()
-        .expect("easy registry mutex poisoned")
-        .get(&(handle as usize))
-        .and_then(|shadow| shadow.metadata.url.as_deref())
-        .and_then(|url| url.split_once("://").map(|(scheme, _)| scheme))
-        .unwrap_or("http")
-        .to_ascii_lowercase();
+    let guard = registry().lock().expect("easy registry mutex poisoned");
+    let shadow = guard.get(&(handle as usize));
     unsafe {
-        *value = match scheme.as_str() {
-            "https" => c"https".as_ptr().cast_mut(),
-            _ => c"http".as_ptr().cast_mut(),
+        *value = match info {
+            CURLINFO_SCHEME => {
+                let scheme = shadow
+                    .and_then(|shadow| shadow.metadata.url.as_deref())
+                    .and_then(|url| url.split_once("://").map(|(scheme, _)| scheme))
+                    .unwrap_or("http")
+                    .to_ascii_lowercase();
+                match scheme.as_str() {
+                    "https" => c"https".as_ptr().cast_mut(),
+                    _ => c"http".as_ptr().cast_mut(),
+                }
+            }
+            CURLINFO_PRIMARY_IP => shadow
+                .and_then(|shadow| shadow.info.primary_ip.as_ref())
+                .map(|value| value.as_ptr().cast_mut())
+                .unwrap_or_else(|| c"".as_ptr().cast_mut()),
+            CURLINFO_LOCAL_IP => shadow
+                .and_then(|shadow| shadow.info.local_ip.as_ref())
+                .map(|value| value.as_ptr().cast_mut())
+                .unwrap_or_else(|| c"".as_ptr().cast_mut()),
+            _ => return None,
         };
     }
     Some(crate::abi::CURLE_OK)
@@ -564,22 +609,33 @@ pub(crate) fn easy_getinfo_off_t(
     if handle.is_null() || value.is_null() {
         return Some(CURLE_BAD_FUNCTION_ARGUMENT);
     }
-    if info != CURLINFO_RETRY_AFTER {
-        return None;
-    }
-
-    let retry_after = registry()
-        .lock()
-        .expect("easy registry mutex poisoned")
-        .get(&(handle as usize))
-        .and_then(|shadow| {
-            shadow
-                .info
-                .retry_after_set
-                .then_some(shadow.info.retry_after)
-        })
-        .unwrap_or(0);
-    unsafe { *value = retry_after };
+    let guard = registry().lock().expect("easy registry mutex poisoned");
+    let shadow = guard.get(&(handle as usize));
+    let result = match info {
+        CURLINFO_RETRY_AFTER => shadow
+            .and_then(|shadow| {
+                shadow
+                    .info
+                    .retry_after_set
+                    .then_some(shadow.info.retry_after)
+            })
+            .unwrap_or(0),
+        CURLINFO_TOTAL_TIME_T => shadow.map(|shadow| shadow.info.total_time_us).unwrap_or(0),
+        CURLINFO_NAMELOOKUP_TIME_T => shadow
+            .map(|shadow| shadow.info.namelookup_time_us)
+            .unwrap_or(0),
+        CURLINFO_CONNECT_TIME_T => shadow
+            .map(|shadow| shadow.info.connect_time_us)
+            .unwrap_or(0),
+        CURLINFO_PRETRANSFER_TIME_T => shadow
+            .map(|shadow| shadow.info.pretransfer_time_us)
+            .unwrap_or(0),
+        CURLINFO_STARTTRANSFER_TIME_T => shadow
+            .map(|shadow| shadow.info.starttransfer_time_us)
+            .unwrap_or(0),
+        _ => return None,
+    };
+    unsafe { *value = result };
     Some(crate::abi::CURLE_OK)
 }
 
@@ -794,6 +850,10 @@ fn collect_slist_strings(mut list: *mut curl_slist) -> Vec<String> {
         list = unsafe { (*list).next };
     }
     values
+}
+
+fn to_c_string(value: String) -> Option<CString> {
+    CString::new(value).ok()
 }
 
 fn push_auth_part(parts: &mut Vec<String>, label: &str, value: Option<&str>) {
