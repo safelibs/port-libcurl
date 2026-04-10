@@ -398,11 +398,13 @@ unsafe extern "C" fn reference_push_callback(
         )
     };
 
+    unsafe { crate::protocols::capture_push_headers(headers, num_headers) };
     let decision = if let Some(push_cb) = push_cb {
         unsafe { push_cb(parent, easy_handle, num_headers, headers, push_userp) }
     } else {
         CURL_PUSH_DENY
     };
+    crate::protocols::release_push_headers(headers);
     if decision != CURL_PUSH_OK {
         return decision;
     }

@@ -76,6 +76,8 @@ pub(crate) struct TransferPlan {
     pub resolver: ResolverLease,
     pub resolve_overrides: Vec<ResolveOverride>,
     pub connect_override: Option<ConnectOverride>,
+    pub route: crate::protocols::TransferRoute,
+    pub tls: Option<crate::tls::TlsPolicy>,
     pub filters: ConnectionFilterChain,
     pub low_speed: LowSpeedWindow,
     pub connect_only: bool,
@@ -224,6 +226,12 @@ pub(crate) fn build_plan(metadata: &EasyMetadata, resolver_owner: ResolverOwner)
             host: String::new(),
             port: 0,
         });
+    let route = crate::protocols::route_scheme(
+        &authority.scheme,
+        metadata.connect_mode,
+        metadata.http_version,
+    );
+    let tls = crate::tls::policy_for_route(route, metadata);
     let connect_override = metadata
         .connect_overrides
         .iter()
@@ -307,10 +315,12 @@ pub(crate) fn build_plan(metadata: &EasyMetadata, resolver_owner: ResolverOwner)
         resolver,
         resolve_overrides: metadata.resolve_overrides.clone(),
         connect_override,
+        route,
+        tls,
         filters,
         low_speed: metadata.low_speed,
         connect_only: metadata.connect_only,
-        reference_backend: requires_reference_backend(metadata),
+        reference_backend: requires_reference_backend(metadata, route),
     }
 }
 
@@ -481,6 +491,9 @@ fn perform_transfer(handle_key: usize, plan: TransferPlan) -> CURLcode {
 
     let metadata = perform::snapshot_metadata(handle);
     let callbacks = perform::snapshot_callbacks(handle);
+    if let Some(code) = crate::protocols::execute_route(handle, plan.route, &metadata, callbacks) {
+        return code;
+    }
     let Some(initial_url) = metadata.url.clone() else {
         perform::set_error_buffer(handle, "No URL set");
         return CURLE_URL_MALFORMAT;
@@ -1288,7 +1301,10 @@ fn elapsed_us(duration: Duration) -> curl_off_t {
     duration.as_micros().min(curl_off_t::MAX as u128) as curl_off_t
 }
 
-fn requires_reference_backend(metadata: &EasyMetadata) -> bool {
+fn requires_reference_backend(
+    metadata: &EasyMetadata,
+    route: crate::protocols::TransferRoute,
+) -> bool {
     let Some(url) = metadata.url.as_deref() else {
         return false;
     };
@@ -1301,15 +1317,9 @@ fn requires_reference_backend(metadata: &EasyMetadata) -> bool {
     let Some(authority) = parse_url_authority(url) else {
         return false;
     };
-    !matches!(
-        crate::protocols::route_scheme(
-            &authority.scheme,
-            metadata.connect_mode,
-            metadata.http_version
-        ),
-        crate::protocols::TransferRouting::NativeHttp
-            | crate::protocols::TransferRouting::NativeWebSocket
-    )
+    let _ = authority;
+    route.requires_reference_multi(metadata.http_version)
+        || (route.is_http_family() && route.tls)
 }
 
 fn read_request_body_chunk(
