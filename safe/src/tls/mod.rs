@@ -90,6 +90,16 @@ impl TlsConnection {
     ) -> std::io::Result<()> {
         self.stream.set_write_timeout(timeout)
     }
+
+    pub(crate) fn into_plain_stream(mut self) -> TcpStream {
+        if !self.raw.is_null() {
+            unsafe { curl_safe_tls_close(self.raw) };
+            self.raw = core::ptr::null_mut();
+        }
+        let stream = unsafe { core::ptr::read(&self.stream) };
+        core::mem::forget(self);
+        stream
+    }
 }
 
 impl Drop for TlsConnection {

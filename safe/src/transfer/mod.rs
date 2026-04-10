@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream, ToSocketAddrs};
-use std::os::fd::{AsRawFd, IntoRawFd};
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -70,7 +70,35 @@ unsafe extern "C" {
     static mut stdout: *mut c_void;
     fn fread(ptr: *mut c_void, size: usize, nmemb: usize, stream: *mut c_void) -> usize;
     fn fwrite(ptr: *const c_void, size: usize, nmemb: usize, stream: *mut c_void) -> usize;
+    fn connect(fd: c_int, addr: *const crate::abi::sockaddr, len: u32) -> c_int;
     fn close(fd: c_int) -> c_int;
+}
+
+#[repr(C)]
+struct in_addr {
+    s_addr: u32,
+}
+
+#[repr(C)]
+struct sockaddr_in {
+    sin_family: u16,
+    sin_port: u16,
+    sin_addr: in_addr,
+    sin_zero: [u8; 8],
+}
+
+#[repr(C)]
+struct in6_addr {
+    s6_addr: [u8; 16],
+}
+
+#[repr(C)]
+struct sockaddr_in6 {
+    sin6_family: u16,
+    sin6_port: u16,
+    sin6_flowinfo: u32,
+    sin6_addr: in6_addr,
+    sin6_scope_id: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -665,7 +693,7 @@ fn perform_transfer(handle_key: usize, plan: TransferPlan) -> CURLcode {
         );
 
         let outcome = if plan.connect_only {
-            connect_only_transfer(handle, &request)
+            connect_only_transfer(handle, &request, callbacks)
         } else {
             execute_http_transfer(
                 handle,
@@ -915,11 +943,12 @@ fn perform_file_transfer(
 fn connect_only_transfer(
     handle: *mut CURL,
     request: &RequestContext,
+    callbacks: EasyCallbacks,
 ) -> Result<TransferOutcome, CURLcode> {
     let ConnectedStream {
         mut stream,
         mut info,
-    } = connect_stream(request, &[])?;
+    } = connect_stream(request, &[], callbacks)?;
     let websocket = if request.websocket_style {
         Some(crate::ws::WebSocketSession::handshake(
             &mut stream,
@@ -970,7 +999,7 @@ fn execute_http_transfer(
     let ConnectedStream {
         mut stream,
         mut info,
-    } = connect_stream(request, &plan.resolve_overrides)?;
+    } = connect_stream(request, &plan.resolve_overrides, callbacks)?;
     stream
         .set_read_timeout(Some(IO_POLL_INTERVAL))
         .map_err(|_| CURLE_COULDNT_CONNECT)?;
@@ -1114,6 +1143,7 @@ pub(crate) fn transfer_body(
 fn connect_stream(
     request: &RequestContext,
     resolve_overrides: &[ResolveOverride],
+    callbacks: EasyCallbacks,
 ) -> Result<ConnectedStream, CURLcode> {
     let (host, port) = request
         .proxy
@@ -1126,7 +1156,7 @@ fn connect_stream(
 
     let mut last_error = None;
     for addr in addrs {
-        match TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT) {
+        match connect_addr_stream(callbacks, &addr) {
             Ok(stream) => {
                 let connect_time_us = elapsed_us(resolve_started.elapsed());
                 return Ok(ConnectedStream {
@@ -1156,8 +1186,7 @@ pub(crate) fn connect_protocol_transport(
 
     let mut last_error = None;
     for addr in addrs {
-        notify_open_socket(callbacks, &addr)?;
-        match TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT) {
+        match connect_addr_stream(callbacks, &addr) {
             Ok(stream) => {
                 let connect_time_us = elapsed_us(resolve_started.elapsed());
                 let info = describe_connection(&stream, namelookup_time_us, connect_time_us);
@@ -1186,7 +1215,7 @@ pub(crate) struct ConnectedTransport {
 pub(crate) fn close_transport(stream: TransportStream, callbacks: EasyCallbacks) {
     match stream {
         TransportStream::Plain(stream) => close_plain_stream(stream, callbacks),
-        TransportStream::Tls(stream) => drop(stream),
+        TransportStream::Tls(stream) => close_plain_stream(stream.into_plain_stream(), callbacks),
     }
 }
 
@@ -1199,16 +1228,59 @@ fn record_certinfo(handle: *mut CURL, enabled: bool, connection: &crate::tls::Tl
     }
 }
 
-fn notify_open_socket(callbacks: EasyCallbacks, addr: &SocketAddr) -> Result<(), CURLcode> {
-    let Some(callback) = callbacks.open_socket_function else {
-        return Ok(());
-    };
+enum ConnectTarget {
+    Callback {
+        addr: crate::abi::sockaddr,
+        addrlen: u32,
+    },
+    V4(sockaddr_in),
+    V6(sockaddr_in6),
+}
 
+impl ConnectTarget {
+    fn as_raw(&self) -> (*const crate::abi::sockaddr, u32) {
+        match self {
+            Self::Callback { addr, addrlen } => (addr as *const _, *addrlen),
+            Self::V4(addr) => (
+                addr as *const _ as *const crate::abi::sockaddr,
+                core::mem::size_of::<sockaddr_in>() as u32,
+            ),
+            Self::V6(addr) => (
+                addr as *const _ as *const crate::abi::sockaddr,
+                core::mem::size_of::<sockaddr_in6>() as u32,
+            ),
+        }
+    }
+}
+
+fn connect_target_for_addr(addr: &SocketAddr) -> ConnectTarget {
+    match addr {
+        SocketAddr::V4(v4) => ConnectTarget::V4(sockaddr_in {
+            sin_family: AF_INET as u16,
+            sin_port: v4.port().to_be(),
+            sin_addr: in_addr {
+                s_addr: u32::from_ne_bytes(v4.ip().octets()),
+            },
+            sin_zero: [0; 8],
+        }),
+        SocketAddr::V6(v6) => ConnectTarget::V6(sockaddr_in6 {
+            sin6_family: AF_INET6 as u16,
+            sin6_port: v6.port().to_be(),
+            sin6_flowinfo: v6.flowinfo(),
+            sin6_addr: in6_addr {
+                s6_addr: v6.ip().octets(),
+            },
+            sin6_scope_id: v6.scope_id(),
+        }),
+    }
+}
+
+fn callback_sockaddr_for_addr(addr: &SocketAddr) -> crate::abi::curl_sockaddr {
     let family = match addr {
         SocketAddr::V4(_) => AF_INET,
         SocketAddr::V6(_) => AF_INET6,
     };
-    let mut sockaddr = crate::abi::curl_sockaddr {
+    let mut curl_addr = crate::abi::curl_sockaddr {
         family,
         socktype: SOCK_STREAM,
         protocol: IPPROTO_TCP,
@@ -1218,6 +1290,49 @@ fn notify_open_socket(callbacks: EasyCallbacks, addr: &SocketAddr) -> Result<(),
             sa_data: [0; 14],
         },
     };
+    if let SocketAddr::V4(v4) = addr {
+        let raw = sockaddr_in {
+            sin_family: AF_INET as u16,
+            sin_port: v4.port().to_be(),
+            sin_addr: in_addr {
+                s_addr: u32::from_ne_bytes(v4.ip().octets()),
+            },
+            sin_zero: [0; 8],
+        };
+        curl_addr.addr = unsafe { core::mem::transmute(raw) };
+        curl_addr.addrlen = core::mem::size_of::<sockaddr_in>() as u32;
+    }
+    curl_addr
+}
+
+fn callback_connect_target(
+    original: &SocketAddr,
+    callback_addr: &crate::abi::curl_sockaddr,
+) -> ConnectTarget {
+    if callback_addr.family == AF_INET
+        && callback_addr.addrlen as usize <= core::mem::size_of::<crate::abi::sockaddr>()
+    {
+        ConnectTarget::Callback {
+            addr: crate::abi::sockaddr {
+                sa_family: callback_addr.addr.sa_family,
+                sa_data: callback_addr.addr.sa_data,
+            },
+            addrlen: callback_addr.addrlen,
+        }
+    } else {
+        connect_target_for_addr(original)
+    }
+}
+
+fn open_socket_stream(
+    callbacks: EasyCallbacks,
+    addr: &SocketAddr,
+) -> Result<Option<TcpStream>, CURLcode> {
+    let Some(callback) = callbacks.open_socket_function else {
+        return Ok(None);
+    };
+
+    let mut sockaddr = callback_sockaddr_for_addr(addr);
     let fd = unsafe {
         callback(
             callbacks.open_socket_data as *mut c_void,
@@ -1228,10 +1343,27 @@ fn notify_open_socket(callbacks: EasyCallbacks, addr: &SocketAddr) -> Result<(),
     if fd == CURL_SOCKET_BAD {
         return Err(CURLE_COULDNT_CONNECT);
     }
-    unsafe {
-        close(fd as c_int);
+
+    let stream = unsafe { TcpStream::from_raw_fd(fd as c_int) };
+    if stream.peer_addr().is_ok() {
+        return Ok(Some(stream));
     }
-    Ok(())
+
+    let target = callback_connect_target(addr, &sockaddr);
+    let (raw_addr, raw_len) = target.as_raw();
+    if unsafe { connect(stream.as_raw_fd() as c_int, raw_addr, raw_len) } == 0 {
+        return Ok(Some(stream));
+    }
+
+    close_plain_stream(stream, callbacks);
+    Err(CURLE_COULDNT_CONNECT)
+}
+
+fn connect_addr_stream(callbacks: EasyCallbacks, addr: &SocketAddr) -> Result<TcpStream, CURLcode> {
+    if let Some(stream) = open_socket_stream(callbacks, addr)? {
+        return Ok(stream);
+    }
+    TcpStream::connect_timeout(addr, CONNECT_TIMEOUT).map_err(|_| CURLE_COULDNT_CONNECT)
 }
 
 fn close_plain_stream(stream: TcpStream, callbacks: EasyCallbacks) {
