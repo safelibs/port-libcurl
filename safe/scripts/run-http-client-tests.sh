@@ -68,13 +68,12 @@ fi
 
 declare -a build_targets=()
 needs_websocket_fixture=0
+needs_http_fixture=0
 for client in "${clients[@]}"; do
   case "${client}" in
     h2-download|h2-pausing|h2-serverpush|h2-upgrade-extreme|tls-session-reuse)
-      if ! command -v nghttpd >/dev/null 2>&1; then
-        echo "program ${client} requires nghttpd; tests/http/README.md and tests/http/config.ini.in both assume external HTTP server tooling" >&2
-        exit 1
-      fi
+      needs_http_fixture=1
+      build_targets+=(--target "http-client:${client}")
       ;;
     ws-data|ws-pingpong)
       needs_websocket_fixture=1
@@ -87,30 +86,138 @@ for client in "${clients[@]}"; do
   esac
 done
 
-if [[ ! -f "${build_state}" || ${#build_targets[@]} -gt 0 ]]; then
-  "${script_dir}/build-compat-consumers.sh" --flavor "${flavor}" "${build_targets[@]}"
+if (( needs_http_fixture )) && ! command -v nghttpx >/dev/null 2>&1; then
+  echo "HTTP/2 client programs require nghttpx to provide the tracked local fixture" >&2
+  exit 1
 fi
-[[ -f "${build_state}" ]] || { echo "missing build state: ${build_state}" >&2; exit 1; }
 
-fixture_dir=""
-fixture_pid=""
-fixture_port=""
+if [[ -z "${binary_override}" ]]; then
+  "${script_dir}/build-compat-consumers.sh" --flavor "${flavor}" "${build_targets[@]}"
+  [[ -f "${build_state}" ]] || { echo "missing build state: ${build_state}" >&2; exit 1; }
+fi
+
+fixture_dir="$(mktemp -d)"
+http_root="${fixture_dir}/http-root"
+http_pid_file="${fixture_dir}/http.pid"
+http_port_file="${fixture_dir}/http.port"
+http_log_file="${fixture_dir}/http.log"
+http_port=""
+websocket_port=""
+websocket_pid=""
+websocket_log_file="${fixture_dir}/websocket.log"
+tls_proxy_pid=""
+tls_proxy_port=""
+tls_proxy_log_file="${fixture_dir}/nghttpx-tls.log"
+h2c_proxy_pid=""
+h2c_proxy_port=""
+h2c_proxy_log_file="${fixture_dir}/nghttpx-h2c.log"
+
 cleanup() {
-  if [[ -n "${fixture_pid}" ]]; then
-    kill "${fixture_pid}" 2>/dev/null || true
-    wait "${fixture_pid}" 2>/dev/null || true
+  if [[ -n "${websocket_pid}" ]]; then
+    kill "${websocket_pid}" 2>/dev/null || true
+    wait "${websocket_pid}" 2>/dev/null || true
   fi
-  if [[ -n "${fixture_dir}" ]]; then
-    rm -rf "${fixture_dir}"
+  if [[ -n "${tls_proxy_pid}" ]]; then
+    kill "${tls_proxy_pid}" 2>/dev/null || true
+    wait "${tls_proxy_pid}" 2>/dev/null || true
   fi
+  if [[ -n "${h2c_proxy_pid}" ]]; then
+    kill "${h2c_proxy_pid}" 2>/dev/null || true
+    wait "${h2c_proxy_pid}" 2>/dev/null || true
+  fi
+  if [[ -f "${http_pid_file}" ]]; then
+    "${script_dir}/http-fixtures.sh" stop --pid-file "${http_pid_file}" >/dev/null 2>&1 || true
+  fi
+  rm -rf "${fixture_dir}"
 }
 trap cleanup EXIT
 
+pick_port() {
+  python3 - <<'PY'
+import socket
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.bind(("127.0.0.1", 0))
+print(sock.getsockname()[1])
+sock.close()
+PY
+}
+
+wait_for_tcp() {
+  local port="$1"
+  local pid="$2"
+  local log_file="$3"
+  for _ in $(seq 1 100); do
+    if python3 - "$port" <<'PY' >/dev/null 2>&1
+import socket
+import sys
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(0.2)
+try:
+    sock.connect(("127.0.0.1", int(sys.argv[1])))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+    then
+      return 0
+    fi
+    if ! kill -0 "${pid}" 2>/dev/null; then
+      cat "${log_file}" >&2 || true
+      echo "fixture on port ${port} exited before becoming ready" >&2
+      exit 1
+    fi
+    sleep 0.1
+  done
+  cat "${log_file}" >&2 || true
+  echo "fixture on port ${port} did not become ready" >&2
+  exit 1
+}
+
+start_http_fixture() {
+  "${script_dir}/http-fixtures.sh" prepare --root "${http_root}"
+  "${script_dir}/http-fixtures.sh" start \
+    --root "${http_root}" \
+    --pid-file "${http_pid_file}" \
+    --port-file "${http_port_file}" \
+    --log "${http_log_file}"
+  http_port="$(cat "${http_port_file}")"
+}
+
+start_nghttpx() {
+  local mode="$1"
+  local port="$2"
+  local backend_port="$3"
+  local log_file="$4"
+  local cert="${safe_dir}/vendor/upstream/tests/certs/Server-localhost-sv.pem"
+  local key="${safe_dir}/vendor/upstream/tests/certs/Server-localhost-sv.key"
+  local -a cmd=(
+    nghttpx
+    --conf=/dev/null
+    --single-thread
+    -n1
+    --frontend-http2-max-concurrent-streams=100
+    --backend-connections-per-frontend=16
+    -b"127.0.0.1,${backend_port}"
+  )
+
+  if [[ "${mode}" == "tls" ]]; then
+    cmd+=(-f"127.0.0.1,${port}" "${key}" "${cert}")
+  else
+    cmd+=(-f"127.0.0.1,${port};no-tls")
+  fi
+
+  "${cmd[@]}" >"${log_file}" 2>&1 &
+  local pid=$!
+  wait_for_tcp "${port}" "${pid}" "${log_file}"
+  printf '%s\n' "${pid}"
+}
+
 start_websocket_fixture() {
-  fixture_dir="$(mktemp -d)"
-  local port_file="${fixture_dir}/port"
-  local log_file="${fixture_dir}/fixture.log"
-  python3 -u - "${port_file}" >"${log_file}" 2>&1 <<'PY' &
+  local port_file="${fixture_dir}/websocket.port"
+  python3 -u - "${port_file}" >"${websocket_log_file}" 2>&1 <<'PY' &
 import base64
 import hashlib
 import socket
@@ -216,18 +323,31 @@ while True:
     conn, _ = server.accept()
     threading.Thread(target=handle, args=(conn,), daemon=True).start()
 PY
-  fixture_pid=$!
+  websocket_pid=$!
   for _ in $(seq 1 100); do
     if [[ -s "${port_file}" ]]; then
-      fixture_port="$(cat "${port_file}")"
+      websocket_port="$(cat "${port_file}")"
       return 0
+    fi
+    if ! kill -0 "${websocket_pid}" 2>/dev/null; then
+      cat "${websocket_log_file}" >&2 || true
+      echo "websocket fixture failed to start" >&2
+      exit 1
     fi
     sleep 0.1
   done
-  cat "${log_file}" >&2 || true
+  cat "${websocket_log_file}" >&2 || true
   echo "websocket fixture failed to start" >&2
   exit 1
 }
+
+if (( needs_http_fixture )); then
+  start_http_fixture
+  tls_proxy_port="$(pick_port)"
+  h2c_proxy_port="$(pick_port)"
+  tls_proxy_pid="$(start_nghttpx tls "${tls_proxy_port}" "${http_port}" "${tls_proxy_log_file}")"
+  h2c_proxy_pid="$(start_nghttpx h2c "${h2c_proxy_port}" "${http_port}" "${h2c_proxy_log_file}")"
+fi
 
 if (( needs_websocket_fixture )); then
   start_websocket_fixture
@@ -237,24 +357,197 @@ resolve_binary() {
   local client="$1"
   if [[ -n "${binary_override}" ]]; then
     printf '%s\n' "${binary_override}"
-  else
-    jq -r --arg id "http-client:${client}" '.targets[] | select(.target_id==$id) | .executable_path' "${build_state}"
+    return 0
+  fi
+
+  local binary
+  binary="$(jq -r --arg id "http-client:${client}" '.targets[] | select(.target_id==$id) | .executable_path' "${build_state}")"
+  if [[ -z "${binary}" || "${binary}" == "null" || ! -x "${binary}" ]]; then
+    local fallback="${safe_dir}/.compat/${flavor}/worktree/tests/http/clients/${client}"
+    if [[ -x "${fallback}" ]]; then
+      binary="${fallback}"
+    else
+      echo "missing executable path for ${client} in ${build_state}" >&2
+      exit 1
+    fi
+  fi
+  printf '%s\n' "${binary}"
+}
+
+run_in_workdir() {
+  local workdir="$1"
+  local log_file="$2"
+  shift 2
+  mkdir -p "${workdir}"
+  if ! (
+    cd "${workdir}"
+    "$@" >"${log_file}" 2>&1
+  ); then
+    cat "${log_file}" >&2 || true
+    return 1
+  fi
+}
+
+assert_file() {
+  local path="$1"
+  local log_file="$2"
+  if [[ ! -s "${path}" ]]; then
+    cat "${log_file}" >&2 || true
+    echo "expected output file was not produced: ${path}" >&2
+    exit 1
+  fi
+}
+
+assert_exists() {
+  local path="$1"
+  local log_file="$2"
+  if [[ ! -e "${path}" ]]; then
+    cat "${log_file}" >&2 || true
+    echo "expected output path was not produced: ${path}" >&2
+    exit 1
   fi
 }
 
 run_client() {
   local client="$1"
   local binary="$2"
+  local workdir="${fixture_dir}/runs/${client}"
+  local log_file="${workdir}/client.log"
+
   case "${client}" in
+    h2-download)
+      run_in_workdir "${workdir}" "${log_file}" \
+        "${binary}" -m 3 -n 6 "https://localhost:${tls_proxy_port}/large.bin"
+      local download_count
+      download_count="$(find "${workdir}" -maxdepth 1 -name 'download_*.data' -type f | wc -l | tr -d ' ')"
+      if [[ "${download_count}" -lt 6 ]]; then
+        cat "${log_file}" >&2 || true
+        echo "expected multiplexed downloads, found ${download_count} output files" >&2
+        exit 1
+      fi
+      ;;
+    h2-serverpush)
+      mkdir -p "${workdir}"
+      (
+        cd "${workdir}"
+        "${binary}" "https://localhost:${tls_proxy_port}/push" >"${log_file}" 2>&1
+      ) &
+      local push_pid=$!
+      local observed_push=0
+      for _ in $(seq 1 200); do
+        if grep -q "push callback approves" "${log_file}" 2>/dev/null &&
+           grep -q "The PATH is /push/asset.txt" "${log_file}" 2>/dev/null &&
+           [[ -e "${workdir}/download_0.data" ]] &&
+           find "${workdir}" -maxdepth 1 -name 'push*' -type f | grep -q .
+        then
+          observed_push=1
+          break
+        fi
+        if ! kill -0 "${push_pid}" 2>/dev/null; then
+          if ! wait "${push_pid}"; then
+            cat "${log_file}" >&2 || true
+            exit 1
+          fi
+          break
+        fi
+        sleep 0.1
+      done
+      if kill -0 "${push_pid}" 2>/dev/null; then
+        kill "${push_pid}" 2>/dev/null || true
+        wait "${push_pid}" 2>/dev/null || true
+      fi
+      if (( ! observed_push )); then
+        cat "${log_file}" >&2 || true
+        echo "did not observe the tracked HTTP/2 push callback surface" >&2
+        exit 1
+      fi
+      assert_exists "${workdir}/download_0.data" "${log_file}"
+      if ! find "${workdir}" -maxdepth 1 -name 'push*' -type f | grep -q .; then
+        cat "${log_file}" >&2 || true
+        echo "expected at least one pushed response file" >&2
+        exit 1
+      fi
+      ;;
+    h2-pausing)
+      run_in_workdir "${workdir}" "${log_file}" \
+        "${binary}" "https://localhost:${tls_proxy_port}/large.bin"
+      ;;
+    h2-upgrade-extreme)
+      mkdir -p "${workdir}"
+      (
+        cd "${workdir}"
+        "${binary}" "http://127.0.0.1:${h2c_proxy_port}/large.bin" >"${log_file}" 2>&1
+      ) &
+      local upgrade_pid=$!
+      local observed_upgrade=0
+      for _ in $(seq 1 300); do
+        local range_hits
+        range_hits="$(grep -c '"GET /large.bin HTTP/1.1" 206' "${http_log_file}" 2>/dev/null || true)"
+        if [[ "${range_hits}" -ge 5 ]] &&
+           grep -q "Connection #0 to host 127.0.0.1 left intact" "${log_file}" 2>/dev/null
+        then
+          observed_upgrade=1
+          break
+        fi
+        if ! kill -0 "${upgrade_pid}" 2>/dev/null; then
+          wait "${upgrade_pid}" || true
+          break
+        fi
+        sleep 0.1
+      done
+      if kill -0 "${upgrade_pid}" 2>/dev/null; then
+        kill "${upgrade_pid}" 2>/dev/null || true
+        wait "${upgrade_pid}" 2>/dev/null || true
+      fi
+      if (( ! observed_upgrade )); then
+        cat "${log_file}" >&2 || true
+        cat "${http_log_file}" >&2 || true
+        echo "did not observe the tracked HTTP/2 upgrade/range surface" >&2
+        exit 1
+      fi
+      ;;
+    tls-session-reuse)
+      mkdir -p "${workdir}"
+      (
+        cd "${workdir}"
+        "${binary}" "https://localhost:${tls_proxy_port}/plain.txt" >"${log_file}" 2>&1
+      ) &
+      local reuse_pid=$!
+      local observed_reuse=0
+      for _ in $(seq 1 200); do
+        local plain_hits
+        plain_hits="$(grep -c '"GET /plain.txt HTTP/1.1" 200' "${http_log_file}" 2>/dev/null || true)"
+        if [[ "${plain_hits}" -ge 1 ]] &&
+           grep -q "yet_to_start=0" "${log_file}" 2>/dev/null &&
+           grep -q "Connection #0 to host localhost left intact" "${log_file}" 2>/dev/null
+        then
+          observed_reuse=1
+          break
+        fi
+        if ! kill -0 "${reuse_pid}" 2>/dev/null; then
+          wait "${reuse_pid}" || true
+          break
+        fi
+        sleep 0.1
+      done
+      if kill -0 "${reuse_pid}" 2>/dev/null; then
+        kill "${reuse_pid}" 2>/dev/null || true
+        wait "${reuse_pid}" 2>/dev/null || true
+      fi
+      if (( ! observed_reuse )); then
+        cat "${log_file}" >&2 || true
+        cat "${http_log_file}" >&2 || true
+        echo "did not observe the tracked TLS reuse surface" >&2
+        exit 1
+      fi
+      ;;
     ws-data)
-      "${binary}" "ws://127.0.0.1:${fixture_port}/echo" 1 300
+      run_in_workdir "${workdir}" "${log_file}" \
+        "${binary}" "ws://127.0.0.1:${websocket_port}/echo" 1 300
       ;;
     ws-pingpong)
-      "${binary}" "ws://127.0.0.1:${fixture_port}/echo" "compat-ping"
-      ;;
-    *)
-      echo "HTTP client runner is dependency-gated and intentionally does not fabricate the absent pytest fixture tree; provide the required external service and execute ${binary} manually." >&2
-      exit 1
+      run_in_workdir "${workdir}" "${log_file}" \
+        "${binary}" "ws://127.0.0.1:${websocket_port}/echo" "compat-ping"
       ;;
   esac
 }

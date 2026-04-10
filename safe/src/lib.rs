@@ -16,18 +16,24 @@ pub mod abi {
 mod alloc;
 mod conn;
 mod dns;
+mod doh;
 mod easy;
 mod form;
 mod global;
 mod http;
+mod idn;
 mod mime;
 mod multi;
+mod protocols;
 mod rand;
 mod share;
 mod slist;
+mod ssh;
+mod tls;
 mod transfer;
 mod urlapi;
 mod version;
+mod vquic;
 mod ws;
 
 #[path = "abi/connect_only.rs"]

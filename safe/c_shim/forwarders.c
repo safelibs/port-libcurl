@@ -85,23 +85,8 @@ void *curl_safe_resolve_reference_symbol(const char *name) {
 typedef const char *(*curl_easy_strerror_fn)(CURLcode code);
 typedef const char *(*curl_multi_strerror_fn)(CURLMcode code);
 
-typedef char *(*curl_pushheader_byname_fn)(struct curl_pushheaders *h,
-                                           const char *name);
-typedef char *(*curl_pushheader_bynum_fn)(struct curl_pushheaders *h,
-                                          size_t num);
-
 #define RESOLVE_TYPED(name, type) ((type)bridge_resolve_symbol(name))
 
 const char *curl_easy_strerror(CURLcode code) {
   return RESOLVE_TYPED("curl_easy_strerror", curl_easy_strerror_fn)(code);
-}
-
-char *curl_pushheader_byname(struct curl_pushheaders *h, const char *name) {
-  return RESOLVE_TYPED("curl_pushheader_byname", curl_pushheader_byname_fn)(
-      h, name);
-}
-
-char *curl_pushheader_bynum(struct curl_pushheaders *h, size_t num) {
-  return RESOLVE_TYPED("curl_pushheader_bynum", curl_pushheader_bynum_fn)(
-      h, num);
 }

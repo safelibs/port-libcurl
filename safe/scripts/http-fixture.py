@@ -30,10 +30,13 @@ def prepare_tree(root: pathlib.Path) -> None:
     (root / "uploaded").mkdir(parents=True, exist_ok=True)
     (root / "redirects").mkdir(parents=True, exist_ok=True)
     (root / "headers").mkdir(parents=True, exist_ok=True)
+    (root / "push").mkdir(parents=True, exist_ok=True)
 
     (root / "plain.txt").write_text("downloaded through compat curl\n", encoding="utf-8")
+    (root / "large.bin").write_bytes(bytes((index % 251 for index in range(65536))))
     (root / "redirects" / "target.txt").write_text("redirect landed here\n", encoding="utf-8")
     (root / "headers" / "payload.txt").write_text("header endpoint body\n", encoding="utf-8")
+    (root / "push" / "asset.txt").write_text("pushed asset body\n", encoding="utf-8")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -79,6 +82,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
+        if parsed.path == "/push":
+            payload = b"primary push response\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Link", "</push/asset.txt>; rel=preload")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         if parsed.path == "/headers":
             payload = (pathlib.Path(self.directory) / "headers" / "payload.txt").read_bytes()
             self.send_response(200)
@@ -93,6 +105,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_HEAD(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/push":
+            payload = b"primary push response\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Link", "</push/asset.txt>; rel=preload")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            return
         if parsed.path == "/headers":
             payload = (pathlib.Path(self.directory) / "headers" / "payload.txt").read_bytes()
             self.send_response(200)
@@ -105,17 +125,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().do_HEAD()
 
     def copyfile(self, source, outputfile) -> None:
-        if self._range is None:
-            super().copyfile(source, outputfile)
-            return
+        try:
+            if self._range is None:
+                super().copyfile(source, outputfile)
+                return
 
-        remaining = self._range[1] - self._range[0] + 1
-        while remaining > 0:
-            chunk = source.read(min(65536, remaining))
-            if not chunk:
-                break
-            outputfile.write(chunk)
-            remaining -= len(chunk)
+            remaining = self._range[1] - self._range[0] + 1
+            while remaining > 0:
+                chunk = source.read(min(65536, remaining))
+                if not chunk:
+                    break
+                outputfile.write(chunk)
+                remaining -= len(chunk)
+        except BrokenPipeError:
+            return
 
     def send_head(self):  # noqa: D401
         self._range = None

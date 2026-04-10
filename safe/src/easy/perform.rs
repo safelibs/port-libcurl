@@ -1,7 +1,7 @@
 use crate::abi::{
     curl_hstsread_callback, curl_hstswrite_callback, curl_off_t, curl_slist, curl_socket_t,
-    CURLoption, CURLU, CURLUPART_URL, CURL, CURLINFO, CURLM, CURLcode,
-    CURLE_BAD_FUNCTION_ARGUMENT, CURLE_FAILED_INIT,
+    CURLcode, CURLoption, CURL, CURLE_BAD_FUNCTION_ARGUMENT, CURLE_FAILED_INIT, CURLINFO, CURLM,
+    CURLU, CURLUPART_URL,
 };
 use crate::dns::{self, ConnectOverride, ResolveOverride};
 use crate::multi::state::MultiState;
@@ -60,6 +60,7 @@ const CURLOPT_HTTP_VERSION: CURLoption = 84;
 const CURLOPT_SSL_VERIFYPEER: CURLoption = 64;
 const CURLOPT_MAXREDIRS: CURLoption = 68;
 const CURLOPT_MAXCONNECTS: CURLoption = 71;
+const CURLOPT_CERTINFO: CURLoption = 172;
 const CURLOPT_HEADERFUNCTION: CURLoption = 20079;
 const CURLOPT_HTTPGET: CURLoption = 80;
 const CURLOPT_COOKIEJAR: CURLoption = 10082;
@@ -97,6 +98,8 @@ const CURLOPT_CURLU: CURLoption = 10282;
 const CURLOPT_WS_OPTIONS: CURLoption = 320;
 const CURLOPT_TRAILERFUNCTION: CURLoption = 20283;
 const CURLOPT_TRAILERDATA: CURLoption = 10284;
+const CURLOPT_SSL_ENABLE_ALPN: CURLoption = 226;
+const CURLOPT_DOH_URL: CURLoption = 10279;
 
 const CURLINFO_RESPONSE_CODE: u32 = 0x200000 + 2;
 const CURLINFO_PRIMARY_IP: u32 = 0x100000 + 32;
@@ -119,6 +122,13 @@ unsafe extern "C" {
         info: u32,
         value: *mut *mut curl_slist,
     ) -> CURLcode;
+}
+
+type CurlEasyPauseFn = unsafe extern "C" fn(*mut CURL, c_int) -> CURLcode;
+
+fn ref_easy_pause() -> CurlEasyPauseFn {
+    static FN: OnceLock<CurlEasyPauseFn> = OnceLock::new();
+    *FN.get_or_init(|| unsafe { crate::global::load_reference(b"curl_easy_pause\0") })
 }
 
 #[derive(Clone)]
@@ -164,9 +174,12 @@ pub(crate) struct EasyMetadata {
     pub hsts_ctrl: c_long,
     pub altsvc_file: Option<String>,
     pub altsvc_ctrl: c_long,
+    pub doh_url: Option<String>,
     pub pinned_public_key: Option<String>,
     pub ssl_verify_peer: bool,
     pub ssl_verify_host: c_long,
+    pub ssl_enable_alpn: bool,
+    pub certinfo: bool,
     pub connect_only: bool,
     pub follow_location: bool,
     pub header: bool,
@@ -184,13 +197,7 @@ pub(crate) struct EasyMetadata {
 
 impl EasyMetadata {
     pub(crate) fn tls_peer_identity(&self) -> Option<String> {
-        let mut parts = Vec::new();
-        if let Some(pinned_key) = self.pinned_public_key.as_ref() {
-            parts.push(format!("pinned={pinned_key}"));
-        }
-        parts.push(format!("verify_peer={}", self.ssl_verify_peer));
-        parts.push(format!("verify_host={}", self.ssl_verify_host));
-        Some(parts.join(";"))
+        crate::tls::peer_identity(self)
     }
 
     pub(crate) fn auth_context(&self) -> Option<String> {
@@ -242,9 +249,12 @@ impl Default for EasyMetadata {
             hsts_ctrl: 0,
             altsvc_file: None,
             altsvc_ctrl: 0,
+            doh_url: None,
             pinned_public_key: None,
             ssl_verify_peer: true,
             ssl_verify_host: 2,
+            ssl_enable_alpn: true,
+            certinfo: false,
             connect_only: false,
             follow_location: false,
             header: false,
@@ -452,8 +462,10 @@ pub(crate) fn observe_easy_setopt_long(handle: *mut CURL, option: CURLoption, va
         CURLOPT_HTTPPROXYTUNNEL => shadow.metadata.tunnel_proxy = value != 0,
         CURLOPT_MAXREDIRS => shadow.metadata.max_redirs = Some(value),
         CURLOPT_COOKIESESSION => shadow.metadata.cookie_session = value != 0,
+        CURLOPT_CERTINFO => shadow.metadata.certinfo = value != 0,
         CURLOPT_SSL_VERIFYPEER => shadow.metadata.ssl_verify_peer = value != 0,
         CURLOPT_SSL_VERIFYHOST => shadow.metadata.ssl_verify_host = value,
+        CURLOPT_SSL_ENABLE_ALPN => shadow.metadata.ssl_enable_alpn = value != 0,
         CURLOPT_UNRESTRICTED_AUTH => shadow.metadata.unrestricted_auth = value != 0,
         CURLOPT_HTTPAUTH => shadow.metadata.httpauth = value,
         CURLOPT_PROXYAUTH => shadow.metadata.proxyauth = value,
@@ -515,7 +527,8 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
                     if let Some(path) = path {
                         let reference_lines = reference_cookie_lines(handle);
                         if !reference_lines.is_empty() {
-                            let rendered = crate::http::cookies::render_netscape_lines(&reference_lines);
+                            let rendered =
+                                crate::http::cookies::render_netscape_lines(&reference_lines);
                             let _ = std::fs::write(&path, rendered);
                         } else {
                             let mut wrote_fallback = false;
@@ -553,6 +566,7 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
         }
         CURLOPT_XOAUTH2_BEARER => shadow.metadata.xoauth2_bearer = copy_c_string(value.cast()),
         CURLOPT_PINNEDPUBLICKEY => shadow.metadata.pinned_public_key = copy_c_string(value.cast()),
+        CURLOPT_DOH_URL => shadow.metadata.doh_url = copy_c_string(value.cast()),
         CURLOPT_CONNECT_TO => {
             shadow.metadata.connect_overrides = dns::collect_connect_overrides(value.cast())
         }
@@ -749,9 +763,18 @@ pub(crate) fn easy_getinfo_long(
     let guard = registry().lock().expect("easy registry mutex poisoned");
     let info_values = guard.get(&(handle as usize)).map(|shadow| &shadow.info);
     let result = match info {
-        CURLINFO_RESPONSE_CODE => info_values.map(|info| info.response_code).unwrap_or(0),
-        CURLINFO_PRIMARY_PORT => info_values.map(|info| info.primary_port).unwrap_or(0),
-        CURLINFO_LOCAL_PORT => info_values.map(|info| info.local_port).unwrap_or(0),
+        CURLINFO_RESPONSE_CODE => match info_values.map(|info| info.response_code) {
+            Some(code) if code != 0 => code,
+            _ => return None,
+        },
+        CURLINFO_PRIMARY_PORT => match info_values.map(|info| info.primary_port) {
+            Some(port) if port != 0 => port,
+            _ => return None,
+        },
+        CURLINFO_LOCAL_PORT => match info_values.map(|info| info.local_port) {
+            Some(port) if port != 0 => port,
+            _ => return None,
+        },
         _ => return None,
     };
     unsafe { *value = result };
@@ -778,7 +801,26 @@ pub(crate) fn easy_getinfo_string(
                     .unwrap_or("http")
                     .to_ascii_lowercase();
                 match scheme.as_str() {
+                    "dict" => c"dict".as_ptr().cast_mut(),
+                    "file" => c"file".as_ptr().cast_mut(),
+                    "ftp" => c"ftp".as_ptr().cast_mut(),
+                    "ftps" => c"ftps".as_ptr().cast_mut(),
+                    "gopher" => c"gopher".as_ptr().cast_mut(),
+                    "http" => c"http".as_ptr().cast_mut(),
                     "https" => c"https".as_ptr().cast_mut(),
+                    "imap" => c"imap".as_ptr().cast_mut(),
+                    "imaps" => c"imaps".as_ptr().cast_mut(),
+                    "ldap" => c"ldap".as_ptr().cast_mut(),
+                    "ldaps" => c"ldaps".as_ptr().cast_mut(),
+                    "mqtt" => c"mqtt".as_ptr().cast_mut(),
+                    "pop3" => c"pop3".as_ptr().cast_mut(),
+                    "pop3s" => c"pop3s".as_ptr().cast_mut(),
+                    "rtsp" => c"rtsp".as_ptr().cast_mut(),
+                    "smb" => c"smb".as_ptr().cast_mut(),
+                    "smtp" => c"smtp".as_ptr().cast_mut(),
+                    "smtps" => c"smtps".as_ptr().cast_mut(),
+                    "telnet" => c"telnet".as_ptr().cast_mut(),
+                    "tftp" => c"tftp".as_ptr().cast_mut(),
                     "wss" => c"wss".as_ptr().cast_mut(),
                     "ws" => c"ws".as_ptr().cast_mut(),
                     _ => c"http".as_ptr().cast_mut(),
@@ -996,7 +1038,11 @@ pub(crate) unsafe fn easy_perform(handle: *mut CURL) -> CURLcode {
 }
 
 pub(crate) unsafe fn easy_pause(handle: *mut CURL, bitmask: c_int) -> CURLcode {
-    crate::transfer::pause_handle(handle, bitmask)
+    if crate::transfer::has_connect_only_session(handle) {
+        crate::transfer::pause_handle(handle, bitmask)
+    } else {
+        unsafe { ref_easy_pause()(handle, bitmask) }
+    }
 }
 
 pub(crate) unsafe fn easy_recv(
@@ -1044,7 +1090,9 @@ fn copy_url_from_curlu(value: *mut CURLU) -> Option<String> {
         return None;
     }
 
-    let copied = unsafe { CStr::from_ptr(part) }.to_string_lossy().into_owned();
+    let copied = unsafe { CStr::from_ptr(part) }
+        .to_string_lossy()
+        .into_owned();
     unsafe { crate::alloc::free_ptr(part.cast()) };
     Some(copied)
 }

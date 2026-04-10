@@ -1,4 +1,4 @@
-use crate::abi::{curl_off_t, CURLMcode, CURLMoption, CURLMsg, CURL, CURLM};
+use crate::abi::{curl_off_t, curl_pushheaders, CURLMcode, CURLMoption, CURLMsg, CURL, CURLM};
 use core::ffi::{c_char, c_int, c_long, c_uint, c_void};
 
 #[no_mangle]
@@ -172,4 +172,20 @@ pub unsafe extern "C" fn curl_safe_multi_setopt_off_t(
     value: curl_off_t,
 ) -> CURLMcode {
     unsafe { crate::multi::dispatch_setopt_off_t(multi_handle, option, value) }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn curl_pushheader_byname(
+    headers: *mut curl_pushheaders,
+    name: *const c_char,
+) -> *mut c_char {
+    unsafe { crate::protocols::pushheader_byname(headers, name) }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn curl_pushheader_bynum(
+    headers: *mut curl_pushheaders,
+    index: usize,
+) -> *mut c_char {
+    unsafe { crate::protocols::pushheader_bynum(headers, index) }
 }

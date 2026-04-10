@@ -2,7 +2,8 @@ pub(crate) mod poll;
 pub(crate) mod state;
 
 use crate::abi::{
-    curl_off_t, curl_socket_t, CURLMcode, CURLMoption, CURLMsg, CURLcode, CURL, CURLM, CURLMSG,
+    curl_off_t, curl_pushheaders, curl_socket_t, CURLMcode, CURLMoption, CURLMsg, CURLcode, CURL,
+    CURLM, CURLMSG,
 };
 use crate::conn::cache::ConnectionCache;
 use crate::dns::ResolverOwner;
@@ -38,6 +39,9 @@ const CURL_POLL_IN: c_int = 1;
 const CURL_POLL_INOUT: c_int = 3;
 const CURL_POLL_REMOVE: c_int = 4;
 const CURLM_CALL_MULTI_PERFORM: CURLMcode = -1;
+const CURL_PUSH_OK: c_int = 0;
+const CURL_PUSH_DENY: c_int = 1;
+const CURL_PUSH_ERROROUT: c_int = 2;
 
 const CURLMOPT_PIPELINING: CURLMoption = 3;
 const CURLOPT_VERBOSE: c_long = 41;
@@ -62,6 +66,9 @@ type CurlSocketCallback = Option<
 >;
 type CurlMultiTimerCallback =
     Option<unsafe extern "C" fn(*mut CURLM, c_long, *mut c_void) -> c_int>;
+type CurlPushCallback = Option<
+    unsafe extern "C" fn(*mut CURL, *mut CURL, usize, *mut curl_pushheaders, *mut c_void) -> c_int,
+>;
 
 type RefMultiInitFn = unsafe extern "C" fn() -> *mut CURLM;
 type RefMultiCleanupFn = unsafe extern "C" fn(*mut CURLM) -> CURLMcode;
@@ -141,7 +148,7 @@ struct CallbackState {
     socket_userp: *mut c_void,
     timer_cb: CurlMultiTimerCallback,
     timer_userp: *mut c_void,
-    push_cb: Option<unsafe extern "C" fn()>,
+    push_cb: CurlPushCallback,
     push_userp: *mut c_void,
     in_callback: bool,
 }
@@ -333,7 +340,7 @@ unsafe extern "C" fn reference_socket_callback(
     let Some(wrapper) = wrapper_from_ptr(userp.cast()) else {
         return -1;
     };
-    let multi_ptr = userp.cast();
+    let multi_ptr: *mut CURLM = userp.cast();
     match invoke_socket_callback(wrapper, multi_ptr, easy_handle, socket, what) {
         crate::abi::CURLM_OK => 0,
         _ => -1,
@@ -356,6 +363,78 @@ unsafe extern "C" fn reference_timer_callback(
         crate::abi::CURLM_OK => 0,
         _ => -1,
     }
+}
+
+unsafe extern "C" fn reference_push_callback(
+    parent: *mut CURL,
+    easy_handle: *mut CURL,
+    num_headers: usize,
+    headers: *mut curl_pushheaders,
+    userp: *mut c_void,
+) -> c_int {
+    let Some(wrapper) = wrapper_from_ptr(userp.cast()) else {
+        return CURL_PUSH_ERROROUT;
+    };
+    let multi_ptr: *mut CURLM = userp.cast();
+    let (push_cb, push_userp, parent_plan, parent_connection_id) = {
+        let guard = wrapper.inner.lock().expect("multi mutex poisoned");
+        let parent_record = guard.records.get(&(parent as usize));
+        let plan = parent_record
+            .map(|record| record.plan.clone())
+            .unwrap_or_else(|| {
+                transfer::build_plan(
+                    &easy::perform::snapshot_metadata(parent),
+                    ResolverOwner::Multi,
+                )
+            });
+        let connection_id = parent_record
+            .map(|record| record.connection_id)
+            .unwrap_or(0);
+        (
+            guard.callbacks.push_cb,
+            guard.callbacks.push_userp,
+            plan,
+            connection_id,
+        )
+    };
+
+    let decision = if let Some(push_cb) = push_cb {
+        unsafe { push_cb(parent, easy_handle, num_headers, headers, push_userp) }
+    } else {
+        CURL_PUSH_DENY
+    };
+    if decision != CURL_PUSH_OK {
+        return decision;
+    }
+    let suppressed_verbose = suppress_reference_verbose(easy_handle);
+
+    {
+        let mut guard = wrapper.inner.lock().expect("multi mutex poisoned");
+        if !guard.easies.contains(&easy_handle) {
+            guard.easies.push(easy_handle);
+        }
+        guard.records.insert(
+            easy_handle as usize,
+            TransferRecord {
+                easy: easy_handle,
+                state: state::MultiState::Performing,
+                plan: parent_plan,
+                connection_id: parent_connection_id,
+                reference_verbose_suppressed: suppressed_verbose,
+                poll_reader: None,
+                worker: None,
+                started: true,
+                completed: false,
+                message_enqueued: false,
+            },
+        );
+    }
+    easy::perform::on_attached(
+        easy_handle,
+        multi_ptr as usize,
+        state::MultiState::Performing,
+    );
+    CURL_PUSH_OK
 }
 
 pub(crate) unsafe fn init_handle() -> *mut CURLM {
@@ -516,7 +595,10 @@ pub(crate) unsafe fn remove_handle(multi: *mut CURLM, easy_handle: *mut CURL) ->
             guard.current_msg = None;
         }
         let cleanup_reference_multi = record.plan.reference_backend
-            && !guard.records.values().any(|candidate| candidate.plan.reference_backend);
+            && !guard
+                .records
+                .values()
+                .any(|candidate| candidate.plan.reference_backend);
         let reference_multi = guard.reference_multi;
         if cleanup_reference_multi {
             guard.reference_multi = ptr::null_mut();
@@ -566,7 +648,10 @@ pub(crate) unsafe fn drop_easy_reference(multi: *mut CURLM, easy_handle: *mut CU
                 return;
             };
             let cleanup_reference_multi = record.plan.reference_backend
-                && !guard.records.values().any(|candidate| candidate.plan.reference_backend);
+                && !guard
+                    .records
+                    .values()
+                    .any(|candidate| candidate.plan.reference_backend);
             let reference_multi = guard.reference_multi;
             if cleanup_reference_multi {
                 guard.reference_multi = ptr::null_mut();
@@ -619,7 +704,11 @@ pub(crate) unsafe fn fdset_handle(
             highest = highest.max(socket as c_int);
         }
     }
-    let reference_multi = wrapper.inner.lock().expect("multi mutex poisoned").reference_multi;
+    let reference_multi = wrapper
+        .inner
+        .lock()
+        .expect("multi mutex poisoned")
+        .reference_multi;
     if !reference_multi.is_null() {
         let mut reference_max = -1;
         let rc = unsafe {
@@ -736,7 +825,11 @@ pub(crate) unsafe fn wakeup_handle(multi: *mut CURLM) -> CURLMcode {
         return CURLM_BAD_HANDLE;
     };
     wrapper.events.push(TransferEvent::Wakeup);
-    let reference_multi = wrapper.inner.lock().expect("multi mutex poisoned").reference_multi;
+    let reference_multi = wrapper
+        .inner
+        .lock()
+        .expect("multi mutex poisoned")
+        .reference_multi;
     if !reference_multi.is_null() {
         let rc = unsafe { ref_multi_wakeup()(reference_multi) };
         if rc != crate::abi::CURLM_OK {
@@ -826,7 +919,11 @@ pub(crate) unsafe fn socket_action_handle(
         return callback_rc;
     }
 
-    let reference_multi = wrapper.inner.lock().expect("multi mutex poisoned").reference_multi;
+    let reference_multi = wrapper
+        .inner
+        .lock()
+        .expect("multi mutex poisoned")
+        .reference_multi;
     if !reference_multi.is_null() {
         let mut running = 0;
         let rc =
@@ -869,7 +966,11 @@ pub(crate) unsafe fn assign_handle(
         .expect("multi mutex poisoned")
         .assignments
         .insert(socket, socketp);
-    let reference_multi = wrapper.inner.lock().expect("multi mutex poisoned").reference_multi;
+    let reference_multi = wrapper
+        .inner
+        .lock()
+        .expect("multi mutex poisoned")
+        .reference_multi;
     if !reference_multi.is_null() {
         let rc = unsafe { ref_multi_assign()(reference_multi, socket, socketp) };
         if rc != crate::abi::CURLM_OK {
@@ -998,7 +1099,9 @@ pub(crate) unsafe fn dispatch_setopt_function(
         CURLMOPT_TIMERFUNCTION => {
             guard.callbacks.timer_cb = unsafe { mem::transmute(value) };
         }
-        CURLMOPT_PUSHFUNCTION => guard.callbacks.push_cb = value,
+        CURLMOPT_PUSHFUNCTION => {
+            guard.callbacks.push_cb = unsafe { mem::transmute(value) };
+        }
         _ => return CURLM_UNKNOWN_OPTION,
     }
     crate::abi::CURLM_OK
@@ -1048,7 +1151,11 @@ fn has_reference_handles(wrapper: &MultiHandle) -> bool {
 }
 
 fn reference_timeout_ms(wrapper: &MultiHandle) -> c_long {
-    let reference_multi = wrapper.inner.lock().expect("multi mutex poisoned").reference_multi;
+    let reference_multi = wrapper
+        .inner
+        .lock()
+        .expect("multi mutex poisoned")
+        .reference_multi;
     if reference_multi.is_null() {
         return -1;
     }
@@ -1085,8 +1192,15 @@ fn restore_reference_verbose(easy_handle: *mut CURL, suppressed: bool) {
     let _ = unsafe { curl_safe_reference_easy_setopt_long(easy_handle, CURLOPT_VERBOSE, 1) };
 }
 
-fn ensure_reference_multi(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> Result<*mut CURLM, CURLMcode> {
-    let existing = wrapper.inner.lock().expect("multi mutex poisoned").reference_multi;
+fn ensure_reference_multi(
+    wrapper: &MultiHandle,
+    multi_ptr: *mut CURLM,
+) -> Result<*mut CURLM, CURLMcode> {
+    let existing = wrapper
+        .inner
+        .lock()
+        .expect("multi mutex poisoned")
+        .reference_multi;
     if !existing.is_null() {
         return Ok(existing);
     }
@@ -1096,7 +1210,13 @@ fn ensure_reference_multi(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> Resul
         return Err(CURLM_OUT_OF_MEMORY);
     }
 
-    let (multiplexing, maxconnects, max_host_connections, max_total_connections, max_concurrent_streams) = {
+    let (
+        multiplexing,
+        maxconnects,
+        max_host_connections,
+        max_total_connections,
+        max_concurrent_streams,
+    ) = {
         let mut guard = wrapper.inner.lock().expect("multi mutex poisoned");
         guard.reference_multi = reference_multi;
         guard.reference_timeout_ms = -1;
@@ -1118,7 +1238,13 @@ fn ensure_reference_multi(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> Resul
     };
     let reference_socket = Some(unsafe {
         mem::transmute::<
-            unsafe extern "C" fn(*mut CURL, curl_socket_t, c_int, *mut c_void, *mut c_void) -> c_int,
+            unsafe extern "C" fn(
+                *mut CURL,
+                curl_socket_t,
+                c_int,
+                *mut c_void,
+                *mut c_void,
+            ) -> c_int,
             unsafe extern "C" fn(),
         >(reference_socket_callback)
     });
@@ -1128,6 +1254,18 @@ fn ensure_reference_multi(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> Resul
             unsafe extern "C" fn(),
         >(reference_timer_callback)
     });
+    let reference_push = Some(unsafe {
+        mem::transmute::<
+            unsafe extern "C" fn(
+                *mut CURL,
+                *mut CURL,
+                usize,
+                *mut curl_pushheaders,
+                *mut c_void,
+            ) -> c_int,
+            unsafe extern "C" fn(),
+        >(reference_push_callback)
+    });
 
     if configure(unsafe {
         curl_safe_reference_multi_setopt_function(
@@ -1136,50 +1274,96 @@ fn ensure_reference_multi(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> Resul
             reference_socket,
         )
     })
-    .and_then(|_| configure(unsafe {
-        curl_safe_reference_multi_setopt_ptr(reference_multi, CURLMOPT_SOCKETDATA, multi_ptr.cast())
-    }))
-    .and_then(|_| configure(unsafe {
-        curl_safe_reference_multi_setopt_function(
-            reference_multi,
-            CURLMOPT_TIMERFUNCTION,
-            reference_timer,
-        )
-    }))
-    .and_then(|_| configure(unsafe {
-        curl_safe_reference_multi_setopt_ptr(reference_multi, CURLMOPT_TIMERDATA, multi_ptr.cast())
-    }))
-    .and_then(|_| configure(unsafe {
-        curl_safe_reference_multi_setopt_long(
-            reference_multi,
-            CURLMOPT_PIPELINING,
-            multiplexing as c_long,
-        )
-    }))
-    .and_then(|_| configure(unsafe {
-        curl_safe_reference_multi_setopt_long(reference_multi, CURLMOPT_MAXCONNECTS, maxconnects)
-    }))
-    .and_then(|_| configure(unsafe {
-        curl_safe_reference_multi_setopt_long(
-            reference_multi,
-            CURLMOPT_MAX_HOST_CONNECTIONS,
-            max_host_connections,
-        )
-    }))
-    .and_then(|_| configure(unsafe {
-        curl_safe_reference_multi_setopt_long(
-            reference_multi,
-            CURLMOPT_MAX_TOTAL_CONNECTIONS,
-            max_total_connections,
-        )
-    }))
-    .and_then(|_| configure(unsafe {
-        curl_safe_reference_multi_setopt_long(
-            reference_multi,
-            CURLMOPT_MAX_CONCURRENT_STREAMS,
-            max_concurrent_streams,
-        )
-    }))
+    .and_then(|_| {
+        configure(unsafe {
+            curl_safe_reference_multi_setopt_ptr(
+                reference_multi,
+                CURLMOPT_SOCKETDATA,
+                multi_ptr.cast(),
+            )
+        })
+    })
+    .and_then(|_| {
+        configure(unsafe {
+            curl_safe_reference_multi_setopt_function(
+                reference_multi,
+                CURLMOPT_TIMERFUNCTION,
+                reference_timer,
+            )
+        })
+    })
+    .and_then(|_| {
+        configure(unsafe {
+            curl_safe_reference_multi_setopt_ptr(
+                reference_multi,
+                CURLMOPT_TIMERDATA,
+                multi_ptr.cast(),
+            )
+        })
+    })
+    .and_then(|_| {
+        configure(unsafe {
+            curl_safe_reference_multi_setopt_function(
+                reference_multi,
+                CURLMOPT_PUSHFUNCTION,
+                reference_push,
+            )
+        })
+    })
+    .and_then(|_| {
+        configure(unsafe {
+            curl_safe_reference_multi_setopt_ptr(
+                reference_multi,
+                CURLMOPT_PUSHDATA,
+                multi_ptr.cast(),
+            )
+        })
+    })
+    .and_then(|_| {
+        configure(unsafe {
+            curl_safe_reference_multi_setopt_long(
+                reference_multi,
+                CURLMOPT_PIPELINING,
+                multiplexing as c_long,
+            )
+        })
+    })
+    .and_then(|_| {
+        configure(unsafe {
+            curl_safe_reference_multi_setopt_long(
+                reference_multi,
+                CURLMOPT_MAXCONNECTS,
+                maxconnects,
+            )
+        })
+    })
+    .and_then(|_| {
+        configure(unsafe {
+            curl_safe_reference_multi_setopt_long(
+                reference_multi,
+                CURLMOPT_MAX_HOST_CONNECTIONS,
+                max_host_connections,
+            )
+        })
+    })
+    .and_then(|_| {
+        configure(unsafe {
+            curl_safe_reference_multi_setopt_long(
+                reference_multi,
+                CURLMOPT_MAX_TOTAL_CONNECTIONS,
+                max_total_connections,
+            )
+        })
+    })
+    .and_then(|_| {
+        configure(unsafe {
+            curl_safe_reference_multi_setopt_long(
+                reference_multi,
+                CURLMOPT_MAX_CONCURRENT_STREAMS,
+                max_concurrent_streams,
+            )
+        })
+    })
     .is_err()
     {
         let _ = unsafe { ref_multi_cleanup()(reference_multi) };
@@ -1195,7 +1379,11 @@ fn ensure_reference_multi(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> Resul
 }
 
 fn perform_reference_transfers(wrapper: &MultiHandle) -> CURLMcode {
-    let reference_multi = wrapper.inner.lock().expect("multi mutex poisoned").reference_multi;
+    let reference_multi = wrapper
+        .inner
+        .lock()
+        .expect("multi mutex poisoned")
+        .reference_multi;
     if reference_multi.is_null() {
         return crate::abi::CURLM_OK;
     }
@@ -1209,7 +1397,11 @@ fn perform_reference_transfers(wrapper: &MultiHandle) -> CURLMcode {
 }
 
 fn harvest_reference_messages(wrapper: &MultiHandle) {
-    let reference_multi = wrapper.inner.lock().expect("multi mutex poisoned").reference_multi;
+    let reference_multi = wrapper
+        .inner
+        .lock()
+        .expect("multi mutex poisoned")
+        .reference_multi;
     if reference_multi.is_null() {
         return;
     }
@@ -1240,7 +1432,10 @@ fn harvest_reference_messages(wrapper: &MultiHandle) {
         let host = record.plan.cache_key.host.clone();
         let suppressed_verbose = record.reference_verbose_suppressed;
         record.reference_verbose_suppressed = false;
-        guard.messages.push_back(QueuedMessage { easy_handle, result });
+        guard.messages.push_back(QueuedMessage {
+            easy_handle,
+            result,
+        });
         drop(guard);
         restore_reference_verbose(easy_handle, suppressed_verbose);
         if result == crate::abi::CURLE_OK && easy::perform::snapshot_metadata(easy_handle).verbose {
@@ -1352,7 +1547,11 @@ fn wait_common(
     let mut activity = drain_events(wrapper);
     if has_reference_handles(wrapper) {
         let mut reference_activity = 0;
-        let reference_multi = wrapper.inner.lock().expect("multi mutex poisoned").reference_multi;
+        let reference_multi = wrapper
+            .inner
+            .lock()
+            .expect("multi mutex poisoned")
+            .reference_multi;
         if !reference_multi.is_null() {
             let rc = unsafe {
                 if allow_idle_wait {

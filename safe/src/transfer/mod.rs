@@ -356,6 +356,17 @@ pub(crate) fn active_socket(handle: *mut CURL) -> Option<curl_socket_t> {
         .map(|session| session.stream.as_raw_fd() as curl_socket_t)
 }
 
+pub(crate) fn has_connect_only_session(handle: *mut CURL) -> bool {
+    if handle.is_null() {
+        return false;
+    }
+
+    connect_only_registry()
+        .lock()
+        .expect("connect-only registry mutex poisoned")
+        .contains_key(&(handle as usize))
+}
+
 pub(crate) unsafe fn pause_handle(handle: *mut CURL, bitmask: c_int) -> CURLcode {
     if handle.is_null() {
         return CURLE_BAD_FUNCTION_ARGUMENT;
@@ -555,7 +566,13 @@ fn perform_transfer(handle_key: usize, plan: TransferPlan) -> CURLcode {
             continue;
         }
 
-        return finalize_hsts(handle, &metadata, callbacks, metadata.hsts_ctrl != 0, outcome.result);
+        return finalize_hsts(
+            handle,
+            &metadata,
+            callbacks,
+            metadata.hsts_ctrl != 0,
+            outcome.result,
+        );
     }
 
     perform::set_error_buffer(handle, "Maximum redirects followed");
@@ -625,7 +642,8 @@ fn finalize_hsts(
         return result;
     };
 
-    let Some(entries) = with_hsts_store_mut(handle, metadata, |store| store.entries().to_vec()) else {
+    let Some(entries) = with_hsts_store_mut(handle, metadata, |store| store.entries().to_vec())
+    else {
         return result;
     };
     let total = entries.len();
@@ -880,7 +898,8 @@ fn establish_proxy_tunnel(
     request: &RequestContext,
 ) -> Result<Vec<u8>, CURLcode> {
     write_proxy_connect_request(stream, request)?;
-    let (status_code, body_prefix) = read_proxy_connect_response(stream, handle, callbacks, metadata)?;
+    let (status_code, body_prefix) =
+        read_proxy_connect_response(stream, handle, callbacks, metadata)?;
     if (200..300).contains(&status_code) {
         Ok(body_prefix)
     } else {
@@ -921,7 +940,10 @@ fn write_request(stream: &mut TcpStream, request: &RequestContext) -> Result<(),
     encoded.push_str(&request.host_header);
     encoded.push_str("\r\n");
     encoded.push_str("Accept: */*\r\n");
-    if request.proxy.is_some() && !request.tunnel_proxy && !has_header(&request.request_headers, "Proxy-Connection") {
+    if request.proxy.is_some()
+        && !request.tunnel_proxy
+        && !has_header(&request.request_headers, "Proxy-Connection")
+    {
         encoded.push_str("Proxy-Connection: Keep-Alive\r\n");
     }
     append_headers(&mut encoded, &request.request_headers);
@@ -1148,7 +1170,9 @@ fn read_response_meta_with_prefix(
         let value = value.trim();
         headers.push((name.trim().to_string(), value.to_string()));
         let _ = perform::with_http_state_mut(handle, |state| {
-            state.headers.record(request_index, origin_flag, name.trim(), value);
+            state
+                .headers
+                .record(request_index, origin_flag, name.trim(), value);
             cookies::record_from_header(&mut state.cookies, &request.url, trimmed);
         });
         let _ = crate::share::with_shared_cookies_mut(metadata.share_handle, |store| {
@@ -1225,14 +1249,7 @@ fn deliver_write(
         } else {
             callbacks.write_data as *mut c_void
         };
-        unsafe {
-            callback(
-                buffer.as_mut_ptr().cast(),
-                1,
-                buffer.len(),
-                write_data,
-            )
-        }
+        unsafe { callback(buffer.as_mut_ptr().cast(), 1, buffer.len(), write_data) }
     } else {
         let stream = if callbacks.write_data == 0 {
             unsafe { stdout }
@@ -1275,13 +1292,24 @@ fn requires_reference_backend(metadata: &EasyMetadata) -> bool {
     let Some(url) = metadata.url.as_deref() else {
         return false;
     };
+    if crate::doh::requires_reference_backend(metadata.doh_url.as_deref()) {
+        return true;
+    }
+    if crate::idn::requires_reference_backend(url) {
+        return true;
+    }
     let Some(authority) = parse_url_authority(url) else {
         return false;
     };
-
-    (authority.scheme != "http"
-        && !(authority.scheme == "ws" && crate::ws::websocket_mode_enabled(metadata.connect_mode)))
-        || metadata.http_version >= 3
+    !matches!(
+        crate::protocols::route_scheme(
+            &authority.scheme,
+            metadata.connect_mode,
+            metadata.http_version
+        ),
+        crate::protocols::TransferRouting::NativeHttp
+            | crate::protocols::TransferRouting::NativeWebSocket
+    )
 }
 
 fn read_request_body_chunk(
@@ -1328,14 +1356,7 @@ fn deliver_header(
         } else {
             callbacks.header_data as *mut c_void
         };
-        let wrote = unsafe {
-            callback(
-                line.as_mut_ptr().cast(),
-                1,
-                line.len(),
-                header_data,
-            )
-        };
+        let wrote = unsafe { callback(line.as_mut_ptr().cast(), 1, line.len(), header_data) };
         if wrote == line.len() {
             return Ok(());
         }
@@ -1534,10 +1555,7 @@ impl RequestContext {
             target_port,
             proxy,
             request_target: if has_proxy && !metadata.tunnel_proxy {
-                format!(
-                    "{}://{}{}",
-                    parsed.scheme, host_header, path_and_query
-                )
+                format!("{}://{}{}", parsed.scheme, host_header, path_and_query)
             } else {
                 parsed.path_and_query
             },
@@ -1631,7 +1649,13 @@ fn fill_hsts_expire(entry: &mut curl_hstsentry, value: Option<&str>) {
     for slot in &mut entry.expire {
         *slot = 0;
     }
-    for (index, byte) in text.as_bytes().iter().copied().take(entry.expire.len() - 1).enumerate() {
+    for (index, byte) in text
+        .as_bytes()
+        .iter()
+        .copied()
+        .take(entry.expire.len() - 1)
+        .enumerate()
+    {
         entry.expire[index] = byte as i8;
     }
 }
