@@ -120,6 +120,7 @@ const CURLINFO_PRIMARY_PORT: u32 = 0x200000 + 40;
 const CURLINFO_LOCAL_IP: u32 = 0x100000 + 41;
 const CURLINFO_LOCAL_PORT: u32 = 0x200000 + 42;
 const CURLINFO_COOKIELIST: u32 = 0x400000 + 28;
+const CURLINFO_CERTINFO: u32 = 0x400000 + 34;
 const CURLINFO_SCHEME: u32 = 0x100000 + 49;
 const CURLINFO_RTSP_SESSION_ID: u32 = 0x100000 + 36;
 const CURLINFO_TOTAL_TIME_T: u32 = 0x600000 + 50;
@@ -385,6 +386,7 @@ fn registry() -> &'static Mutex<HashMap<usize, EasyShadow>> {
 pub(crate) fn clear_registry() {
     let mut guard = registry().lock().expect("easy registry mutex poisoned");
     *guard = HashMap::new();
+    crate::tls::certinfo::clear_all();
 }
 
 pub(crate) fn register_handle(handle: *mut CURL) {
@@ -431,6 +433,7 @@ pub(crate) fn reset_handle(handle: *mut CURL) {
     if handle.is_null() {
         return;
     }
+    crate::tls::certinfo::clear(handle);
     if let Some(shadow) = registry()
         .lock()
         .expect("easy registry mutex poisoned")
@@ -448,6 +451,8 @@ pub(crate) fn unregister_handle(handle: *mut CURL) -> Option<usize> {
     if handle.is_null() {
         return None;
     }
+
+    crate::tls::certinfo::clear(handle);
 
     let mut guard = registry().lock().expect("easy registry mutex poisoned");
     let private_multi = guard
@@ -746,6 +751,7 @@ pub(crate) fn clear_transfer_info(handle: *mut CURL) {
     if handle.is_null() {
         return;
     }
+    crate::tls::certinfo::clear(handle);
     if let Some(shadow) = registry()
         .lock()
         .expect("easy registry mutex poisoned")
@@ -954,6 +960,25 @@ pub(crate) fn easy_getinfo_socket(
 
     unsafe {
         *value = crate::transfer::active_socket(handle).unwrap_or(-1);
+    }
+    Some(crate::abi::CURLE_OK)
+}
+
+pub(crate) fn easy_getinfo_ptr(
+    handle: *mut CURL,
+    info: u32,
+    value: *mut *mut c_void,
+) -> Option<CURLcode> {
+    if handle.is_null() || value.is_null() {
+        return Some(CURLE_BAD_FUNCTION_ARGUMENT);
+    }
+    if info != CURLINFO_CERTINFO {
+        return None;
+    }
+
+    unsafe {
+        *value = crate::tls::certinfo::lookup(handle)
+            .map_or(ptr::null_mut(), |certinfo| certinfo.cast::<c_void>());
     }
     Some(crate::abi::CURLE_OK)
 }

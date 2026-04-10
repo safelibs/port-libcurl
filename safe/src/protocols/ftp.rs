@@ -32,13 +32,6 @@ pub(crate) fn perform_transfer(
     metadata: &EasyMetadata,
     callbacks: EasyCallbacks,
 ) -> CURLcode {
-    if metadata.upload {
-        return crate::protocols::unsupported(
-            handle,
-            "FTP upload is not implemented in the shared engine",
-        );
-    }
-
     let Some(url) = metadata.url.as_deref() else {
         crate::easy::perform::set_error_buffer(handle, "No URL set");
         return CURLE_URL_MALFORMAT;
@@ -60,6 +53,7 @@ pub(crate) fn perform_transfer(
     let started = Instant::now();
     let mut pending = Vec::new();
     let mut control = match transfer::connect_protocol_transport(
+        handle,
         &parsed.host,
         parsed.port,
         plan,
@@ -187,6 +181,7 @@ fn perform_transfer_inner(
     };
 
     let mut data = match transfer::connect_protocol_transport(
+        handle,
         &passive.host,
         passive.port,
         plan,
@@ -220,7 +215,7 @@ fn perform_transfer_inner(
         return CURLE_REMOTE_ACCESS_DENIED;
     }
 
-    let content_length = if metadata.transfer_text || metadata.nobody {
+    let content_length = if metadata.upload || metadata.transfer_text || metadata.nobody {
         None
     } else {
         match send_command(control, pending, &format!("SIZE {object}\r\n")) {
@@ -249,18 +244,41 @@ fn perform_transfer_inner(
         return crate::abi::CURLE_OK;
     }
 
-    let retrieve = match send_command(control, pending, &format!("RETR {object}\r\n")) {
-        Ok(response) => response,
-        Err(code) => {
-            return code;
+    let preliminary = if metadata.upload {
+        match send_command(control, pending, &format!("STOR {object}\r\n")) {
+            Ok(response) => response,
+            Err(code) => return code,
+        }
+    } else {
+        match send_command(control, pending, &format!("RETR {object}\r\n")) {
+            Ok(response) => response,
+            Err(code) => return code,
         }
     };
-    if retrieve.code == 550 {
-        crate::easy::perform::set_error_buffer(handle, "FTP file does not exist");
-        return CURLE_REMOTE_FILE_NOT_FOUND;
+    if preliminary.code == 550 {
+        crate::easy::perform::set_error_buffer(
+            handle,
+            if metadata.upload {
+                "FTP upload target is not accessible"
+            } else {
+                "FTP file does not exist"
+            },
+        );
+        return if metadata.upload {
+            CURLE_REMOTE_ACCESS_DENIED
+        } else {
+            CURLE_REMOTE_FILE_NOT_FOUND
+        };
     }
-    if !retrieve.is_preliminary() {
-        crate::easy::perform::set_error_buffer(handle, "FTP RETR command failed");
+    if !preliminary.is_preliminary() {
+        crate::easy::perform::set_error_buffer(
+            handle,
+            if metadata.upload {
+                "FTP STOR command failed"
+            } else {
+                "FTP RETR command failed"
+            },
+        );
         return CURLE_REMOTE_ACCESS_DENIED;
     }
 
@@ -270,14 +288,24 @@ fn perform_transfer_inner(
         transfer::close_transport(data.stream, callbacks);
         return code;
     }
-    let body_result = transfer::transfer_body(
-        &mut data.stream,
-        handle,
-        callbacks,
-        Vec::new(),
-        content_length,
-        &mut low_speed,
-    );
+    let body_result = if metadata.upload {
+        transfer_upload_body(
+            &mut data.stream,
+            handle,
+            callbacks,
+            metadata.upload_size.and_then(|size| usize::try_from(size).ok()),
+            &mut low_speed,
+        )
+    } else {
+        transfer::transfer_body(
+            &mut data.stream,
+            handle,
+            callbacks,
+            Vec::new(),
+            content_length,
+            &mut low_speed,
+        )
+    };
     transfer::close_transport(data.stream, callbacks);
     if let Err(code) = body_result {
         return code;
@@ -298,6 +326,32 @@ fn perform_transfer_inner(
     info.total_time_us = transfer::elapsed_us(started.elapsed());
     crate::easy::perform::record_transfer_info(handle, info.clone());
     crate::abi::CURLE_OK
+}
+
+fn transfer_upload_body(
+    stream: &mut TransportStream,
+    handle: *mut CURL,
+    callbacks: EasyCallbacks,
+    content_length: Option<usize>,
+    low_speed: &mut LowSpeedGuard,
+) -> Result<(), CURLcode> {
+    let mut sent = 0usize;
+    let mut buffer = vec![0u8; 16 * 1024];
+    loop {
+        let read = transfer::read_request_body_chunk(handle, callbacks, &mut buffer)?;
+        if read == 0 {
+            stream.flush().map_err(map_io_write_error)?;
+            break;
+        }
+        stream
+            .write_all(&buffer[..read])
+            .and_then(|_| stream.flush())
+            .map_err(map_io_write_error)?;
+        sent = sent.saturating_add(read);
+        low_speed.observe_progress(read)?;
+        transfer::invoke_progress_callback(callbacks, sent, content_length)?;
+    }
+    Ok(())
 }
 
 fn ftp_object_path(parsed: &ParsedProtocolUrl) -> Result<String, CURLcode> {

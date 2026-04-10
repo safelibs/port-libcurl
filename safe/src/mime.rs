@@ -1,6 +1,6 @@
 use crate::abi::{
     curl_free_callback, curl_mime, curl_mimepart, curl_off_t, curl_read_callback,
-    curl_seek_callback, curl_slist, CURL, CURLcode,
+    curl_seek_callback, curl_slist, CURLcode, CURL,
 };
 use crate::global;
 use core::ffi::{c_char, c_int, c_void};
@@ -20,7 +20,8 @@ type CurlMimeDataCbFn = unsafe extern "C" fn(
     *mut c_void,
 ) -> CURLcode;
 type CurlMimeSubpartsFn = unsafe extern "C" fn(*mut curl_mimepart, *mut curl_mime) -> CURLcode;
-type CurlMimeHeadersFn = unsafe extern "C" fn(*mut curl_mimepart, *mut curl_slist, c_int) -> CURLcode;
+type CurlMimeHeadersFn =
+    unsafe extern "C" fn(*mut curl_mimepart, *mut curl_slist, c_int) -> CURLcode;
 
 fn ref_mime_init() -> CurlMimeInitFn {
     static FN: OnceLock<CurlMimeInitFn> = OnceLock::new();
@@ -111,7 +112,10 @@ pub unsafe extern "C" fn curl_mime_filename(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_mime_type(part: *mut curl_mimepart, mimetype: *const c_char) -> CURLcode {
+pub unsafe extern "C" fn curl_mime_type(
+    part: *mut curl_mimepart,
+    mimetype: *const c_char,
+) -> CURLcode {
     unsafe { ref_mime_type()(part, mimetype) }
 }
 

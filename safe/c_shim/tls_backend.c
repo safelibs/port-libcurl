@@ -1,8 +1,10 @@
 #include <errno.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #ifdef SAFE_TLS_OPENSSL
@@ -109,6 +111,94 @@ static size_t base64_encode(const unsigned char *input, size_t input_len,
   output[out] = '\0';
   return out;
 }
+
+struct certinfo_builder {
+  char *buf;
+  size_t len;
+  size_t cap;
+};
+
+static int certinfo_append(struct certinfo_builder *builder,
+                           const char *fmt, ...)
+{
+  va_list ap;
+  va_list copy;
+  int needed;
+  size_t required;
+  char *grown;
+
+  va_start(ap, fmt);
+  va_copy(copy, ap);
+  needed = vsnprintf(NULL, 0, fmt, copy);
+  va_end(copy);
+  if(needed < 0) {
+    va_end(ap);
+    return -1;
+  }
+  required = builder->len + (size_t)needed + 1;
+  if(required > builder->cap) {
+    size_t next_cap = builder->cap ? builder->cap : 256;
+    while(next_cap < required)
+      next_cap *= 2;
+    grown = realloc(builder->buf, next_cap);
+    if(!grown) {
+      va_end(ap);
+      return -1;
+    }
+    builder->buf = grown;
+    builder->cap = next_cap;
+  }
+  vsnprintf(builder->buf + builder->len, builder->cap - builder->len, fmt, ap);
+  builder->len += (size_t)needed;
+  va_end(ap);
+  return 0;
+}
+
+static unsigned char *certinfo_take(struct certinfo_builder *builder,
+                                    size_t *out_len)
+{
+  unsigned char *out;
+  if(out_len)
+    *out_len = builder->len;
+  out = (unsigned char *)builder->buf;
+  builder->buf = NULL;
+  builder->len = 0;
+  builder->cap = 0;
+  return out;
+}
+
+static void certinfo_builder_cleanup(struct certinfo_builder *builder)
+{
+  free(builder->buf);
+  builder->buf = NULL;
+  builder->len = 0;
+  builder->cap = 0;
+}
+
+static int append_certinfo_line(struct certinfo_builder *builder,
+                                unsigned int certnum,
+                                const char *label,
+                                const char *value)
+{
+  return certinfo_append(builder, "%u\t%s: %s\n", certnum, label,
+                         value ? value : "");
+}
+
+#ifdef SAFE_TLS_GNUTLS
+static int append_certinfo_time(struct certinfo_builder *builder,
+                                unsigned int certnum,
+                                const char *label,
+                                time_t when)
+{
+  char rendered[64];
+  struct tm *tm_buf = gmtime(&when);
+  if(!tm_buf)
+    return append_certinfo_line(builder, certnum, label, "");
+  if(strftime(rendered, sizeof(rendered), "%b %e %H:%M:%S %Y GMT", tm_buf) == 0)
+    return append_certinfo_line(builder, certnum, label, "");
+  return append_certinfo_line(builder, certnum, label, rendered);
+}
+#endif
 
 #ifdef SAFE_TLS_OPENSSL
 
@@ -274,6 +364,130 @@ static int openssl_check_pinned_key(SSL *ssl, const char *spec)
   free(peer_der);
   X509_free(cert);
   return ok;
+}
+
+static char *openssl_name_string(X509_NAME *name)
+{
+  BIO *bio;
+  char *data = NULL;
+  long len = 0;
+  char *out;
+
+  if(!name)
+    return NULL;
+  bio = BIO_new(BIO_s_mem());
+  if(!bio)
+    return NULL;
+  if(X509_NAME_print_ex(bio, name, 0, XN_FLAG_RFC2253) < 0) {
+    BIO_free(bio);
+    return NULL;
+  }
+  len = BIO_get_mem_data(bio, &data);
+  if(len <= 0) {
+    BIO_free(bio);
+    return NULL;
+  }
+  out = malloc((size_t)len + 1);
+  if(out) {
+    memcpy(out, data, (size_t)len);
+    out[len] = '\0';
+  }
+  BIO_free(bio);
+  return out;
+}
+
+static char *openssl_time_string(const ASN1_TIME *time_value)
+{
+  BIO *bio;
+  char *data = NULL;
+  long len = 0;
+  char *out;
+
+  if(!time_value)
+    return NULL;
+  bio = BIO_new(BIO_s_mem());
+  if(!bio)
+    return NULL;
+  if(ASN1_TIME_print(bio, time_value) != 1) {
+    BIO_free(bio);
+    return NULL;
+  }
+  len = BIO_get_mem_data(bio, &data);
+  if(len <= 0) {
+    BIO_free(bio);
+    return NULL;
+  }
+  out = malloc((size_t)len + 1);
+  if(out) {
+    memcpy(out, data, (size_t)len);
+    out[len] = '\0';
+  }
+  BIO_free(bio);
+  return out;
+}
+
+unsigned char *curl_safe_tls_certinfo(struct safe_tls_connection *conn,
+                                      size_t *out_len)
+{
+  struct certinfo_builder builder = { 0 };
+  X509 *cert = NULL;
+  char *subject = NULL;
+  char *issuer = NULL;
+  char *start = NULL;
+  char *expire = NULL;
+  char version[32];
+  const char *sigalg = NULL;
+  const char *pubalg = NULL;
+  ASN1_INTEGER *serial = NULL;
+  BIGNUM *bn = NULL;
+  char *serial_hex = NULL;
+  EVP_PKEY *pkey = NULL;
+
+  if(out_len)
+    *out_len = 0;
+  if(!conn || !conn->ssl)
+    return NULL;
+
+  cert = SSL_get1_peer_certificate(conn->ssl);
+  if(!cert)
+    return NULL;
+
+  subject = openssl_name_string(X509_get_subject_name(cert));
+  issuer = openssl_name_string(X509_get_issuer_name(cert));
+  start = openssl_time_string(X509_get0_notBefore(cert));
+  expire = openssl_time_string(X509_get0_notAfter(cert));
+  snprintf(version, sizeof(version), "%ld", X509_get_version(cert) + 1);
+  sigalg = OBJ_nid2ln(X509_get_signature_nid(cert));
+  serial = X509_get_serialNumber(cert);
+  if(serial) {
+    bn = ASN1_INTEGER_to_BN(serial, NULL);
+    if(bn)
+      serial_hex = BN_bn2hex(bn);
+  }
+  pkey = X509_get_pubkey(cert);
+  if(pkey)
+    pubalg = OBJ_nid2sn(EVP_PKEY_id(pkey));
+
+  if(append_certinfo_line(&builder, 0, "Subject", subject) ||
+     append_certinfo_line(&builder, 0, "Issuer", issuer) ||
+     append_certinfo_line(&builder, 0, "Version", version) ||
+     append_certinfo_line(&builder, 0, "Serial Number", serial_hex) ||
+     append_certinfo_line(&builder, 0, "Signature Algorithm", sigalg) ||
+     append_certinfo_line(&builder, 0, "Public Key Algorithm", pubalg) ||
+     append_certinfo_line(&builder, 0, "Start date", start) ||
+     append_certinfo_line(&builder, 0, "Expire date", expire)) {
+    certinfo_builder_cleanup(&builder);
+  }
+
+  EVP_PKEY_free(pkey);
+  OPENSSL_free(serial_hex);
+  BN_free(bn);
+  free(subject);
+  free(issuer);
+  free(start);
+  free(expire);
+  X509_free(cert);
+  return certinfo_take(&builder, out_len);
 }
 
 int curl_safe_tls_connect(int fd,
@@ -588,6 +802,85 @@ static int gnutls_check_pinned_key(gnutls_session_t session, const char *spec)
   free(peer_der);
   gnutls_x509_crt_deinit(cert);
   return ok;
+}
+
+unsigned char *curl_safe_tls_certinfo(struct safe_tls_connection *conn,
+                                      size_t *out_len)
+{
+  struct certinfo_builder builder = { 0 };
+  const gnutls_datum_t *peers;
+  unsigned int peer_count = 0;
+  gnutls_x509_crt_t cert = NULL;
+  char text[512];
+  unsigned char serial[128];
+  size_t serial_len = sizeof(serial);
+  size_t text_len;
+  char serial_hex[sizeof(serial) * 2 + 1];
+  unsigned int i;
+
+  if(out_len)
+    *out_len = 0;
+  if(!conn)
+    return NULL;
+
+  peers = gnutls_certificate_get_peers(conn->session, &peer_count);
+  if(!peers || !peer_count)
+    return NULL;
+  if(gnutls_x509_crt_init(&cert) < 0)
+    return NULL;
+  if(gnutls_x509_crt_import(cert, &peers[0], GNUTLS_X509_FMT_DER) < 0) {
+    gnutls_x509_crt_deinit(cert);
+    return NULL;
+  }
+
+  text_len = sizeof(text);
+  if(gnutls_x509_crt_get_dn(cert, text, &text_len) == 0 &&
+     append_certinfo_line(&builder, 0, "Subject", text)) {
+    certinfo_builder_cleanup(&builder);
+    gnutls_x509_crt_deinit(cert);
+    return NULL;
+  }
+  text_len = sizeof(text);
+  if(gnutls_x509_crt_get_issuer_dn(cert, text, &text_len) == 0 &&
+     append_certinfo_line(&builder, 0, "Issuer", text)) {
+    certinfo_builder_cleanup(&builder);
+    gnutls_x509_crt_deinit(cert);
+    return NULL;
+  }
+  snprintf(text, sizeof(text), "%u", gnutls_x509_crt_get_version(cert));
+  if(append_certinfo_line(&builder, 0, "Version", text)) {
+    certinfo_builder_cleanup(&builder);
+    gnutls_x509_crt_deinit(cert);
+    return NULL;
+  }
+  serial_len = sizeof(serial);
+  if(gnutls_x509_crt_get_serial(cert, serial, &serial_len) == 0) {
+    for(i = 0; i < serial_len; ++i)
+      snprintf(serial_hex + i * 2, sizeof(serial_hex) - i * 2, "%02x", serial[i]);
+    if(append_certinfo_line(&builder, 0, "Serial Number", serial_hex)) {
+      certinfo_builder_cleanup(&builder);
+      gnutls_x509_crt_deinit(cert);
+      return NULL;
+    }
+  }
+  if(append_certinfo_line(
+       &builder, 0, "Signature Algorithm",
+       gnutls_sign_get_name(gnutls_x509_crt_get_signature_algorithm(cert))) ||
+     append_certinfo_line(
+       &builder, 0, "Public Key Algorithm",
+       gnutls_pk_algorithm_get_name(
+         gnutls_x509_crt_get_pk_algorithm(cert, NULL))) ||
+     append_certinfo_time(&builder, 0, "Start date",
+                          gnutls_x509_crt_get_activation_time(cert)) ||
+     append_certinfo_time(&builder, 0, "Expire date",
+                          gnutls_x509_crt_get_expiration_time(cert))) {
+    certinfo_builder_cleanup(&builder);
+    gnutls_x509_crt_deinit(cert);
+    return NULL;
+  }
+
+  gnutls_x509_crt_deinit(cert);
+  return certinfo_take(&builder, out_len);
 }
 
 int curl_safe_tls_connect(int fd,

@@ -1,7 +1,7 @@
 use port_libcurl_safe::abi::{
     self, curl_easyoption, curl_version_info_data, CURLMsg, CURLOT_BLOB, CURLOT_CBPTR,
-    CURLOT_FLAG_ALIAS, CURLOT_FUNCTION, CURLOT_LONG, CURLOT_OBJECT, CURLOT_OFF_T,
-    CURLOT_SLIST, CURLOT_STRING, CURLOT_VALUES,
+    CURLOT_FLAG_ALIAS, CURLOT_FUNCTION, CURLOT_LONG, CURLOT_OBJECT, CURLOT_OFF_T, CURLOT_SLIST,
+    CURLOT_STRING, CURLOT_VALUES,
 };
 use port_libcurl_safe::BUILD_FLAVOR;
 use serde_json::Value;
@@ -267,9 +267,7 @@ int main(void) {
 }
 
 fn run_layout_helper(binary: &Path) -> BTreeMap<String, LayoutLine> {
-    let output = Command::new(binary)
-        .output()
-        .expect("run layout helper");
+    let output = Command::new(binary).output().expect("run layout helper");
     assert!(output.status.success(), "layout helper failed");
 
     let text = String::from_utf8(output.stdout).expect("layout helper stdout utf8");
@@ -290,9 +288,19 @@ fn run_layout_helper(binary: &Path) -> BTreeMap<String, LayoutLine> {
         let mut offsets = BTreeMap::new();
         for field in parts {
             let (field_name, offset) = field.split_once('=').expect("field offset");
-            offsets.insert(field_name.to_string(), offset.parse::<usize>().expect("parse offset"));
+            offsets.insert(
+                field_name.to_string(),
+                offset.parse::<usize>().expect("parse offset"),
+            );
         }
-        result.insert(name, LayoutLine { size, align, offsets });
+        result.insert(
+            name,
+            LayoutLine {
+                size,
+                align,
+                offsets,
+            },
+        );
     }
     result
 }
@@ -512,7 +520,10 @@ fn public_layout_and_option_table_match_manifest() {
         let runtime_name = unsafe { std::ffi::CStr::from_ptr(runtime.name) }
             .to_str()
             .expect("runtime option name utf8");
-        assert_eq!(runtime_name, entry["name"].as_str().expect("manifest option name"));
+        assert_eq!(
+            runtime_name,
+            entry["name"].as_str().expect("manifest option name")
+        );
         assert_eq!(
             runtime.type_,
             expected_easy_type(entry["type"].as_str().expect("manifest option type"))
@@ -525,7 +536,10 @@ fn public_layout_and_option_table_match_manifest() {
         assert_eq!(runtime.flags & CURLOT_FLAG_ALIAS, expected_alias);
 
         let lower = CString::new(runtime_name.to_ascii_lowercase()).expect("lowercase option");
-        assert_eq!(unsafe { curl_easy_option_by_name(lower.as_ptr()) }, runtime_ptr);
+        assert_eq!(
+            unsafe { curl_easy_option_by_name(lower.as_ptr()) },
+            runtime_ptr
+        );
 
         let by_id = unsafe { curl_easy_option_by_id(runtime.id) };
         if (runtime.flags & CURLOT_FLAG_ALIAS) != 0 {

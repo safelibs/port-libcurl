@@ -37,6 +37,7 @@ pub(crate) fn perform_transfer(
         .unwrap_or_else(|| "SHOW SERVER".to_string());
     let started = Instant::now();
     let mut stream = match transfer::connect_protocol_transport(
+        handle,
         &parsed.host,
         parsed.port,
         plan,

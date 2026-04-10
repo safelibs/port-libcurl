@@ -1,9 +1,9 @@
 use port_libcurl_safe::abi::{
     curl_calloc_callback, curl_easyoption, curl_free_callback, curl_malloc_callback,
-    curl_realloc_callback, curl_strdup_callback, curl_version_info_data, CURL, CURLM, CURLM_OK,
-    CURLSH, CURLSHcode, CURLSHoption, CURLU, CURLUcode, CURLUPART_HOST, CURLUPART_URL, CURLcode,
-    CURLoption, CURLversion, CURLMcode, CURLSHOPT_SHARE, CURLSHE_OK, CURLUE_OK, CURLVERSION_NOW,
-    CURLE_OK, CURL_GLOBAL_DEFAULT, CURL_LOCK_DATA_COOKIE, CURLOT_STRING,
+    curl_realloc_callback, curl_strdup_callback, curl_version_info_data, CURLMcode, CURLSHcode,
+    CURLSHoption, CURLUcode, CURLcode, CURLoption, CURLversion, CURL, CURLE_OK, CURLM, CURLM_OK,
+    CURLOT_STRING, CURLSH, CURLSHE_OK, CURLSHOPT_SHARE, CURLU, CURLUE_OK, CURLUPART_HOST,
+    CURLUPART_URL, CURLVERSION_NOW, CURL_GLOBAL_DEFAULT, CURL_LOCK_DATA_COOKIE,
 };
 use port_libcurl_safe::BUILD_FLAVOR;
 use std::collections::HashSet;
@@ -87,7 +87,11 @@ fn tracking() -> &'static Mutex<TrackingState> {
 }
 
 fn clear_tracking() {
-    tracking().lock().expect("tracking mutex poisoned").live.clear();
+    tracking()
+        .lock()
+        .expect("tracking mutex poisoned")
+        .live
+        .clear();
 }
 
 fn track(ptr: *mut c_void) {
@@ -199,7 +203,10 @@ fn public_abi_smoke_and_allocator_contract() {
         curl_free(getenv_value.cast());
         assert!(!is_tracked(getenv_value.cast()));
 
-        assert_eq!(curl_getdate(c_ptr(b"Sun, 06 Nov 1994 08:49:37 GMT\0"), ptr::null()), 784111777);
+        assert_eq!(
+            curl_getdate(c_ptr(b"Sun, 06 Nov 1994 08:49:37 GMT\0"), ptr::null()),
+            784111777
+        );
         assert_eq!(curl_strequal(c_ptr(b"AbC\0"), c_ptr(b"aBc\0")), 1);
         assert_eq!(curl_strnequal(c_ptr(b"AbCd\0"), c_ptr(b"aBcE\0"), 3), 1);
 
@@ -221,7 +228,10 @@ fn public_abi_smoke_and_allocator_contract() {
         assert!(!unescaped.is_null());
         assert!(is_tracked(unescaped.cast()));
         assert_eq!(unescaped_len, 7);
-        assert_eq!(std::slice::from_raw_parts(unescaped.cast::<u8>(), unescaped_len as usize), b"a/b?c=d");
+        assert_eq!(
+            std::slice::from_raw_parts(unescaped.cast::<u8>(), unescaped_len as usize),
+            b"a/b?c=d"
+        );
         curl_free(unescaped.cast());
         curl_free(escaped.cast());
 
@@ -252,9 +262,12 @@ fn public_abi_smoke_and_allocator_contract() {
 
         let url = curl_url();
         assert!(!url.is_null());
-        let full_url = CString::new("https://user:pass@example.com:9443/base/path?x=1#frag")
-            .expect("cstring");
-        assert_eq!(curl_url_set(url, CURLUPART_URL, full_url.as_ptr(), 0), CURLUE_OK);
+        let full_url =
+            CString::new("https://user:pass@example.com:9443/base/path?x=1#frag").expect("cstring");
+        assert_eq!(
+            curl_url_set(url, CURLUPART_URL, full_url.as_ptr(), 0),
+            CURLUE_OK
+        );
 
         let mut host = ptr::null_mut();
         assert_eq!(curl_url_get(url, CURLUPART_HOST, &mut host, 0), CURLUE_OK);
@@ -266,7 +279,10 @@ fn public_abi_smoke_and_allocator_contract() {
         let url_copy = curl_url_dup(url);
         assert!(!url_copy.is_null());
         let mut url_text = ptr::null_mut();
-        assert_eq!(curl_url_get(url_copy, CURLUPART_URL, &mut url_text, 0), CURLUE_OK);
+        assert_eq!(
+            curl_url_get(url_copy, CURLUPART_URL, &mut url_text, 0),
+            CURLUE_OK
+        );
         assert!(is_tracked(url_text.cast()));
         assert!(CStr::from_ptr(url_text).to_bytes().starts_with(b"https://"));
         curl_free(url_text.cast());

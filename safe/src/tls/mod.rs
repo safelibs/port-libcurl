@@ -48,8 +48,11 @@ unsafe extern "C" {
         errbuf: *mut c_char,
         errlen: usize,
     ) -> c_int;
-    fn curl_safe_tls_read(conn: *mut SafeTlsConnection, buf: *mut core::ffi::c_void, len: usize)
-        -> isize;
+    fn curl_safe_tls_read(
+        conn: *mut SafeTlsConnection,
+        buf: *mut core::ffi::c_void,
+        len: usize,
+    ) -> isize;
     fn curl_safe_tls_write(
         conn: *mut SafeTlsConnection,
         buf: *const core::ffi::c_void,

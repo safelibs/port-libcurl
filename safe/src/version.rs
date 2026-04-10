@@ -1,4 +1,4 @@
-use crate::abi::{size_t, time_t, CURLversion, curl_version_info_data};
+use crate::abi::{curl_version_info_data, size_t, time_t, CURLversion};
 use crate::{alloc, global};
 use core::ffi::{c_char, c_void};
 use core::ptr;
@@ -31,7 +31,10 @@ fn ref_version_info() -> CurlVersionInfoFn {
 }
 
 pub(crate) fn clear_cached_version() {
-    let cached = VERSION_CACHE.lock().expect("version cache mutex poisoned").take();
+    let cached = VERSION_CACHE
+        .lock()
+        .expect("version cache mutex poisoned")
+        .take();
     if let Some(ptr) = cached {
         unsafe { alloc::free_ptr((ptr as *mut c_char).cast::<c_void>()) };
     }
@@ -85,11 +88,7 @@ pub unsafe extern "C" fn curl_strequal(s1: *const c_char, s2: *const c_char) -> 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_strnequal(
-    s1: *const c_char,
-    s2: *const c_char,
-    n: size_t,
-) -> i32 {
+pub unsafe extern "C" fn curl_strnequal(s1: *const c_char, s2: *const c_char, n: size_t) -> i32 {
     if n == 0 {
         return 1;
     }

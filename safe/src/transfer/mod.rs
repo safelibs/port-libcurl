@@ -915,13 +915,15 @@ fn execute_http_transfer(
         Vec::new()
     };
     let mut stream = if let Some(policy) = plan.tls.as_ref() {
-        TransportStream::Tls(crate::tls::connect(
+        let tls = crate::tls::connect(
             stream,
             &request.target_host,
             request.target_port,
             metadata,
             policy,
-        )?)
+        )?;
+        record_certinfo(handle, policy.certinfo, &tls);
+        TransportStream::Tls(tls)
     } else {
         TransportStream::Plain(stream)
     };
@@ -1073,6 +1075,7 @@ fn connect_stream(
 }
 
 pub(crate) fn connect_protocol_transport(
+    handle: *mut CURL,
     host: &str,
     port: u16,
     plan: &TransferPlan,
@@ -1091,7 +1094,9 @@ pub(crate) fn connect_protocol_transport(
                 let connect_time_us = elapsed_us(resolve_started.elapsed());
                 let info = describe_connection(&stream, namelookup_time_us, connect_time_us);
                 let stream = if let Some(policy) = plan.tls.as_ref() {
-                    TransportStream::Tls(crate::tls::connect(stream, host, port, metadata, policy)?)
+                    let tls = crate::tls::connect(stream, host, port, metadata, policy)?;
+                    record_certinfo(handle, policy.certinfo, &tls);
+                    TransportStream::Tls(tls)
                 } else {
                     TransportStream::Plain(stream)
                 };
@@ -1114,6 +1119,15 @@ pub(crate) fn close_transport(stream: TransportStream, callbacks: EasyCallbacks)
     match stream {
         TransportStream::Plain(stream) => close_plain_stream(stream, callbacks),
         TransportStream::Tls(stream) => drop(stream),
+    }
+}
+
+fn record_certinfo(handle: *mut CURL, enabled: bool, connection: &crate::tls::TlsConnection) {
+    if !enabled {
+        return;
+    }
+    if let Some(certinfo) = crate::tls::certinfo::capture(connection) {
+        crate::tls::certinfo::store(handle, certinfo);
     }
 }
 

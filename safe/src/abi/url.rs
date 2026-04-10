@@ -1,4 +1,4 @@
-use crate::abi::{CURLU, CURLUPart, CURLUcode};
+use crate::abi::{CURLUPart, CURLUcode, CURLU};
 use core::ffi::c_char;
 
 #[no_mangle]

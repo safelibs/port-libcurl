@@ -46,6 +46,7 @@ pub(crate) fn perform_transfer(
         .unwrap_or_else(|| parsed.raw_url.clone());
     let started = Instant::now();
     let mut control = match transfer::connect_protocol_transport(
+        handle,
         &parsed.host,
         parsed.port,
         plan,

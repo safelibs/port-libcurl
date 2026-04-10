@@ -135,3 +135,19 @@ pub unsafe extern "C" fn curl_safe_easy_getinfo_socket(
     }
     1
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn curl_safe_easy_getinfo_ptr(
+    handle: *mut CURL,
+    info: CURLINFO,
+    value: *mut *mut c_void,
+    result: *mut CURLcode,
+) -> c_int {
+    let Some(code) = crate::easy::perform::easy_getinfo_ptr(handle, info, value) else {
+        return 0;
+    };
+    if !result.is_null() {
+        unsafe { *result = code };
+    }
+    1
+}

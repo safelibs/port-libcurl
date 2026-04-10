@@ -30,6 +30,7 @@ fn main() {
     let variadic = manifest_dir.join("c_shim/variadic.c");
     let mprintf = manifest_dir.join("c_shim/mprintf.c");
     let tls_backend = manifest_dir.join("c_shim/tls_backend.c");
+    let ssh_backend = manifest_dir.join("c_shim/ssh_backend.c");
     let reference_script = manifest_dir.join("scripts/build-reference-curl.sh");
 
     for path in [
@@ -40,6 +41,7 @@ fn main() {
         &variadic,
         &mprintf,
         &tls_backend,
+        &ssh_backend,
         &reference_script,
         &manifest_dir.join("src/lib.rs"),
         &manifest_dir.join("src/abi/connect_only.rs"),
@@ -75,6 +77,7 @@ fn main() {
     compile_c_shims(&manifest_dir, flavor);
 
     println!("cargo:rustc-link-lib=dl");
+    println!("cargo:rustc-link-lib=ssh2");
     match flavor {
         "openssl" => {
             println!("cargo:rustc-link-lib=ssl");
@@ -203,6 +206,7 @@ fn compile_c_shims(manifest_dir: &Path, flavor: &str) {
         .file(manifest_dir.join("c_shim/variadic.c"))
         .file(manifest_dir.join("c_shim/mprintf.c"))
         .file(manifest_dir.join("c_shim/tls_backend.c"))
+        .file(manifest_dir.join("c_shim/ssh_backend.c"))
         .flag_if_supported("-std=c11")
         .flag_if_supported("-fPIC")
         .flag_if_supported("-Wall")

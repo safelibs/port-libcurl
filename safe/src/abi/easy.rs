@@ -47,7 +47,9 @@ pub unsafe extern "C" fn curl_easy_unescape(
 
 #[no_mangle]
 pub unsafe extern "C" fn curl_unescape(input: *const c_char, len: c_int) -> *mut c_char {
-    unsafe { crate::easy::handle::easy_unescape(core::ptr::null_mut(), input, len, core::ptr::null_mut()) }
+    unsafe {
+        crate::easy::handle::easy_unescape(core::ptr::null_mut(), input, len, core::ptr::null_mut())
+    }
 }
 
 #[no_mangle]

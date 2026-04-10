@@ -35,6 +35,7 @@ pub(crate) fn perform_transfer(
         percent_decode(parsed.path.trim_start_matches('/').as_bytes()).unwrap_or_default();
     let started = Instant::now();
     let mut stream = match transfer::connect_protocol_transport(
+        handle,
         &parsed.host,
         parsed.port,
         plan,

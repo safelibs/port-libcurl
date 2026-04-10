@@ -41,7 +41,8 @@ impl HstsStore {
         include_subdomains: bool,
         expire_text: &str,
     ) {
-        self.entries.retain(|entry| !entry.host.eq_ignore_ascii_case(host));
+        self.entries
+            .retain(|entry| !entry.host.eq_ignore_ascii_case(host));
         self.entries.push(HstsEntry {
             host: host.to_ascii_lowercase(),
             include_subdomains,

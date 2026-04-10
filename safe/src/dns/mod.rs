@@ -80,7 +80,11 @@ fn slist_entries(mut list: *mut curl_slist) -> Vec<String> {
     while !list.is_null() {
         let data = unsafe { (*list).data };
         if !data.is_null() {
-            entries.push(unsafe { CStr::from_ptr(data) }.to_string_lossy().into_owned());
+            entries.push(
+                unsafe { CStr::from_ptr(data) }
+                    .to_string_lossy()
+                    .into_owned(),
+            );
         }
         list = unsafe { (*list).next };
     }

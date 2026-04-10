@@ -1,4 +1,4 @@
-use crate::abi::{CURLU, CURLUPart, CURLUcode, CURLUE_OK, CURLUE_OUT_OF_MEMORY};
+use crate::abi::{CURLUPart, CURLUcode, CURLU, CURLUE_OK, CURLUE_OUT_OF_MEMORY};
 use crate::{alloc, global};
 use core::ffi::c_char;
 use core::ptr;
@@ -8,7 +8,8 @@ use std::sync::OnceLock;
 type CurlUrlFn = unsafe extern "C" fn() -> *mut CURLU;
 type CurlUrlCleanupFn = unsafe extern "C" fn(*mut CURLU);
 type CurlUrlDupFn = unsafe extern "C" fn(*const CURLU) -> *mut CURLU;
-type CurlUrlGetFn = unsafe extern "C" fn(*const CURLU, CURLUPart, *mut *mut c_char, u32) -> CURLUcode;
+type CurlUrlGetFn =
+    unsafe extern "C" fn(*const CURLU, CURLUPart, *mut *mut c_char, u32) -> CURLUcode;
 type CurlUrlSetFn = unsafe extern "C" fn(*mut CURLU, CURLUPart, *const c_char, u32) -> CURLUcode;
 type CurlUrlStrErrorFn = unsafe extern "C" fn(CURLUcode) -> *const c_char;
 

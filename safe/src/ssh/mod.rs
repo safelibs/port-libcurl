@@ -1,8 +1,11 @@
 use crate::abi::{CURLcode, CURL};
 use crate::easy::perform::{EasyCallbacks, EasyMetadata};
+use crate::http::auth;
 use crate::protocols::ParsedProtocolUrl;
-use crate::transfer::{self, TransferPlan, TransportStream};
-use std::io::{ErrorKind, Read, Write};
+use crate::transfer::{self, LowSpeedGuard, TransferPlan, TransportStream};
+use core::ffi::{c_char, c_int, c_void};
+use std::ffi::CString;
+use std::os::fd::AsRawFd;
 use std::time::{Duration, Instant};
 
 pub(crate) const UPSTREAM_SOURCES: &[&str] = &[
@@ -13,12 +16,42 @@ pub(crate) const UPSTREAM_SOURCES: &[&str] = &[
 
 const CURLE_URL_MALFORMAT: CURLcode = 3;
 const CURLE_COULDNT_CONNECT: CURLcode = 7;
+const CURLE_REMOTE_ACCESS_DENIED: CURLcode = 9;
+const CURLE_WRITE_ERROR: CURLcode = 23;
 const CURLE_SEND_ERROR: CURLcode = 55;
 const CURLE_RECV_ERROR: CURLcode = 56;
+const CURLE_LOGIN_DENIED: CURLcode = 67;
+const CURLE_REMOTE_FILE_NOT_FOUND: CURLcode = 78;
 
-const SSH_MSG_DISCONNECT: u8 = 1;
-const SSH_MSG_KEXINIT: u8 = 20;
-const IO_TIMEOUT: Duration = Duration::from_secs(10);
+const CURL_SAFE_SSH_OK: c_int = 0;
+const CURL_SAFE_SSH_CONNECT: c_int = 1;
+const CURL_SAFE_SSH_AUTH: c_int = 2;
+const CURL_SAFE_SSH_REMOTE_NOT_FOUND: c_int = 3;
+const CURL_SAFE_SSH_REMOTE_ACCESS: c_int = 4;
+const CURL_SAFE_SSH_SEND: c_int = 5;
+const CURL_SAFE_SSH_RECV: c_int = 6;
+const CURL_SAFE_SSH_CALLBACK: c_int = 7;
+
+const IO_TIMEOUT: Duration = Duration::from_secs(30);
+const UPLOAD_CHUNK_SIZE: usize = 16 * 1024;
+
+unsafe extern "C" {
+    fn curl_safe_ssh_transfer(
+        fd: c_int,
+        scheme: *const c_char,
+        username: *const c_char,
+        password: *const c_char,
+        path: *const c_char,
+        upload: c_int,
+        upload_data: *const u8,
+        upload_len: usize,
+        write_cb: Option<unsafe extern "C" fn(*const c_char, usize, *mut c_void) -> isize>,
+        write_ctx: *mut c_void,
+        transferred: *mut u64,
+        errbuf: *mut c_char,
+        errlen: usize,
+    ) -> c_int;
+}
 
 pub(crate) fn is_ssh_scheme(scheme: &str) -> bool {
     matches!(scheme, "scp" | "sftp")
@@ -38,8 +71,27 @@ pub(crate) fn perform_transfer(
         Ok(parsed) => parsed,
         Err(code) => return code,
     };
+    let remote_path = match parsed.decoded_path() {
+        Ok(path) if path != "/" => path,
+        Ok(_) => {
+            crate::easy::perform::set_error_buffer(handle, "SSH URL must include a remote path");
+            return CURLE_URL_MALFORMAT;
+        }
+        Err(code) => return code,
+    };
+    let credentials = ssh_credentials(&parsed, metadata);
+    let upload_data = if metadata.upload {
+        match collect_upload_body(handle, callbacks, metadata.upload_size) {
+            Ok(data) => data,
+            Err(code) => return code,
+        }
+    } else {
+        Vec::new()
+    };
+
     let started = Instant::now();
-    let mut connected = match transfer::connect_protocol_transport(
+    let connected = match transfer::connect_protocol_transport(
+        handle,
         &parsed.host,
         parsed.port,
         plan,
@@ -49,183 +101,215 @@ pub(crate) fn perform_transfer(
         Ok(stream) => stream,
         Err(code) => return code,
     };
-    if connected
-        .stream
+    let mut info = connected.info.clone();
+    let stream = match connected.stream {
+        TransportStream::Plain(stream) => stream,
+        TransportStream::Tls(_) => {
+            crate::easy::perform::set_error_buffer(handle, "SSH transport unexpectedly negotiated TLS");
+            return CURLE_COULDNT_CONNECT;
+        }
+    };
+    if stream
         .set_read_timeout(Some(IO_TIMEOUT))
-        .and_then(|_| connected.stream.set_write_timeout(Some(IO_TIMEOUT)))
+        .and_then(|_| stream.set_write_timeout(Some(IO_TIMEOUT)))
         .is_err()
     {
-        transfer::close_transport(connected.stream, callbacks);
+        transfer::close_transport(TransportStream::Plain(stream), callbacks);
         return CURLE_COULDNT_CONNECT;
     }
 
-    let code = perform_ssh_handshake(handle, &mut connected.stream, &connected.info, started);
-    transfer::close_transport(connected.stream, callbacks);
+    let scheme_c = match CString::new(parsed.scheme.as_str()) {
+        Ok(value) => value,
+        Err(_) => {
+            transfer::close_transport(TransportStream::Plain(stream), callbacks);
+            return CURLE_URL_MALFORMAT;
+        }
+    };
+    let user_c = credentials
+        .username
+        .as_deref()
+        .map(CString::new)
+        .transpose()
+        .map_err(|_| CURLE_URL_MALFORMAT);
+    let pass_c = credentials
+        .password
+        .as_deref()
+        .map(CString::new)
+        .transpose()
+        .map_err(|_| CURLE_URL_MALFORMAT);
+    let path_c = match CString::new(remote_path.as_str()) {
+        Ok(value) => value,
+        Err(_) => {
+            transfer::close_transport(TransportStream::Plain(stream), callbacks);
+            return CURLE_URL_MALFORMAT;
+        }
+    };
+    let (user_c, pass_c) = match (user_c, pass_c) {
+        (Ok(user_c), Ok(pass_c)) => (user_c, pass_c),
+        _ => {
+            transfer::close_transport(TransportStream::Plain(stream), callbacks);
+            return CURLE_URL_MALFORMAT;
+        }
+    };
+
+    let mut write_ctx = if metadata.upload {
+        None
+    } else {
+        let context = Box::new(DownloadContext {
+            handle,
+            callbacks,
+            low_speed: LowSpeedGuard::new(plan.low_speed),
+            delivered: 0,
+            last_error: None,
+        });
+        if let Err(code) = transfer::invoke_progress_callback(callbacks, 0, None) {
+            transfer::close_transport(TransportStream::Plain(stream), callbacks);
+            return code;
+        }
+        Some(context)
+    };
+
+    let mut transferred = 0u64;
+    let mut errbuf = [0i8; 256];
+    let rc = unsafe {
+        curl_safe_ssh_transfer(
+            stream.as_raw_fd(),
+            scheme_c.as_ptr(),
+            user_c.as_ref().map_or(core::ptr::null(), |value| value.as_ptr()),
+            pass_c.as_ref().map_or(core::ptr::null(), |value| value.as_ptr()),
+            path_c.as_ptr(),
+            metadata.upload as c_int,
+            upload_data.as_ptr(),
+            upload_data.len(),
+            if metadata.upload {
+                None
+            } else {
+                Some(ssh_write_callback)
+            },
+            write_ctx
+                .as_mut()
+                .map_or(core::ptr::null_mut(), |ctx| ctx.as_mut() as *mut _ as *mut c_void),
+            &mut transferred,
+            errbuf.as_mut_ptr(),
+            errbuf.len(),
+        )
+    };
+
+    let code = if rc == CURL_SAFE_SSH_CALLBACK {
+        write_ctx
+            .as_ref()
+            .and_then(|ctx| ctx.last_error)
+            .unwrap_or(CURLE_WRITE_ERROR)
+    } else if rc != CURL_SAFE_SSH_OK {
+        let message = unsafe { std::ffi::CStr::from_ptr(errbuf.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        if !message.is_empty() {
+            crate::easy::perform::set_error_buffer(handle, &message);
+        }
+        match rc {
+            CURL_SAFE_SSH_AUTH => CURLE_LOGIN_DENIED,
+            CURL_SAFE_SSH_REMOTE_NOT_FOUND => CURLE_REMOTE_FILE_NOT_FOUND,
+            CURL_SAFE_SSH_REMOTE_ACCESS => CURLE_REMOTE_ACCESS_DENIED,
+            CURL_SAFE_SSH_SEND => CURLE_SEND_ERROR,
+            CURL_SAFE_SSH_RECV => CURLE_RECV_ERROR,
+            CURL_SAFE_SSH_CONNECT => CURLE_COULDNT_CONNECT,
+            _ => CURLE_RECV_ERROR,
+        }
+    } else {
+        if metadata.upload {
+            let _ = transfer::invoke_progress_callback(
+                callbacks,
+                transferred as usize,
+                Some(upload_data.len()),
+            );
+        }
+        info.pretransfer_time_us = info.connect_time_us;
+        info.starttransfer_time_us = info.connect_time_us;
+        info.total_time_us = transfer::elapsed_us(started.elapsed());
+        crate::easy::perform::record_transfer_info(handle, info);
+        crate::abi::CURLE_OK
+    };
+
+    transfer::close_transport(TransportStream::Plain(stream), callbacks);
     code
 }
 
-fn perform_ssh_handshake(
+#[derive(Default)]
+struct SshCredentials {
+    username: Option<String>,
+    password: Option<String>,
+}
+
+fn ssh_credentials(parsed: &ParsedProtocolUrl, metadata: &EasyMetadata) -> SshCredentials {
+    if let Some(explicit) = auth::explicit_basic_credentials(metadata) {
+        return SshCredentials {
+            username: Some(explicit.username),
+            password: Some(explicit.password),
+        };
+    }
+    SshCredentials {
+        username: parsed
+            .username
+            .clone()
+            .or_else(|| std::env::var("USER").ok()),
+        password: parsed.password.clone().or_else(|| metadata.password.clone()),
+    }
+}
+
+fn collect_upload_body(
     handle: *mut CURL,
-    stream: &mut TransportStream,
-    base_info: &crate::easy::perform::RecordedTransferInfo,
-    started: Instant,
-) -> CURLcode {
-    if stream
-        .write_all(b"SSH-2.0-port-libcurl-safe\r\n")
-        .and_then(|_| stream.flush())
-        .is_err()
-    {
-        return CURLE_SEND_ERROR;
-    }
-
-    let banner = match read_identification(stream) {
-        Ok(banner) if banner.starts_with("SSH-") => banner,
-        Ok(_) => {
-            crate::easy::perform::set_error_buffer(handle, "SSH server banner was malformed");
-            return CURLE_RECV_ERROR;
-        }
-        Err(code) => return code,
-    };
-
-    let kexinit = build_packet(&build_kexinit_payload());
-    if stream
-        .write_all(&kexinit)
-        .and_then(|_| stream.flush())
-        .is_err()
-    {
-        return CURLE_SEND_ERROR;
-    }
-
-    let server_packet = match read_packet(stream) {
-        Ok(packet) => packet,
-        Err(code) => return code,
-    };
-    if server_packet.first().copied() != Some(SSH_MSG_KEXINIT) {
-        crate::easy::perform::set_error_buffer(
-            handle,
-            "SSH server did not return a key-exchange preface",
-        );
-        return CURLE_RECV_ERROR;
-    }
-
-    let disconnect = build_packet(&build_disconnect_payload(&format!(
-        "port-libcurl-safe probe completed after {banner}"
-    )));
-    let _ = stream.write_all(&disconnect);
-    let _ = stream.flush();
-
-    let mut info = base_info.clone();
-    info.pretransfer_time_us = info.connect_time_us;
-    info.starttransfer_time_us = info.connect_time_us;
-    info.total_time_us = transfer::elapsed_us(started.elapsed());
-    crate::easy::perform::record_transfer_info(handle, info);
-    crate::abi::CURLE_OK
-}
-
-fn read_identification(stream: &mut TransportStream) -> Result<String, CURLcode> {
-    let mut pending = Vec::new();
+    callbacks: EasyCallbacks,
+    advertised_size: Option<i64>,
+) -> Result<Vec<u8>, CURLcode> {
+    let capacity = advertised_size
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(UPLOAD_CHUNK_SIZE);
+    let mut body = Vec::with_capacity(capacity);
+    let mut chunk = vec![0u8; UPLOAD_CHUNK_SIZE];
+    transfer::invoke_progress_callback(callbacks, 0, None)?;
     loop {
-        if let Some(end) = pending.iter().position(|byte| *byte == b'\n') {
-            let line = String::from_utf8_lossy(&pending[..=end]).into_owned();
-            pending.drain(..=end);
-            let trimmed = line.trim();
-            if !trimmed.is_empty() {
-                return Ok(trimmed.to_string());
-            }
-            continue;
+        let read = transfer::read_request_body_chunk(handle, callbacks, &mut chunk)?;
+        if read == 0 {
+            break;
         }
-        let mut chunk = [0u8; 256];
-        match stream.read(&mut chunk) {
-            Ok(0) => return Err(CURLE_RECV_ERROR),
-            Ok(read) => pending.extend_from_slice(&chunk[..read]),
-            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
-                return Err(CURLE_COULDNT_CONNECT);
-            }
-            Err(_) => return Err(CURLE_RECV_ERROR),
-        }
+        body.extend_from_slice(&chunk[..read]);
     }
+    Ok(body)
 }
 
-fn read_packet(stream: &mut TransportStream) -> Result<Vec<u8>, CURLcode> {
-    let mut header = [0u8; 5];
-    stream.read_exact(&mut header).map_err(map_io_read_error)?;
-    let packet_length =
-        u32::from_be_bytes(header[..4].try_into().expect("ssh packet length bytes")) as usize;
-    if packet_length <= usize::from(header[4]) || packet_length < 5 || packet_length > 256 * 1024 {
-        return Err(CURLE_RECV_ERROR);
+struct DownloadContext {
+    handle: *mut CURL,
+    callbacks: EasyCallbacks,
+    low_speed: LowSpeedGuard,
+    delivered: usize,
+    last_error: Option<CURLcode>,
+}
+
+unsafe extern "C" fn ssh_write_callback(
+    buffer: *const c_char,
+    len: usize,
+    ctx: *mut c_void,
+) -> isize {
+    if buffer.is_null() || ctx.is_null() {
+        return -1;
     }
-    let padding_length = usize::from(header[4]);
-    let mut rest = vec![0u8; packet_length - 1];
-    stream.read_exact(&mut rest).map_err(map_io_read_error)?;
-    let payload_length = packet_length - padding_length - 1;
-    Ok(rest[..payload_length].to_vec())
-}
-
-fn build_kexinit_payload() -> Vec<u8> {
-    let mut payload = Vec::new();
-    payload.push(SSH_MSG_KEXINIT);
-    let mut cookie = [0u8; 16];
-    let _ = crate::rand::fill_random(&mut cookie);
-    payload.extend_from_slice(&cookie);
-    for list in [
-        "curve25519-sha256,diffie-hellman-group14-sha256",
-        "ssh-ed25519,rsa-sha2-256",
-        "aes128-ctr,aes256-ctr",
-        "aes128-ctr,aes256-ctr",
-        "hmac-sha2-256",
-        "hmac-sha2-256",
-        "none",
-        "none",
-        "",
-        "",
-    ] {
-        payload.extend_from_slice(&encode_name_list(list));
+    let context = unsafe { &mut *(ctx as *mut DownloadContext) };
+    let mut body = unsafe { std::slice::from_raw_parts(buffer.cast::<u8>(), len) }.to_vec();
+    if let Err(code) = transfer::deliver_write(context.handle, context.callbacks, &mut body) {
+        context.last_error = Some(code);
+        return -1;
     }
-    payload.push(0);
-    payload.extend_from_slice(&0u32.to_be_bytes());
-    payload
-}
-
-fn build_disconnect_payload(message: &str) -> Vec<u8> {
-    let mut payload = Vec::new();
-    payload.push(SSH_MSG_DISCONNECT);
-    payload.extend_from_slice(&11u32.to_be_bytes());
-    payload.extend_from_slice(&encode_ssh_string(message.as_bytes()));
-    payload.extend_from_slice(&encode_ssh_string(b"en"));
-    payload
-}
-
-fn build_packet(payload: &[u8]) -> Vec<u8> {
-    let mut padding_length = (8 - ((payload.len() + 5) % 8)) % 8;
-    if padding_length < 4 {
-        padding_length += 8;
+    if let Err(code) = context.low_speed.observe_progress(len) {
+        context.last_error = Some(code);
+        return -1;
     }
-    let packet_length = payload.len() + padding_length + 1;
-
-    let mut packet = Vec::with_capacity(packet_length + 4);
-    packet.extend_from_slice(&(packet_length as u32).to_be_bytes());
-    packet.push(padding_length as u8);
-    packet.extend_from_slice(payload);
-    let mut padding = vec![0u8; padding_length];
-    let _ = crate::rand::fill_random(&mut padding);
-    packet.extend_from_slice(&padding);
-    packet
-}
-
-fn encode_name_list(list: &str) -> Vec<u8> {
-    encode_ssh_string(list.as_bytes())
-}
-
-fn encode_ssh_string(value: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(value.len() + 4);
-    out.extend_from_slice(&(value.len() as u32).to_be_bytes());
-    out.extend_from_slice(value);
-    out
-}
-
-fn map_io_read_error(error: std::io::Error) -> CURLcode {
-    match error.kind() {
-        ErrorKind::WouldBlock | ErrorKind::TimedOut => CURLE_COULDNT_CONNECT,
-        _ => CURLE_RECV_ERROR,
+    context.delivered = context.delivered.saturating_add(len);
+    if let Err(code) =
+        transfer::invoke_progress_callback(context.callbacks, context.delivered, None)
+    {
+        context.last_error = Some(code);
+        return -1;
     }
+    len as isize
 }
