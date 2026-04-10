@@ -587,13 +587,6 @@ pub(crate) unsafe fn remove_handle(multi: *mut CURLM, easy_handle: *mut CURL) ->
         let _ = record.connection_id;
         guard.easies.retain(|candidate| *candidate != easy_handle);
         guard.messages.retain(|msg| msg.easy_handle != easy_handle);
-        if guard
-            .current_msg
-            .as_ref()
-            .is_some_and(|msg| msg.easy_handle == easy_handle)
-        {
-            guard.current_msg = None;
-        }
         let cleanup_reference_multi = record.plan.reference_backend
             && !guard
                 .records
@@ -637,13 +630,6 @@ pub(crate) unsafe fn drop_easy_reference(multi: *mut CURLM, easy_handle: *mut CU
             let mut guard = wrapper.inner.lock().expect("multi mutex poisoned");
             guard.easies.retain(|candidate| *candidate != easy_handle);
             guard.messages.retain(|msg| msg.easy_handle != easy_handle);
-            if guard
-                .current_msg
-                .as_ref()
-                .is_some_and(|msg| msg.easy_handle == easy_handle)
-            {
-                guard.current_msg = None;
-            }
             let Some(mut record) = guard.records.remove(&(easy_handle as usize)) else {
                 return;
             };
