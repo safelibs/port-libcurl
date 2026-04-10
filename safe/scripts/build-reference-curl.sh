@@ -5,6 +5,35 @@ usage() {
   echo "usage: $0 --flavor <openssl|gnutls>" >&2
 }
 
+ensure_gnutls_deps() {
+  if pkg-config --exists gnutls && [[ -d /usr/include/gnutls ]]; then
+    return 0
+  fi
+
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "gnutls flavor requires libgnutls28-dev, and apt-get is unavailable" >&2
+    exit 1
+  fi
+
+  if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
+    echo "gnutls flavor requires libgnutls28-dev, and passwordless sudo is unavailable" >&2
+    exit 1
+  fi
+
+  export DEBIAN_FRONTEND=noninteractive
+  if ! dpkg-query -W -f='${Status}' libgnutls28-dev 2>/dev/null | grep -q "install ok installed"; then
+    if ! sudo -n apt-get install -y --no-install-recommends libgnutls28-dev; then
+      sudo -n apt-get update
+      sudo -n apt-get install -y --no-install-recommends libgnutls28-dev
+    fi
+  fi
+
+  if ! pkg-config --exists gnutls || [[ ! -d /usr/include/gnutls ]]; then
+    echo "gnutls flavor requires a real GnuTLS development toolchain" >&2
+    exit 1
+  fi
+}
+
 flavor=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -48,6 +77,7 @@ expected_flavor = sys.argv[3]
 ok = (
     metadata.get("git_rev") == expected_rev
     and metadata.get("requested_flavor") == expected_flavor
+    and metadata.get("actual_backend") == expected_flavor
     and metadata.get("dist", {}).get("shared") == f"libcurl-reference-{expected_flavor}.so.4"
 )
 raise SystemExit(0 if ok else 1)
@@ -74,11 +104,9 @@ actual_backend="${flavor}"
 ssl_args=()
 if [[ "${flavor}" == "openssl" ]]; then
   ssl_args=(--with-openssl --without-gnutls)
-elif pkg-config --exists gnutls && [[ -d /usr/include/gnutls ]]; then
-  ssl_args=(--with-gnutls --without-openssl)
 else
-  actual_backend="openssl-fallback"
-  ssl_args=(--with-openssl --without-gnutls)
+  ensure_gnutls_deps
+  ssl_args=(--with-gnutls --without-openssl)
 fi
 
 common_configure_args=(
