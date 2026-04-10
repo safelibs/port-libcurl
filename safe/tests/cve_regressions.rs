@@ -258,6 +258,7 @@ fn mapping_and_case_inventory_stay_in_sync() {
                 "reference_backend_method_state",
                 "reference_backend_platform",
                 "reference_backend_permissions",
+                "reference_backend_ssh_auth",
                 "reference_backend_concurrency",
             ]
             .into_iter()

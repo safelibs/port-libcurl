@@ -1,0 +1,5 @@
+{
+  "id": "reference_backend_ssh_auth",
+  "kind": "documented",
+  "title": "SSH public-key authentication gating remains delegated to the reference backend"
+}
