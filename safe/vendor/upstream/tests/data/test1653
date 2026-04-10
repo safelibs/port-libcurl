@@ -1,0 +1,25 @@
+<testcase>
+<info>
+<keywords>
+unittest
+urlapi
+</keywords>
+</info>
+
+<client>
+<server>
+none
+</server>
+<features>
+</features>
+<name>
+urlapi port number parsing
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
+</client>
+</testcase>

@@ -1,0 +1,27 @@
+<testcase>
+<info>
+<keywords>
+unittest
+llist
+</keywords>
+</info>
+
+#
+# Client-side
+<client>
+<server>
+none
+</server>
+<features>
+</features>
+<name>
+llist unit tests
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
+</client>
+</testcase>

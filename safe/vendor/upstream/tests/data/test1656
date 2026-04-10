@@ -1,0 +1,49 @@
+<testcase>
+<info>
+<keywords>
+HTTPS
+HTTP GET
+</keywords>
+</info>
+
+#
+# Server-side
+<reply>
+<data>
+</data>
+</reply>
+
+#
+# Client-side
+<client>
+<features>
+SSL
+!OpenSSL
+!bearssl
+!mbedtls
+!rustls
+!wolfssl
+</features>
+<server>
+https Server-localhost-gt-sv.pem
+</server>
+<tool>
+lib%TESTNUMBER
+</tool>
+<name>
+public certinfo replacement for x509 GeneralizedTime formatting
+</name>
+<command>
+https://%HOSTIP:%HTTPSPORT/%TESTNUMBER
+</command>
+</client>
+
+<verify>
+<protocol>
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPSPORT
+Accept: */*
+
+</protocol>
+</verify>
+</testcase>

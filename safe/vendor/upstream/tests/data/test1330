@@ -1,0 +1,24 @@
+<testcase>
+<info>
+<keywords>
+memory
+</keywords>
+</info>
+
+#
+# Client-side
+<client>
+<server>
+none
+</server>
+<name>
+curl_global_init_mem public API replacement
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
+</client>
+</testcase>

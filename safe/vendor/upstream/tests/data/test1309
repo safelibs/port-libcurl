@@ -1,0 +1,27 @@
+<testcase>
+<info>
+<keywords>
+unittest
+splay
+</keywords>
+</info>
+
+#
+# Client-side
+<client>
+<server>
+none
+</server>
+<features>
+</features>
+<name>
+splay public API smoke replacement
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
+</client>
+</testcase>

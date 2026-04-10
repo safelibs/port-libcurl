@@ -1,0 +1,25 @@
+<testcase>
+<info>
+<keywords>
+Happy Eyeballs
+CURLOPT_RESOLVE
+connect timing
+</keywords>
+</info>
+
+# Client-side
+<client>
+<server>
+none
+</server>
+<tool>
+lib%TESTNUMBER
+</tool>
+<name>
+public Happy Eyeballs timing replacement
+</name>
+<command>
+nothing
+</command>
+</client>
+</testcase>

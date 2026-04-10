@@ -1,0 +1,32 @@
+<testcase>
+<info>
+<keywords>
+unittest
+</keywords>
+</info>
+
+#
+# Client-side
+<client>
+<server>
+none
+</server>
+<features>
+</features>
+<name>
+Test negative data lengths as input to libcurl functions
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
+</client>
+
+<verify>
+<errorcode>
+0
+</errorcode>
+</verify>
+</testcase>

@@ -1,0 +1,49 @@
+<testcase>
+<info>
+<keywords>
+curl_easy_header
+</keywords>
+</info>
+
+# Server-side
+<reply>
+<data nocheck="yes" base64="yes">
+SFRUUC8xLjEgMjAwIE9LCkRhdGU6IFRodSwgMDkgTm92IDIwMTAgMTQ6NDk6MDAgR01UClNlcnZlcjogICAgICAgdGVzdCB3aXRoIHRyYWlsaW5nIHNwYWNlICAgICAKQ29udGVudC1UeXBlOiB0ZXh0L2h0bWwKRm9sZDogaXMKIGZvbGRpbmcgYSAgICAgCiAgIGxpbmUKQ29udGVudC1MZW5ndGg6IDAKU2V0LUNvb2tpZTogb25lY29va2llPWRhdGE7ClNldC1Db29raWU6IHNlY29uZGNvb2tpZT0yZGF0YTsKU2V0LUNvb2tpZTogY29va2llMz1kYXRhMzsKTG9jYXRpb246IC8yNjAzMDAwMgoK
+</data>
+</reply>
+
+# Client-side
+<client>
+<features>
+headers-api
+</features>
+<server>
+http
+</server>
+
+<name>
+public headers API replacement for http1 parser
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+
+<command>
+http://%HOSTIP:%HTTPPORT/%TESTNUMBER
+</command>
+</client>
+
+<verify>
+<stdout>
+ Date == Thu, 09 Nov 2010 14:49:00 GMT
+ Server == test with trailing space
+ Content-Type == text/html
+ Content-Length == 0
+ Location == /%TESTNUMBER0002
+- Set-Cookie == onecookie=data; (0/3)
+- Set-Cookie == secondcookie=2data; (1/3)
+- Set-Cookie == cookie3=data3; (2/3)
+ Fold == is folding a line
+</stdout>
+</verify>
+</testcase>

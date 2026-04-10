@@ -1,0 +1,45 @@
+<testcase>
+<info>
+<keywords>
+proxy
+noproxy
+</keywords>
+</info>
+
+#
+# Server-side
+<reply>
+<data nonewline="yes">
+HTTP/1.1 200 OK
+Date: Tue, 09 Nov 2010 14:49:00 GMT
+Server: test-server/fake
+Content-Length: 2
+Connection: close
+
+OK
+</data>
+</reply>
+
+#
+# Client-side
+<client>
+<server>
+http
+</server>
+<features>
+proxy
+</features>
+<name>
+noproxy and cidr comparisons
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+http://%HOSTIP:%HTTPPORT/%TESTNUMBER %HOSTIP %NOLISTENPORT
+</command>
+</client>
+<errorcode>
+0
+</errorcode>
+</testcase>

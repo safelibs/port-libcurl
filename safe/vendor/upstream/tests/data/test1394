@@ -1,0 +1,156 @@
+<testcase>
+<info>
+<keywords>
+HTTP
+HTTP GET
+--libcurl
+cert
+</keywords>
+</info>
+
+# Server-side
+<reply>
+<data>
+HTTP/1.1 200 OK
+Date: Thu, 29 Jul 2008 14:49:00 GMT
+Server: test-server/fake
+Content-Length: 0
+Connection: close
+
+</data>
+</reply>
+
+# Client-side
+<client>
+<server>
+http
+</server>
+<name>
+public --cert parsing replacement
+</name>
+<setenv>
+SSL_CERT_FILE=
+</setenv>
+<command>
+http://%HOSTIP:%HTTPPORT/%TESTNUMBER --libcurl %LOGDIR/test%TESTNUMBER.c -E 'foo:bar:baz' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'foo\:bar:baz' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'foo\\:bar:baz' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'foo:bar\:baz' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'foo:bar\\:baz' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'foo\bar\baz' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'foo\\bar\\baz' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'foo\' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'foo\\' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'foo:bar\' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'foo:bar\\' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'foo:bar:' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'foo\::bar\:' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'pkcs11:foobar' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'PKCS11:foobar' --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER -E 'PkCs11:foobar'
+</command>
+</client>
+
+<verify>
+<protocol crlf="yes">
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+</protocol>
+<stripfile>
+$_ = '' unless /CURLOPT_(KEYPASSWD|SSLCERT(TYPE)?)/
+</stripfile>
+<file name="%LOGDIR/test%TESTNUMBER.c" mode="text">
+  curl_easy_setopt(hnd, CURLOPT_KEYPASSWD, "bar:baz");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "foo");
+  curl_easy_setopt(hnd, CURLOPT_KEYPASSWD, "baz");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "foo:bar");
+  curl_easy_setopt(hnd, CURLOPT_KEYPASSWD, "bar:baz");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "foo\\");
+  curl_easy_setopt(hnd, CURLOPT_KEYPASSWD, "bar\\:baz");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "foo");
+  curl_easy_setopt(hnd, CURLOPT_KEYPASSWD, "bar\\\\:baz");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "foo");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "foo\\bar\\baz");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "foo\\bar\\baz");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "foo\\");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "foo\\");
+  curl_easy_setopt(hnd, CURLOPT_KEYPASSWD, "bar\\");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "foo");
+  curl_easy_setopt(hnd, CURLOPT_KEYPASSWD, "bar\\\\");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "foo");
+  curl_easy_setopt(hnd, CURLOPT_KEYPASSWD, "bar:");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "foo");
+  curl_easy_setopt(hnd, CURLOPT_KEYPASSWD, "bar\\:");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "foo:");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "pkcs11:foobar");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERTTYPE, "ENG");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "PKCS11:foobar");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERTTYPE, "ENG");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERT, "PkCs11:foobar");
+  curl_easy_setopt(hnd, CURLOPT_SSLCERTTYPE, "ENG");
+</file>
+</verify>
+</testcase>

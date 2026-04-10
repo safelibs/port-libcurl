@@ -1,0 +1,55 @@
+<testcase>
+<!-- This replaces test 559 -->
+<info>
+<keywords>
+HTTP
+dns cache
+share
+resolve
+</keywords>
+</info>
+
+# Server-side
+<reply>
+<data>
+HTTP/1.1 200 OK
+Date: Thu, 29 Jul 2008 14:49:00 GMT
+Server: test-server/fake
+Content-Length: 0
+Connection: close
+
+</data>
+<datacheck>
+</datacheck>
+</reply>
+
+# Client-side
+<client>
+<server>
+http
+</server>
+<features>
+</features>
+<name>
+public DNS share add/destroy replacement
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+%TESTNUMBER %HOSTIP %HTTPPORT
+</command>
+</client>
+
+<verify>
+<protocol crlf="yes">
+GET /1306 HTTP/1.1
+Host: hash-create-destroy.invalid:%HTTPPORT
+Accept: */*
+
+</protocol>
+<errorcode>
+0
+</errorcode>
+</verify>
+</testcase>

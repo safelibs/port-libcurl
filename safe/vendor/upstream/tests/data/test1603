@@ -1,0 +1,27 @@
+<testcase>
+<info>
+<keywords>
+unittest
+hash
+</keywords>
+</info>
+
+#
+# Client-side
+<client>
+<server>
+none
+</server>
+<features>
+</features>
+<name>
+Internal hash add, retrieval, deletion testing
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
+</client>
+</testcase>

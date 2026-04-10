@@ -1,0 +1,91 @@
+<testcase>
+<info>
+<keywords>
+HTTP
+HTTP GET
+DoH
+</keywords>
+</info>
+
+# Server-side
+<reply>
+<data1 base64="yes">
+AACBgAABAAEAAAAAAWEDY29tAAABAAHADAABAAEAAAA3AAR/AAAB
+</data1>
+<data2 base64="yes">
+AACBgAABAAEAAAAAAWEDY29tAAABAAHADAABAAEAAAA3AAR/AAAB
+</data2>
+<data3 base64="yes">
+AACBgAABAAEAAAAAAmFhA2NvbQAAAQABwAwAAQABAAAANwAEfwAAAQ==
+</data3>
+<data>
+HTTP/1.1 200 OK
+Date: Tue, 09 Nov 2010 14:49:00 GMT
+Server: test-server/fake
+Content-Length: 2
+Connection: close
+Content-Type: text/plain
+
+ok
+</data>
+</reply>
+
+# Client-side
+<client>
+<server>
+http
+https
+</server>
+<features>
+DoH
+SSL
+</features>
+<name>
+public DoH encode replacement
+</name>
+<command>
+--noproxy "*" --doh-url https://%HOSTIP:%HTTPSPORT/%TESTNUMBER0001 --doh-insecure http://a.com:%HTTPPORT/%TESTNUMBER --next --doh-url https://%HOSTIP:%HTTPSPORT/%TESTNUMBER0002 --doh-insecure http://a.com.:%HTTPPORT/%TESTNUMBER --next --doh-url https://%HOSTIP:%HTTPSPORT/%TESTNUMBER0003 --doh-insecure http://aa.com:%HTTPPORT/%TESTNUMBER
+</command>
+</client>
+
+<verify>
+<protocol crlf="yes">
+POST /%TESTNUMBER0001 HTTP/1.1
+Host: %HOSTIP:%HTTPSPORT
+User-Agent: curl/%VERSION
+Accept: */*
+Content-Type: application/dns-message
+Content-Length: 23
+
+%hex[%00%00%01%00%00%01%00%00%00%00%00%00%01a%03com%00%00%01%00%01]hex%GET /%TESTNUMBER HTTP/1.1
+Host: a.com:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+POST /%TESTNUMBER0002 HTTP/1.1
+Host: %HOSTIP:%HTTPSPORT
+User-Agent: curl/%VERSION
+Accept: */*
+Content-Type: application/dns-message
+Content-Length: 23
+
+%hex[%00%00%01%00%00%01%00%00%00%00%00%00%01a%03com%00%00%01%00%01]hex%GET /%TESTNUMBER HTTP/1.1
+Host: a.com:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+POST /%TESTNUMBER0003 HTTP/1.1
+Host: %HOSTIP:%HTTPSPORT
+User-Agent: curl/%VERSION
+Accept: */*
+Content-Type: application/dns-message
+Content-Length: 24
+
+%hex[%00%00%01%00%00%01%00%00%00%00%00%00%02aa%03com%00%00%01%00%01]hex%GET /%TESTNUMBER HTTP/1.1
+Host: aa.com:%HTTPPORT
+User-Agent: curl/%VERSION
+Accept: */*
+
+</protocol>
+</verify>
+</testcase>

@@ -1,0 +1,34 @@
+<testcase>
+<!-- This replaces test 558 -->
+<info>
+<keywords>
+dns cache
+share
+</keywords>
+</info>
+
+#
+# Client-side
+<client>
+<server>
+none
+</server>
+<features>
+</features>
+<name>
+public DNS share create/destroy replacement
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+%TESTNUMBER
+</command>
+</client>
+
+<verify>
+<errorcode>
+0
+</errorcode>
+</verify>
+</testcase>

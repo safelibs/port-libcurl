@@ -1,0 +1,55 @@
+<testcase>
+<info>
+<keywords>
+HTTP
+netrc
+</keywords>
+</info>
+
+#
+# Server-side
+<reply>
+<data nocheck="yes">
+HTTP/1.1 200 OK
+Date: Fri, 05 Aug 2022 10:09:00 GMT
+Server: test-server/fake
+Content-Type: text/plain
+Content-Length: 6
+Connection: close
+
+-foo-
+</data>
+</reply>
+
+#
+# Client-side
+<client>
+<server>
+http
+</server>
+<features>
+netrc
+</features>
+<name>
+netrc host and exact-login matching public API replacement
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+http://%HOSTIP:%HTTPPORT/ %LOGDIR/netrc%TESTNUMBER
+</command>
+<file name="%LOGDIR/netrc%TESTNUMBER" >
+machine netrc1304.example login admin password passwd
+machine curl1304.example login none password none
+</file>
+</client>
+
+<verify>
+<errorcode>
+0
+</errorcode>
+<stdout>
+</stdout>
+</verify>
+</testcase>

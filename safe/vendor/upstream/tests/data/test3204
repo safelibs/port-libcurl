@@ -1,0 +1,47 @@
+<testcase>
+<info>
+<keywords>
+HTTP
+curl_global_trace
+</keywords>
+</info>
+
+# Server-side
+<reply>
+<data nocheck="yes" crlf="yes">
+HTTP/1.1 200 OK
+Date: Tue, 09 Nov 2010 14:49:00 GMT
+Server: test-server/fake
+Connection: close
+Content-Length: 5
+Content-Type: text/plain
+
+hello
+</data>
+</reply>
+
+# Client-side
+<client>
+<features>
+verbose-strings
+</features>
+<server>
+http
+</server>
+<name>
+curl_global_trace enables tcp tracing
+</name>
+<tool>
+lib1918
+</tool>
+<command>
+http://%HOSTIP:%HTTPPORT/%TESTNUMBER global-trace
+</command>
+</client>
+
+<verify>
+<stdout>
+tcp trace seen
+</stdout>
+</verify>
+</testcase>

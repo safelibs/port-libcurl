@@ -1,0 +1,27 @@
+<testcase>
+<info>
+<keywords>
+curlopt_dns_shuffle_addresses
+</keywords>
+</info>
+
+#
+# Client-side
+<client>
+<server>
+none
+</server>
+<features>
+shuffle-dns
+</features>
+<name>
+public DNS shuffle replacement
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+nothing
+</command>
+</client>
+</testcase>
