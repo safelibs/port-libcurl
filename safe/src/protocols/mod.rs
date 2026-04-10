@@ -12,9 +12,7 @@ pub(crate) mod smtp;
 pub(crate) mod telnet;
 pub(crate) mod tftp;
 
-use crate::abi::{CURLcode, CURL};
 use crate::abi::curl_pushheaders;
-use crate::easy::perform::{EasyCallbacks, EasyMetadata};
 use core::ffi::c_char;
 use core::ffi::c_long;
 use std::ffi::CStr;
@@ -23,7 +21,6 @@ use std::sync::OnceLock;
 type RefPushHeaderByNameFn =
     unsafe extern "C" fn(*mut curl_pushheaders, *const c_char) -> *mut c_char;
 type RefPushHeaderByNumFn = unsafe extern "C" fn(*mut curl_pushheaders, usize) -> *mut c_char;
-const CURLE_UNSUPPORTED_PROTOCOL: CURLcode = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SchemeHandler {
@@ -197,48 +194,6 @@ pub(crate) fn route_scheme(
 pub(crate) unsafe fn capture_push_headers(_headers: *mut curl_pushheaders, _num_headers: usize) {}
 
 pub(crate) fn release_push_headers(_headers: *mut curl_pushheaders) {}
-
-pub(crate) fn execute_route(
-    handle: *mut CURL,
-    route: TransferRoute,
-    metadata: &EasyMetadata,
-    callbacks: EasyCallbacks,
-) -> Option<CURLcode> {
-    match route.handler {
-        SchemeHandler::Http | SchemeHandler::WebSocket if !route.tls => None,
-        SchemeHandler::Http | SchemeHandler::WebSocket => {
-            Some(crate::tls::execute_route(handle, route, metadata, callbacks))
-        }
-        SchemeHandler::File => Some(file::execute(handle, metadata, callbacks)),
-        SchemeHandler::Ftp => Some(ftp::execute(handle, metadata, callbacks)),
-        SchemeHandler::Imap => Some(imap::execute(handle, metadata, callbacks)),
-        SchemeHandler::Pop3 => Some(pop3::execute(handle, metadata, callbacks)),
-        SchemeHandler::Smtp => Some(smtp::execute(handle, metadata, callbacks)),
-        SchemeHandler::Ldap => Some(ldap::execute(handle, metadata, callbacks)),
-        SchemeHandler::Smb => Some(smb::execute(handle, metadata, callbacks)),
-        SchemeHandler::Telnet => Some(telnet::execute(handle, metadata, callbacks)),
-        SchemeHandler::Tftp => Some(tftp::execute(handle, metadata, callbacks)),
-        SchemeHandler::Dict => Some(dict::execute(handle, metadata, callbacks)),
-        SchemeHandler::Gopher => Some(gopher::execute(handle, metadata, callbacks)),
-        SchemeHandler::Rtsp => Some(rtsp::execute(handle, metadata, callbacks)),
-        SchemeHandler::Mqtt => Some(mqtt::execute(handle, metadata, callbacks)),
-        SchemeHandler::Scp | SchemeHandler::Sftp => {
-            Some(crate::ssh::execute(handle, route, metadata, callbacks))
-        }
-        SchemeHandler::Unknown => Some(CURLE_UNSUPPORTED_PROTOCOL),
-    }
-}
-
-pub(crate) fn perform_reference_bridge(handle: *mut CURL) -> CURLcode {
-    type RefEasyPerformFn = unsafe extern "C" fn(*mut CURL) -> CURLcode;
-
-    fn ref_easy_perform() -> RefEasyPerformFn {
-        static FN: OnceLock<RefEasyPerformFn> = OnceLock::new();
-        *FN.get_or_init(|| unsafe { crate::global::load_reference(b"curl_easy_perform\0") })
-    }
-
-    unsafe { ref_easy_perform()(handle) }
-}
 
 pub(crate) unsafe fn pushheader_byname(
     headers: *mut curl_pushheaders,

@@ -33,12 +33,4 @@ impl super::TlsBackendAdapter for OpenSslBackend {
             session_cache_scope: cache_fragment().to_string(),
         }
     }
-
-    fn execute(
-        &self,
-        handle: *mut crate::abi::CURL,
-        _policy: &super::TlsPolicy,
-    ) -> crate::abi::CURLcode {
-        crate::protocols::perform_reference_bridge(handle)
-    }
 }

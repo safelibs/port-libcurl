@@ -2,11 +2,8 @@ pub(crate) mod certinfo;
 pub(crate) mod gnutls;
 pub(crate) mod openssl;
 
-use crate::abi::{CURLcode, CURL};
 use crate::easy::perform::EasyMetadata;
 use crate::protocols::TransferRoute;
-
-const CURLE_UNSUPPORTED_PROTOCOL: CURLcode = 1;
 
 #[derive(Clone, Debug)]
 pub(crate) struct TlsPolicy {
@@ -23,7 +20,6 @@ pub(crate) struct TlsPolicy {
 trait TlsBackendAdapter {
     fn name(&self) -> &'static str;
     fn build_policy(&self, scheme: &'static str, metadata: &EasyMetadata) -> TlsPolicy;
-    fn execute(&self, handle: *mut CURL, policy: &TlsPolicy) -> CURLcode;
 }
 
 pub(crate) fn backend_name() -> &'static str {
@@ -76,18 +72,6 @@ pub(crate) fn policy_for_route(route: TransferRoute, metadata: &EasyMetadata) ->
     };
 
     Some(current_backend().build_policy(scheme, metadata))
-}
-
-pub(crate) fn execute_route(
-    handle: *mut CURL,
-    route: TransferRoute,
-    metadata: &EasyMetadata,
-    _callbacks: crate::easy::perform::EasyCallbacks,
-) -> CURLcode {
-    let Some(policy) = policy_for_route(route, metadata) else {
-        return CURLE_UNSUPPORTED_PROTOCOL;
-    };
-    current_backend().execute(handle, &policy)
 }
 
 pub(crate) fn peer_identity(metadata: &EasyMetadata) -> Option<String> {

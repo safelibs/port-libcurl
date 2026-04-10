@@ -491,9 +491,6 @@ fn perform_transfer(handle_key: usize, plan: TransferPlan) -> CURLcode {
 
     let metadata = perform::snapshot_metadata(handle);
     let callbacks = perform::snapshot_callbacks(handle);
-    if let Some(code) = crate::protocols::execute_route(handle, plan.route, &metadata, callbacks) {
-        return code;
-    }
     let Some(initial_url) = metadata.url.clone() else {
         perform::set_error_buffer(handle, "No URL set");
         return CURLE_URL_MALFORMAT;
@@ -1319,7 +1316,8 @@ fn requires_reference_backend(
     };
     let _ = authority;
     route.requires_reference_multi(metadata.http_version)
-        || (route.is_http_family() && route.tls)
+        || route.tls
+        || !route.uses_shared_http() && !route.uses_shared_websocket()
 }
 
 fn read_request_body_chunk(
