@@ -1,4 +1,7 @@
+use serde_json::Value;
+use std::collections::BTreeMap;
 use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -22,10 +25,24 @@ fn main() {
         "gnutls" => manifest_dir.join("abi/libcurl-gnutls.map"),
         _ => unreachable!(),
     };
+    let abi_manifest_path = manifest_dir.join("metadata/abi-manifest.json");
     let forwarders = manifest_dir.join("c_shim/forwarders.c");
+    let variadic = manifest_dir.join("c_shim/variadic.c");
+    let mprintf = manifest_dir.join("c_shim/mprintf.c");
     let reference_script = manifest_dir.join("scripts/build-reference-curl.sh");
 
-    for path in [&symbols_path, &checked_in_map, &forwarders, &reference_script] {
+    for path in [
+        &symbols_path,
+        &checked_in_map,
+        &abi_manifest_path,
+        &forwarders,
+        &variadic,
+        &mprintf,
+        &reference_script,
+        &manifest_dir.join("include/curl/curl.h"),
+        &manifest_dir.join("include/curl/options.h"),
+        &manifest_dir.join("original/lib/easyoptions.c"),
+    ] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
     println!("cargo:rerun-if-env-changed=CC");
@@ -45,7 +62,18 @@ fn main() {
     }
 
     run_reference_build(&manifest_dir, &reference_script, flavor);
-    compile_bridge(&manifest_dir, &out_map, &symbol_manifest.soname, flavor);
+    generate_easy_option_table(&manifest_dir, &abi_manifest_path, &out_dir);
+    compile_c_shims(&manifest_dir, flavor);
+
+    println!("cargo:rustc-link-lib=dl");
+    println!(
+        "cargo:rustc-cdylib-link-arg=-Wl,-soname,{}",
+        symbol_manifest.soname
+    );
+    println!(
+        "cargo:rustc-cdylib-link-arg=-Wl,--version-script={}",
+        out_map.display()
+    );
 }
 
 fn detect_flavor() -> &'static str {
@@ -129,61 +157,153 @@ fn run_reference_build(manifest_dir: &Path, script: &Path, flavor: &str) {
     }
 }
 
-fn compile_bridge(manifest_dir: &Path, version_script: &Path, soname: &str, flavor: &str) {
-    let cc = env::var("CC").unwrap_or_else(|_| "cc".to_string());
-    let artifact_dir = manifest_dir.join("target/foundation").join(flavor);
-    fs::create_dir_all(&artifact_dir).expect("create artifact directory");
-
-    let output = artifact_dir.join(match flavor {
-        "openssl" => "libcurl-safe-openssl-bridge.so",
-        "gnutls" => "libcurl-safe-gnutls-bridge.so",
-        _ => unreachable!(),
-    });
-    let reference_source = manifest_dir
+fn compile_c_shims(manifest_dir: &Path, flavor: &str) {
+    let reference_path = manifest_dir
         .join(".reference")
         .join(flavor)
         .join("dist")
         .join(format!("libcurl-reference-{}.so.4", flavor));
-    let reference_target = artifact_dir.join(format!("libcurl-reference-{}.so.4", flavor));
-    fs::copy(&reference_source, &reference_target).unwrap_or_else(|err| {
-        panic!(
-            "copy {} -> {} failed: {}",
-            reference_source.display(),
-            reference_target.display(),
-            err
-        )
-    });
+    let reference_file = reference_path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .expect("reference library filename");
+    let reference_abs = reference_path
+        .to_str()
+        .expect("reference library absolute path");
+    let reference_file_define = format!("\"{}\"", reference_file);
+    let reference_abs_define = format!("\"{}\"", reference_abs);
+    let flavor_define = format!("\"{}\"", flavor);
 
-    let forwarders = manifest_dir.join("c_shim/forwarders.c");
-    let status = Command::new(&cc)
-        .current_dir(manifest_dir)
-        .arg("-fPIC")
-        .arg("-shared")
-        .arg("-O2")
-        .arg("-Wall")
-        .arg("-Wextra")
-        .arg("-std=c11")
-        .arg(forwarders)
-        .arg("-o")
-        .arg(&output)
-        .arg("-ldl")
-        .arg("-pthread")
-        .arg("-Wl,--no-undefined")
-        .arg(format!("-Wl,-soname,{}", soname))
-        .arg(format!("-Wl,--version-script={}", version_script.display()))
-        .arg(format!(
-            "-DREFERENCE_LIBRARY_FILE=\"{}\"",
-            reference_target.file_name().unwrap().to_string_lossy()
-        ))
-        .arg(format!("-DBRIDGE_FLAVOR=\"{}\"", flavor))
-        .status()
-        .expect("compile transitional bridge");
-    if !status.success() {
-        panic!("bridge compilation failed for {}", flavor);
-    }
-
-    fs::copy(version_script, artifact_dir.join(format!("libcurl-{}.map", flavor))).unwrap_or_else(
-        |err| panic!("copy version script into artifact directory failed: {}", err),
-    );
+    cc::Build::new()
+        .include(manifest_dir.join("include"))
+        .file(manifest_dir.join("c_shim/forwarders.c"))
+        .file(manifest_dir.join("c_shim/variadic.c"))
+        .file(manifest_dir.join("c_shim/mprintf.c"))
+        .flag_if_supported("-std=c11")
+        .flag_if_supported("-fPIC")
+        .flag_if_supported("-Wall")
+        .flag_if_supported("-Wextra")
+        .warnings(true)
+        .define("REFERENCE_LIBRARY_FILE", Some(reference_file_define.as_str()))
+        .define("REFERENCE_LIBRARY_ABSPATH", Some(reference_abs_define.as_str()))
+        .define("BRIDGE_FLAVOR", Some(flavor_define.as_str()))
+        .compile("port_libcurl_safe_shims");
 }
 
+fn generate_easy_option_table(manifest_dir: &Path, abi_manifest_path: &Path, out_dir: &Path) {
+    let contents = fs::read_to_string(abi_manifest_path).expect("read abi manifest");
+    let manifest: Value = serde_json::from_str(&contents).expect("parse abi manifest json");
+    let entries = manifest["option_metadata"]["entries"]
+        .as_array()
+        .expect("option_metadata.entries");
+    let ids: Vec<String> = entries
+        .iter()
+        .map(|entry| {
+            entry["id"]
+                .as_str()
+                .expect("option id")
+                .to_string()
+        })
+        .collect();
+    let values = resolve_curl_option_values(manifest_dir, out_dir, &ids);
+
+    let mut output = String::new();
+    output.push_str("// Generated by build.rs from safe/metadata/abi-manifest.json.\n\n");
+    output.push_str(&format!(
+        "pub(crate) const EASY_OPTION_COUNT: usize = {};\n\n",
+        entries.len()
+    ));
+    output.push_str("pub(crate) const EASY_OPTIONS: [crate::abi::curl_easyoption; EASY_OPTION_COUNT + 1] = [\n");
+    for entry in entries {
+        let id_name = entry["id"].as_str().expect("option id");
+        let id_value = values
+            .get(id_name)
+            .unwrap_or_else(|| panic!("missing generated value for {}", id_name));
+        let name = entry["name"].as_str().expect("option name");
+        let ty = match entry["type"].as_str().expect("option type") {
+            "CURLOT_LONG" => "crate::abi::CURLOT_LONG",
+            "CURLOT_VALUES" => "crate::abi::CURLOT_VALUES",
+            "CURLOT_OFF_T" => "crate::abi::CURLOT_OFF_T",
+            "CURLOT_OBJECT" => "crate::abi::CURLOT_OBJECT",
+            "CURLOT_STRING" => "crate::abi::CURLOT_STRING",
+            "CURLOT_SLIST" => "crate::abi::CURLOT_SLIST",
+            "CURLOT_CBPTR" => "crate::abi::CURLOT_CBPTR",
+            "CURLOT_BLOB" => "crate::abi::CURLOT_BLOB",
+            "CURLOT_FUNCTION" => "crate::abi::CURLOT_FUNCTION",
+            other => panic!("unsupported easy option type {}", other),
+        };
+        let flags = match entry["flags"].as_str().expect("option flags") {
+            "0" => "0",
+            "CURLOT_FLAG_ALIAS" => "crate::abi::CURLOT_FLAG_ALIAS",
+            other => panic!("unsupported easy option flags {}", other),
+        };
+        output.push_str("    crate::abi::curl_easyoption {\n");
+        output.push_str(&format!(
+            "        name: b\"{}\\0\".as_ptr().cast::<core::ffi::c_char>(),\n",
+            name
+        ));
+        output.push_str(&format!("        id: {}u32,\n", id_value));
+        output.push_str(&format!("        type_: {},\n", ty));
+        output.push_str(&format!("        flags: {},\n", flags));
+        output.push_str("    },\n");
+    }
+    output.push_str("    crate::abi::curl_easyoption {\n");
+    output.push_str("        name: core::ptr::null(),\n");
+    output.push_str("        id: 0,\n");
+    output.push_str("        type_: 0,\n");
+    output.push_str("        flags: 0,\n");
+    output.push_str("    },\n");
+    output.push_str("];\n");
+
+    fs::write(out_dir.join("easy_options.rs"), output).expect("write easy options table");
+}
+
+fn resolve_curl_option_values(
+    manifest_dir: &Path,
+    out_dir: &Path,
+    ids: &[String],
+) -> BTreeMap<String, String> {
+    let helper_c = out_dir.join("print_easy_options.c");
+    let helper_bin = out_dir.join("print_easy_options");
+    let cc = env::var("CC").unwrap_or_else(|_| "cc".to_string());
+
+    let mut source = String::new();
+    source.push_str("#include <stdio.h>\n#include <curl/curl.h>\n\nint main(void) {\n");
+    for id in ids {
+        source.push_str(&format!("  printf(\"{}=%ld\\n\", (long){});\n", id, id));
+    }
+    source.push_str("  return 0;\n}\n");
+    fs::write(&helper_c, source).expect("write easy option helper source");
+
+    let status = Command::new(&cc)
+        .current_dir(manifest_dir)
+        .arg("-std=c11")
+        .arg("-I")
+        .arg(manifest_dir.join("include"))
+        .arg(&helper_c)
+        .arg("-o")
+        .arg(&helper_bin)
+        .status()
+        .expect("compile easy option helper");
+    if !status.success() {
+        panic!("easy option helper compilation failed");
+    }
+
+    let output = Command::new(&helper_bin)
+        .current_dir(manifest_dir)
+        .output()
+        .expect("run easy option helper");
+    if !output.status.success() {
+        panic!("easy option helper execution failed");
+    }
+
+    let stdout = String::from_utf8(output.stdout).expect("easy option helper output");
+    let mut values = BTreeMap::new();
+    for line in stdout.lines() {
+        let Some((name, value)) = line.split_once('=') else {
+            continue;
+        };
+        values.insert(name.to_string(), value.trim().to_string());
+    }
+    values
+}
