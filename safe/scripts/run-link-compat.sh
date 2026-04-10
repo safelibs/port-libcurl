@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 --flavor <openssl|gnutls> [--build-state <path>] [--set <name>]... [--entry <id>]... [--target <target-id>]... [--tests <selector>...] [--list-sets]" >&2
+  echo "usage: $0 --flavor <openssl|gnutls> [--build-state <path>] [--all-curated] [--set <name>]... [--entry <id>]... [--target <target-id>]... [--tests <selector>...] [--list-sets]" >&2
 }
 
 normalize_target() {
@@ -38,6 +38,7 @@ normalize_target() {
 flavor=""
 build_state=""
 list_sets=0
+all_curated=0
 declare -a sets=()
 declare -a entries=()
 declare -a targets=()
@@ -58,6 +59,10 @@ while [[ $# -gt 0 ]]; do
     --entry)
       entries+=("${2:-}")
       shift 2
+      ;;
+    --all-curated)
+      all_curated=1
+      shift
       ;;
     --target)
       targets+=("$(normalize_target "${2:-}")")
@@ -90,6 +95,11 @@ done
 
 [[ -z "${flavor}" ]] && usage && exit 2
 
+if (( all_curated )) && ((${#sets[@]} > 0 || ${#entries[@]} > 0 || ${#targets[@]} > 0)); then
+  echo "--all-curated cannot be combined with --set, --entry, --target, or --tests" >&2
+  exit 2
+fi
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 safe_dir="$(cd "${script_dir}/.." && pwd)"
 manifest_path="${safe_dir}/compat/link-manifest.json"
@@ -100,7 +110,9 @@ if (( list_sets )); then
   exit 0
 fi
 
-if ((${#sets[@]} == 0 && ${#entries[@]} == 0 && ${#targets[@]} == 0)); then
+if (( all_curated )); then
+  sets=("curated-broad")
+elif ((${#sets[@]} == 0 && ${#entries[@]} == 0 && ${#targets[@]} == 0)); then
   sets=("curated-broad")
 fi
 
