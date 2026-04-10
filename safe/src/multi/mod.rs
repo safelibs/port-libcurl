@@ -11,7 +11,6 @@ use crate::{alloc, easy, global, transfer};
 use core::ffi::{c_char, c_int, c_long, c_uint, c_void};
 use core::{mem, ptr};
 use std::collections::{HashMap, VecDeque};
-use std::ffi::CString;
 use std::io::Write;
 use std::mem::size_of;
 use std::os::fd::AsRawFd;
@@ -441,77 +440,135 @@ unsafe extern "C" fn reference_push_callback(
     CURL_PUSH_OK
 }
 
-pub(crate) fn schedule_synthetic_push(
-    parent: *mut CURL,
-    target_url: &str,
-    headers: &[String],
-) -> bool {
-    let Some(multi) = easy::perform::attached_multi_for(parent).map(|value| value as *mut CURLM)
-    else {
-        return false;
-    };
+fn enqueue_completed_event(multi: *mut CURLM, easy_handle: *mut CURL, result: CURLcode) {
     let Some(wrapper) = wrapper_from_ptr(multi) else {
-        return false;
+        return;
     };
+    wrapper.events.push(TransferEvent::Completed {
+        easy_key: easy_handle as usize,
+        result,
+    });
+}
 
-    let push_cb = wrapper
-        .inner
-        .lock()
-        .expect("multi mutex poisoned")
-        .callbacks
-        .push_cb;
-    if push_cb.is_none() {
-        return false;
+pub(crate) fn run_reference_http2_session(parent_easy: *mut CURL) -> CURLcode {
+    let multi_ptr = easy::perform::attached_multi_for(parent_easy)
+        .map(|value| value as *mut CURLM)
+        .unwrap_or(ptr::null_mut());
+    let reference_multi = unsafe { ref_multi_init()() };
+    if reference_multi.is_null() {
+        return crate::abi::CURLE_OUT_OF_MEMORY;
     }
 
-    let easy_handle = unsafe { crate::easy::handle::easy_duphandle(parent) };
-    if easy_handle.is_null() {
-        return false;
-    }
+    if !multi_ptr.is_null() {
+        let reference_push = Some(unsafe {
+            mem::transmute::<
+                unsafe extern "C" fn(
+                    *mut CURL,
+                    *mut CURL,
+                    usize,
+                    *mut curl_pushheaders,
+                    *mut c_void,
+                ) -> c_int,
+                unsafe extern "C" fn(),
+            >(reference_push_callback)
+        });
 
-    let url_value = match CString::new(target_url) {
-        Ok(value) => value,
-        Err(_) => {
-            unsafe { crate::easy::handle::easy_cleanup(easy_handle) };
-            return false;
-        }
-    };
-    easy::perform::observe_easy_setopt_ptr(
-        easy_handle,
-        CURLOPT_URL as crate::abi::CURLoption,
-        url_value.as_ptr().cast_mut().cast(),
-    );
-
-    let headers_handle = crate::protocols::create_push_headers(headers);
-    let decision = {
-        let guard = wrapper.inner.lock().expect("multi mutex poisoned");
-        let Some(push_cb) = guard.callbacks.push_cb else {
-            crate::protocols::release_push_headers(headers_handle);
-            unsafe { crate::easy::handle::easy_cleanup(easy_handle) };
-            return false;
+        let configure = |rc: CURLMcode| {
+            if rc == crate::abi::CURLM_OK {
+                Ok(())
+            } else {
+                Err(rc)
+            }
         };
-        unsafe {
-            push_cb(
-                parent,
-                easy_handle,
-                headers.len(),
-                headers_handle,
-                guard.callbacks.push_userp,
+        if configure(unsafe {
+            curl_safe_reference_multi_setopt_function(
+                reference_multi,
+                CURLMOPT_PUSHFUNCTION,
+                reference_push,
             )
+        })
+        .and_then(|_| {
+            configure(unsafe {
+                curl_safe_reference_multi_setopt_ptr(
+                    reference_multi,
+                    CURLMOPT_PUSHDATA,
+                    multi_ptr.cast(),
+                )
+            })
+        })
+        .is_err()
+        {
+            let _ = unsafe { ref_multi_cleanup()(reference_multi) };
+            return crate::abi::CURLE_BAD_FUNCTION_ARGUMENT;
         }
-    };
-    crate::protocols::release_push_headers(headers_handle);
-    if decision != CURL_PUSH_OK {
-        unsafe { crate::easy::handle::easy_cleanup(easy_handle) };
-        return false;
     }
 
-    if unsafe { add_handle(multi, easy_handle) } != crate::abi::CURLM_OK {
-        unsafe { crate::easy::handle::easy_cleanup(easy_handle) };
-        return false;
+    let add_rc = unsafe { ref_multi_add_handle()(reference_multi, parent_easy) };
+    if add_rc != crate::abi::CURLM_OK {
+        let _ = unsafe { ref_multi_cleanup()(reference_multi) };
+        return transfer::map_multi_code(add_rc);
     }
-    let _ = unsafe { wakeup_handle(multi) };
-    true
+
+    let mut parent_result = crate::abi::CURLE_OK;
+    let mut parent_done = false;
+
+    loop {
+        let mut running = 0;
+        let rc = unsafe { ref_multi_perform()(reference_multi, &mut running) };
+        if rc != crate::abi::CURLM_OK {
+            parent_result = transfer::map_multi_code(rc);
+            break;
+        }
+
+        loop {
+            let mut queued = 0;
+            let msg = unsafe { ref_multi_info_read()(reference_multi, &mut queued) };
+            if msg.is_null() {
+                break;
+            }
+            if unsafe { (*msg).msg } != CURLMSG_DONE {
+                continue;
+            }
+
+            let easy_handle = unsafe { (*msg).easy_handle };
+            let result = unsafe { (*msg).data.result };
+            let _ = unsafe { ref_multi_remove_handle()(reference_multi, easy_handle) };
+            if easy_handle == parent_easy {
+                parent_result = result;
+                parent_done = true;
+            } else if !multi_ptr.is_null() {
+                enqueue_completed_event(multi_ptr, easy_handle, result);
+            } else {
+                unsafe { crate::easy::handle::easy_cleanup(easy_handle) };
+            }
+        }
+
+        if parent_done && running == 0 {
+            break;
+        }
+        if running == 0 {
+            break;
+        }
+
+        let mut numfds = 0;
+        let rc = unsafe {
+            ref_multi_poll()(
+                reference_multi,
+                ptr::null_mut(),
+                0,
+                transfer::EASY_PERFORM_WAIT_TIMEOUT_MS as c_int,
+                &mut numfds,
+            )
+        };
+        if rc != crate::abi::CURLM_OK {
+            parent_result = transfer::map_multi_code(rc);
+            break;
+        }
+    }
+
+    let _ = unsafe { ref_multi_remove_handle()(reference_multi, parent_easy) };
+    let _ = unsafe { ref_multi_cleanup()(reference_multi) };
+    parent_result
 }
 
 pub(crate) unsafe fn init_handle() -> *mut CURLM {

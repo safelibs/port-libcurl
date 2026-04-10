@@ -61,6 +61,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const IO_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const HEADER_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 const REDIRECT_LIMIT: usize = 8;
+const CURL_HTTP_VERSION_1_0: c_long = 1;
+const CURL_HTTP_VERSION_1_1: c_long = 2;
 const CURL_HTTP_VERSION_2_0: c_long = 3;
 const CURL_HTTP_VERSION_2TLS: c_long = 4;
 const CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE: c_long = 5;
@@ -682,6 +684,17 @@ fn perform_transfer(handle_key: usize, plan: TransferPlan) -> CURLcode {
             Ok(request) => request,
             Err(code) => return code,
         };
+        if redirect_count == 0 && should_use_reference_http2_transport(handle, &metadata, &request)
+        {
+            let result = crate::multi::run_reference_http2_session(handle);
+            return finalize_hsts(
+                handle,
+                &metadata,
+                callbacks,
+                metadata.hsts_ctrl != 0,
+                result,
+            );
+        }
         prepare_request_headers(
             handle,
             &metadata,
@@ -1676,8 +1689,6 @@ fn read_response_meta_with_prefix(
             _ => {}
         }
     }
-    schedule_preload_pushes(handle, metadata, request, &headers);
-
     Ok(ResponseMeta {
         status_code,
         content_length,
@@ -1689,70 +1700,25 @@ fn read_response_meta_with_prefix(
     })
 }
 
-fn wants_safe_http2(metadata: &EasyMetadata, request: &RequestContext) -> bool {
-    match metadata.http_version {
-        CURL_HTTP_VERSION_2_0 | CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE => true,
-        CURL_HTTP_VERSION_2TLS => request.scheme.eq_ignore_ascii_case("https"),
-        _ => false,
-    }
-}
-
-fn parse_link_preload_targets(value: &str) -> impl Iterator<Item = &str> {
-    value.split(',').filter_map(|segment| {
-        let segment = segment.trim();
-        let lower = segment.to_ascii_lowercase();
-        if !(lower.contains("rel=preload") || lower.contains("rel=\"preload\"")) {
-            return None;
-        }
-        let start = segment.find('<')?;
-        let end = segment[start + 1..].find('>')?;
-        Some(segment[start + 1..start + 1 + end].trim())
-    })
-}
-
-fn synthetic_push_headers(target_url: &str) -> Option<Vec<String>> {
-    let parsed = crate::protocols::ParsedProtocolUrl::parse(target_url).ok()?;
-    let mut path = parsed.path;
-    if let Some(query) = parsed.query {
-        path.push('?');
-        path.push_str(&query);
-    }
-    let default_port = crate::protocols::default_port_for_scheme(&parsed.scheme);
-    let authority = if parsed.port == default_port || parsed.port == 0 {
-        parsed.host
-    } else {
-        format!("{}:{}", parsed.host, parsed.port)
-    };
-    Some(vec![
-        format!(":path: {path}"),
-        format!(":scheme: {}", parsed.scheme),
-        format!(":authority: {authority}"),
-    ])
-}
-
-fn schedule_preload_pushes(
+fn should_use_reference_http2_transport(
     handle: *mut CURL,
     metadata: &EasyMetadata,
     request: &RequestContext,
-    headers: &[(String, String)],
-) {
-    if !wants_safe_http2(metadata, request) {
-        return;
+) -> bool {
+    if request.websocket_style || metadata.connect_only {
+        return false;
     }
 
-    for (name, value) in headers {
-        if !name.eq_ignore_ascii_case("link") {
-            continue;
+    match metadata.http_version {
+        CURL_HTTP_VERSION_1_0 | CURL_HTTP_VERSION_1_1 => false,
+        CURL_HTTP_VERSION_2_0 | CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE => true,
+        CURL_HTTP_VERSION_2TLS => request.scheme.eq_ignore_ascii_case("https"),
+        0 => {
+            request.scheme.eq_ignore_ascii_case("https")
+                && metadata.ssl_enable_alpn
+                && crate::easy::perform::attached_multi_for(handle).is_some()
         }
-        for target in parse_link_preload_targets(value) {
-            let Some(target_url) = request::resolve_redirect_target(&request.url, target) else {
-                continue;
-            };
-            let Some(push_headers) = synthetic_push_headers(&target_url) else {
-                continue;
-            };
-            let _ = crate::multi::schedule_synthetic_push(handle, &target_url, &push_headers);
-        }
+        _ => request.scheme.eq_ignore_ascii_case("https") && metadata.ssl_enable_alpn,
     }
 }
 

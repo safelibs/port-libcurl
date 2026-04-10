@@ -27,7 +27,7 @@ impl super::TlsBackendAdapter for OpenSslBackend {
             scheme,
             verify_peer: metadata.ssl_verify_peer,
             verify_host: metadata.ssl_verify_host != 0,
-            alpn: metadata.ssl_enable_alpn,
+            alpn: super::enable_http_alpn(scheme, metadata),
             certinfo: super::certinfo::requested(metadata.certinfo),
             pinned_public_key: metadata.pinned_public_key.clone(),
             session_cache_scope: cache_fragment().to_string(),

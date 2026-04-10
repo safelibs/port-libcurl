@@ -5,7 +5,7 @@ pub(crate) mod openssl;
 use crate::abi::CURLcode;
 use crate::easy::perform::EasyMetadata;
 use crate::protocols::TransferRoute;
-use core::ffi::{c_char, c_int};
+use core::ffi::{c_char, c_int, c_long};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -14,6 +14,8 @@ use std::sync::{Mutex, OnceLock};
 const CURLE_SSL_CONNECT_ERROR: CURLcode = 35;
 const CURLE_PEER_FAILED_VERIFICATION: CURLcode = 60;
 const CURLE_SSL_PINNEDPUBKEYNOTMATCH: CURLcode = 90;
+const CURL_HTTP_VERSION_1_0: c_long = 1;
+const CURL_HTTP_VERSION_1_1: c_long = 2;
 
 #[derive(Clone, Debug)]
 pub(crate) struct TlsPolicy {
@@ -139,6 +141,16 @@ impl Write for TlsConnection {
 
 pub(crate) fn backend_name() -> &'static str {
     current_backend().name()
+}
+
+pub(crate) fn enable_http_alpn(scheme: &str, metadata: &EasyMetadata) -> bool {
+    if !metadata.ssl_enable_alpn || !scheme.eq_ignore_ascii_case("https") {
+        return false;
+    }
+    !matches!(
+        metadata.http_version,
+        CURL_HTTP_VERSION_1_0 | CURL_HTTP_VERSION_1_1
+    )
 }
 
 fn current_backend() -> &'static dyn TlsBackendAdapter {
