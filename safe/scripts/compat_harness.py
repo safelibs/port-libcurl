@@ -63,7 +63,7 @@ def flavor_config(flavor: str) -> FlavorConfig:
         objects_dir=root / "objects",
         executables_dir=root / "executables",
         build_state_path=root / "build-state.json",
-        reference_root=SAFE_DIR / ".reference" / flavor / "source" / "original",
+        reference_root=SAFE_DIR / ".reference" / flavor / "source" / "upstream",
     )
 
 
@@ -252,6 +252,30 @@ def compute_vendor_entries(manifest: dict) -> list[dict]:
     tracked_paths = set(
         git_ls_files(
             [
+                "original/Makefile",
+                "original/Makefile.am",
+                "original/Makefile.in",
+                "original/acinclude.m4",
+                "original/aclocal.m4",
+                "original/buildconf",
+                "original/buildconf.bat",
+                "original/compile",
+                "original/config.guess",
+                "original/config.sub",
+                "original/configure",
+                "original/configure.ac",
+                "original/curl-config.in",
+                "original/depcomp",
+                "original/docs",
+                "original/include",
+                "original/install-sh",
+                "original/lib",
+                "original/libcurl.pc.in",
+                "original/ltmain.sh",
+                "original/m4",
+                "original/missing",
+                "original/packages",
+                "original/scripts",
                 "original/src",
                 "original/tests",
                 "original/.pc/90_gnutls.patch",
@@ -259,7 +283,6 @@ def compute_vendor_entries(manifest: dict) -> list[dict]:
             ]
         )
     )
-    tracked_paths.update(vendor_required_lib_paths(manifest))
 
     entries = []
     for path in sorted(tracked_paths):

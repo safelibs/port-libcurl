@@ -58,13 +58,32 @@ safe_dir="$(cd "${script_dir}/.." && pwd)"
 repo_root="$(cd "${safe_dir}/.." && pwd)"
 build_root="${safe_dir}/.reference/${flavor}"
 source_root="${build_root}/source"
-worktree="${source_root}/original"
+worktree="${source_root}/upstream"
 dist_dir="${build_root}/dist"
 metadata_file="${build_root}/metadata.json"
+vendor_root="${safe_dir}/vendor/upstream"
 
 mkdir -p "${build_root}"
 
-git_rev="$(git -C "${repo_root}" rev-parse HEAD)"
+if [[ ! -d "${vendor_root}" ]]; then
+  echo "missing vendored upstream tree: ${vendor_root}" >&2
+  exit 1
+fi
+
+if git_rev="$(git -C "${repo_root}" rev-parse HEAD 2>/dev/null)"; then
+  :
+else
+  git_rev="$(python3 - "${vendor_root}/manifest.json" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+digest = hashlib.sha256(path.read_bytes()).hexdigest()
+print(f"vendor:{digest}")
+PY
+)"
+fi
 if [[ -f "${metadata_file}" ]] && [[ -f "${dist_dir}/libcurl-reference-${flavor}.so.4" ]]; then
   if python3 - "${metadata_file}" "${git_rev}" "${flavor}" <<'PY'
 import json
@@ -78,6 +97,7 @@ ok = (
     metadata.get("git_rev") == expected_rev
     and metadata.get("requested_flavor") == expected_flavor
     and metadata.get("actual_backend") == expected_flavor
+    and metadata.get("source_tree") == "safe/vendor/upstream"
     and metadata.get("dist", {}).get("shared") == f"libcurl-reference-{expected_flavor}.so.4"
 )
 raise SystemExit(0 if ok else 1)
@@ -88,9 +108,9 @@ PY
 fi
 
 rm -rf "${source_root}" "${dist_dir}"
-mkdir -p "${source_root}" "${dist_dir}"
+mkdir -p "${worktree}" "${dist_dir}"
 
-git -C "${repo_root}" archive --format=tar HEAD original | tar -xf - -C "${source_root}"
+cp -a "${vendor_root}/." "${worktree}/"
 
 if [[ "${flavor}" == "openssl" ]]; then
   while IFS= read -r backup_file; do
@@ -190,6 +210,7 @@ path.write_text(
             "git_rev": sys.argv[2],
             "requested_flavor": sys.argv[3],
             "actual_backend": sys.argv[4],
+            "source_tree": "safe/vendor/upstream",
             "dist": {
                 "shared": f"libcurl-reference-{sys.argv[3]}.so.4",
                 "static": f"libcurl-reference-{sys.argv[3]}.a",
