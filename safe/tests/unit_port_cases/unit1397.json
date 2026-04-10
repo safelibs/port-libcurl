@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1397.json",
+  "id": "unit1397",
+  "kind": "hostcheck",
+  "rust_test": "safe/tests/unit_port.rs::unit1397",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1397.c",
+  "source_markers": [
+    "Curl_cert_hostcheck",
+    "*.example.com",
+    "192.168.0.1"
+  ],
+  "summary": "Checks hostname matching with wildcard and IP-address edge cases.",
+  "upstream_status": "source-only"
+}

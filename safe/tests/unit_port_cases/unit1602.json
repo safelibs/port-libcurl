@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1602.json",
+  "id": "unit1602",
+  "kind": "hash-reset",
+  "rust_test": "safe/tests/unit_port.rs::unit1602",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1602.c",
+  "source_markers": [
+    "Curl_hash_init",
+    "Curl_hash_add",
+    "Curl_hash_clean"
+  ],
+  "summary": "Covers hash insertion followed by cleanup and reinsertion.",
+  "upstream_status": "source-only"
+}

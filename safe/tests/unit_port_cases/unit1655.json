@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1655.json",
+  "id": "unit1655",
+  "kind": "doh-guard",
+  "rust_test": "safe/tests/unit_port.rs::unit1655",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1655.c",
+  "source_markers": [
+    "doh_encode",
+    "DOH_DNS_NAME_TOO_LONG",
+    "DOH_DNS_BAD_LABEL"
+  ],
+  "summary": "Checks DoH hostname validation and output-size guards.",
+  "upstream_status": "source-only"
+}

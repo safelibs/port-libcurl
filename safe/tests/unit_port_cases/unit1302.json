@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1302.json",
+  "id": "unit1302",
+  "kind": "base64",
+  "rust_test": "safe/tests/unit_port.rs::unit1302",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1302.c",
+  "source_markers": [
+    "Curl_base64_encode",
+    "Curl_base64url_encode",
+    "Curl_base64_decode"
+  ],
+  "summary": "Covers base64 and base64url encode/decode vectors and invalid input handling.",
+  "upstream_status": "source-only"
+}

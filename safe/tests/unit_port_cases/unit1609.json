@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1609.json",
+  "id": "unit1609",
+  "kind": "hostpairs-overwrite",
+  "rust_test": "safe/tests/unit_port.rs::unit1609",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1609.c",
+  "source_markers": [
+    "Curl_loadhostpairs",
+    "Curl_hash_destroy",
+    "Curl_hash_pick"
+  ],
+  "summary": "Checks that reloading host pairs updates or overwrites prior cache state.",
+  "upstream_status": "source-only"
+}

@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit2603.json",
+  "id": "unit2603",
+  "kind": "h1-request",
+  "rust_test": "safe/tests/unit_port.rs::unit2603",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit2603.c",
+  "source_markers": [
+    "Curl_h1_req_parse_init",
+    "Curl_h1_req_parse_read",
+    "CONNECT ftp.curl.se:123 HTTP/1.1"
+  ],
+  "summary": "Parses HTTP/1 request lines and header blocks across fragmented inputs.",
+  "upstream_status": "source-only"
+}

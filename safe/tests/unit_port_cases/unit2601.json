@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit2601.json",
+  "id": "unit2601",
+  "kind": "bufq",
+  "rust_test": "safe/tests/unit_port.rs::unit2601",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit2601.c",
+  "source_markers": [
+    "Curl_bufq_write",
+    "Curl_bufq_read",
+    "BUFQ_OPT_SOFT_LIMIT"
+  ],
+  "summary": "Checks bounded queue writes, reads, reset, and soft-limit behavior.",
+  "upstream_status": "source-only"
+}

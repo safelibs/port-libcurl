@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1612.json",
+  "id": "unit1612",
+  "kind": "hmac-md5",
+  "rust_test": "safe/tests/unit_port.rs::unit1612",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1612.c",
+  "source_markers": [
+    "Curl_hmacit",
+    "Curl_HMAC_MD5",
+    "Pa55worD"
+  ],
+  "summary": "Checks an HMAC-MD5 vector against the upstream helper expectations.",
+  "upstream_status": "source-only"
+}

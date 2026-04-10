@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1394.json",
+  "id": "unit1394",
+  "kind": "cert-parameter",
+  "rust_test": "safe/tests/unit_port.rs::unit1394",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1394.c",
+  "source_markers": [
+    "parse_cert_parameter",
+    "pkcs11:foobar",
+    "foo:bar:baz"
+  ],
+  "summary": "Parses certificate parameter strings with escaped colons and PKCS11 pass-through.",
+  "upstream_status": "source-only"
+}

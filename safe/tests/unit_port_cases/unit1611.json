@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1611.json",
+  "id": "unit1611",
+  "kind": "md4",
+  "rust_test": "safe/tests/unit_port.rs::unit1611",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1611.c",
+  "source_markers": [
+    "Curl_md4it",
+    "hello-you-fool",
+    "MD4_DIGEST_LEN"
+  ],
+  "summary": "Validates MD4 digest vectors used by the upstream helper.",
+  "upstream_status": "source-only"
+}

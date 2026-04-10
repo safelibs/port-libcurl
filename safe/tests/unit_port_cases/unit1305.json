@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1305.json",
+  "id": "unit1305",
+  "kind": "dns-cache-add",
+  "rust_test": "safe/tests/unit_port.rs::unit1305",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1305.c",
+  "source_markers": [
+    "Curl_init_dnscache",
+    "Curl_hash_add",
+    "Curl_dns_entry"
+  ],
+  "summary": "Creates a fake DNS entry and inserts it into a cache model.",
+  "upstream_status": "source-only"
+}

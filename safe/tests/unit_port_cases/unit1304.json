@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1304.json",
+  "id": "unit1304",
+  "kind": "netrc",
+  "rust_test": "safe/tests/unit_port.rs::unit1304",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1304.c",
+  "source_markers": [
+    "Curl_parsenetrc",
+    "example.com",
+    "curl.example.com"
+  ],
+  "summary": "Parses netrc-style machine/login/password records and host lookups.",
+  "upstream_status": "source-only"
+}

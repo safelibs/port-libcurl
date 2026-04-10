@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1395.json",
+  "id": "unit1395",
+  "kind": "dedotdotify",
+  "rust_test": "safe/tests/unit_port.rs::unit1395",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1395.c",
+  "source_markers": [
+    "dedotdotify",
+    "/a/b/c/./../../g",
+    "/../../moo"
+  ],
+  "summary": "Normalizes paths by removing dot and dot-dot segments while preserving accepted inputs.",
+  "upstream_status": "source-only"
+}

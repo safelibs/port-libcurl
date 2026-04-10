@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1606.json",
+  "id": "unit1606",
+  "kind": "speedcheck",
+  "rust_test": "safe/tests/unit_port.rs::unit1606",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1606.c",
+  "source_markers": [
+    "Curl_speedinit",
+    "Curl_speedcheck",
+    "CURLOPT_LOW_SPEED_LIMIT"
+  ],
+  "summary": "Models low-speed timeout progression with constant and decaying transfer rates.",
+  "upstream_status": "source-only"
+}

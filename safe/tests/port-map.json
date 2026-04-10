@@ -1,0 +1,422 @@
+{
+  "entries": [
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1300.json",
+      "kind": "linked-list",
+      "rust_test": "safe/tests/unit_port.rs::unit1300",
+      "source": "original/tests/unit/unit1300.c",
+      "summary": "Models linked-list insertion and removal invariants from the upstream unit.",
+      "unit_id": "unit1300",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1302.json",
+      "kind": "base64",
+      "rust_test": "safe/tests/unit_port.rs::unit1302",
+      "source": "original/tests/unit/unit1302.c",
+      "summary": "Covers base64 and base64url encode/decode vectors and invalid input handling.",
+      "unit_id": "unit1302",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1303.json",
+      "kind": "timeout",
+      "rust_test": "safe/tests/unit_port.rs::unit1303",
+      "source": "original/tests/unit/unit1303.c",
+      "summary": "Replays the timeout matrix that combines overall and connect timeouts.",
+      "unit_id": "unit1303",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1304.json",
+      "kind": "netrc",
+      "rust_test": "safe/tests/unit_port.rs::unit1304",
+      "source": "original/tests/unit/unit1304.c",
+      "summary": "Parses netrc-style machine/login/password records and host lookups.",
+      "unit_id": "unit1304",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1305.json",
+      "kind": "dns-cache-add",
+      "rust_test": "safe/tests/unit_port.rs::unit1305",
+      "source": "original/tests/unit/unit1305.c",
+      "summary": "Creates a fake DNS entry and inserts it into a cache model.",
+      "unit_id": "unit1305",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1307.json",
+      "kind": "fnmatch",
+      "rust_test": "safe/tests/unit_port.rs::unit1307",
+      "source": "original/tests/unit/unit1307.c",
+      "summary": "Exercises wildcard and bracket matching semantics on curated patterns.",
+      "unit_id": "unit1307",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1308.json",
+      "kind": "formpost",
+      "rust_test": "safe/tests/unit_port.rs::unit1308",
+      "source": "original/tests/unit/unit1308.c",
+      "summary": "Checks multipart form accumulation and serialized size accounting.",
+      "unit_id": "unit1308",
+      "upstream_status": "upstream-unitprog"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1309.json",
+      "kind": "splay-tree",
+      "rust_test": "safe/tests/unit_port.rs::unit1309",
+      "source": "original/tests/unit/unit1309.c",
+      "summary": "Validates ordered insert/remove/getbest behavior on a search tree model.",
+      "unit_id": "unit1309",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1323.json",
+      "kind": "timediff",
+      "rust_test": "safe/tests/unit_port.rs::unit1323",
+      "source": "original/tests/unit/unit1323.c",
+      "summary": "Checks signed time-difference arithmetic across second and microsecond boundaries.",
+      "unit_id": "unit1323",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1330.json",
+      "kind": "safefree",
+      "rust_test": "safe/tests/unit_port.rs::unit1330",
+      "source": "original/tests/unit/unit1330.c",
+      "summary": "Preserves the null-tolerant free semantics behind the original smoke unit.",
+      "unit_id": "unit1330",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1394.json",
+      "kind": "cert-parameter",
+      "rust_test": "safe/tests/unit_port.rs::unit1394",
+      "source": "original/tests/unit/unit1394.c",
+      "summary": "Parses certificate parameter strings with escaped colons and PKCS11 pass-through.",
+      "unit_id": "unit1394",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1395.json",
+      "kind": "dedotdotify",
+      "rust_test": "safe/tests/unit_port.rs::unit1395",
+      "source": "original/tests/unit/unit1395.c",
+      "summary": "Normalizes paths by removing dot and dot-dot segments while preserving accepted inputs.",
+      "unit_id": "unit1395",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1396.json",
+      "kind": "escape",
+      "rust_test": "safe/tests/unit_port.rs::unit1396",
+      "source": "original/tests/unit/unit1396.c",
+      "summary": "Covers percent escape and unescape behavior on representative vectors.",
+      "unit_id": "unit1396",
+      "upstream_status": "upstream-unitprog"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1397.json",
+      "kind": "hostcheck",
+      "rust_test": "safe/tests/unit_port.rs::unit1397",
+      "source": "original/tests/unit/unit1397.c",
+      "summary": "Checks hostname matching with wildcard and IP-address edge cases.",
+      "unit_id": "unit1397",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1398.json",
+      "kind": "mprintf",
+      "rust_test": "safe/tests/unit_port.rs::unit1398",
+      "source": "original/tests/unit/unit1398.c",
+      "summary": "Exercises formatted output truncation and width/precision handling.",
+      "unit_id": "unit1398",
+      "upstream_status": "upstream-unitprog"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1399.json",
+      "kind": "progress-timers",
+      "rust_test": "safe/tests/unit_port.rs::unit1399",
+      "source": "original/tests/unit/unit1399.c",
+      "summary": "Models additive timer accounting across an initial transfer and a redirect.",
+      "unit_id": "unit1399",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1600.json",
+      "kind": "ntlm-hash",
+      "rust_test": "safe/tests/unit_port.rs::unit1600",
+      "source": "original/tests/unit/unit1600.c",
+      "summary": "Checks NT hash vectors by hashing UTF-16LE password material and appending the NTLM trailer.",
+      "unit_id": "unit1600",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1601.json",
+      "kind": "md5",
+      "rust_test": "safe/tests/unit_port.rs::unit1601",
+      "source": "original/tests/unit/unit1601.c",
+      "summary": "Validates MD5 digest vectors used by the upstream helper.",
+      "unit_id": "unit1601",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1602.json",
+      "kind": "hash-reset",
+      "rust_test": "safe/tests/unit_port.rs::unit1602",
+      "source": "original/tests/unit/unit1602.c",
+      "summary": "Covers hash insertion followed by cleanup and reinsertion.",
+      "unit_id": "unit1602",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1603.json",
+      "kind": "hash-table",
+      "rust_test": "safe/tests/unit_port.rs::unit1603",
+      "source": "original/tests/unit/unit1603.c",
+      "summary": "Exercises lookup, replacement, deletion, and collision handling in a hash-table model.",
+      "unit_id": "unit1603",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1604.json",
+      "kind": "sanitize-file-name",
+      "rust_test": "safe/tests/unit_port.rs::unit1604",
+      "source": "original/tests/unit/unit1604.c",
+      "summary": "Preserves the platform-conditional filename sanitization matrix.",
+      "unit_id": "unit1604",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1605.json",
+      "kind": "escape-negative-length",
+      "rust_test": "safe/tests/unit_port.rs::unit1605",
+      "source": "original/tests/unit/unit1605.c",
+      "summary": "Checks that negative lengths are rejected by escape and unescape entry points.",
+      "unit_id": "unit1605",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1606.json",
+      "kind": "speedcheck",
+      "rust_test": "safe/tests/unit_port.rs::unit1606",
+      "source": "original/tests/unit/unit1606.c",
+      "summary": "Models low-speed timeout progression with constant and decaying transfer rates.",
+      "unit_id": "unit1606",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1607.json",
+      "kind": "hostpairs-load",
+      "rust_test": "safe/tests/unit_port.rs::unit1607",
+      "source": "original/tests/unit/unit1607.c",
+      "summary": "Loads host pairs into a cache model and validates the resulting lookup map.",
+      "unit_id": "unit1607",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1608.json",
+      "kind": "shuffle-addr",
+      "rust_test": "safe/tests/unit_port.rs::unit1608",
+      "source": "original/tests/unit/unit1608.c",
+      "summary": "Reorders a linked list of addresses while preserving membership.",
+      "unit_id": "unit1608",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1609.json",
+      "kind": "hostpairs-overwrite",
+      "rust_test": "safe/tests/unit_port.rs::unit1609",
+      "source": "original/tests/unit/unit1609.c",
+      "summary": "Checks that reloading host pairs updates or overwrites prior cache state.",
+      "unit_id": "unit1609",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1610.json",
+      "kind": "sha256",
+      "rust_test": "safe/tests/unit_port.rs::unit1610",
+      "source": "original/tests/unit/unit1610.c",
+      "summary": "Validates SHA-256 digest vectors used by the upstream helper.",
+      "unit_id": "unit1610",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1611.json",
+      "kind": "md4",
+      "rust_test": "safe/tests/unit_port.rs::unit1611",
+      "source": "original/tests/unit/unit1611.c",
+      "summary": "Validates MD4 digest vectors used by the upstream helper.",
+      "unit_id": "unit1611",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1612.json",
+      "kind": "hmac-md5",
+      "rust_test": "safe/tests/unit_port.rs::unit1612",
+      "source": "original/tests/unit/unit1612.c",
+      "summary": "Checks an HMAC-MD5 vector against the upstream helper expectations.",
+      "unit_id": "unit1612",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1614.json",
+      "kind": "noproxy",
+      "rust_test": "safe/tests/unit_port.rs::unit1614",
+      "source": "original/tests/unit/unit1614.c",
+      "summary": "Exercises CIDR matching and no_proxy host filtering.",
+      "unit_id": "unit1614",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1620.json",
+      "kind": "parse-login-details",
+      "rust_test": "safe/tests/unit_port.rs::unit1620",
+      "source": "original/tests/unit/unit1620.c",
+      "summary": "Parses login details into user, password, and options segments.",
+      "unit_id": "unit1620",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1621.json",
+      "kind": "stripcredentials",
+      "rust_test": "safe/tests/unit_port.rs::unit1621",
+      "source": "original/tests/unit/unit1621.c",
+      "summary": "Removes credentials from URLs while preserving scheme, host, and port.",
+      "unit_id": "unit1621",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1650.json",
+      "kind": "doh-packet",
+      "rust_test": "safe/tests/unit_port.rs::unit1650",
+      "source": "original/tests/unit/unit1650.c",
+      "summary": "Checks DoH query encoding and response decoding on representative packets.",
+      "unit_id": "unit1650",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1651.json",
+      "kind": "certinfo",
+      "rust_test": "safe/tests/unit_port.rs::unit1651",
+      "source": "original/tests/unit/unit1651.c",
+      "summary": "Preserves the backend-conditional certificate info extraction scenario.",
+      "unit_id": "unit1651",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1652.json",
+      "kind": "infof-format",
+      "rust_test": "safe/tests/unit_port.rs::unit1652",
+      "source": "original/tests/unit/unit1652.c",
+      "summary": "Checks infof-style formatting and truncation behavior.",
+      "unit_id": "unit1652",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1653.json",
+      "kind": "parse-port",
+      "rust_test": "safe/tests/unit_port.rs::unit1653",
+      "source": "original/tests/unit/unit1653.c",
+      "summary": "Parses URL port suffixes including IPv6 address forms and malformed inputs.",
+      "unit_id": "unit1653",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1654.json",
+      "kind": "altsvc",
+      "rust_test": "safe/tests/unit_port.rs::unit1654",
+      "source": "original/tests/unit/unit1654.c",
+      "summary": "Parses Alt-Svc entries, including clear directives and multi-entry lines.",
+      "unit_id": "unit1654",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1655.json",
+      "kind": "doh-guard",
+      "rust_test": "safe/tests/unit_port.rs::unit1655",
+      "source": "original/tests/unit/unit1655.c",
+      "summary": "Checks DoH hostname validation and output-size guards.",
+      "unit_id": "unit1655",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1656.json",
+      "kind": "x509-gtime",
+      "rust_test": "safe/tests/unit_port.rs::unit1656",
+      "source": "original/tests/unit/unit1656.c",
+      "summary": "Formats ASN.1 GeneralizedTime inputs and rejects malformed variants.",
+      "unit_id": "unit1656",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1660.json",
+      "kind": "hsts",
+      "rust_test": "safe/tests/unit_port.rs::unit1660",
+      "source": "original/tests/unit/unit1660.c",
+      "summary": "Parses HSTS cache state, header directives, expiration, and save output.",
+      "unit_id": "unit1660",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit1661.json",
+      "kind": "bufref",
+      "rust_test": "safe/tests/unit_port.rs::unit1661",
+      "source": "original/tests/unit/unit1661.c",
+      "summary": "Checks reference, memdup, and destructor behavior for bufref state.",
+      "unit_id": "unit1661",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit2600.json",
+      "kind": "cfilter-failover",
+      "rust_test": "safe/tests/unit_port.rs::unit2600",
+      "source": "original/tests/unit/unit2600.c",
+      "summary": "Models connection-filter failover timing across IPv4 and IPv6 attempts.",
+      "unit_id": "unit2600",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit2601.json",
+      "kind": "bufq",
+      "rust_test": "safe/tests/unit_port.rs::unit2601",
+      "source": "original/tests/unit/unit2601.c",
+      "summary": "Checks bounded queue writes, reads, reset, and soft-limit behavior.",
+      "unit_id": "unit2601",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit2602.json",
+      "kind": "dynhds",
+      "rust_test": "safe/tests/unit_port.rs::unit2602",
+      "source": "original/tests/unit/unit2602.c",
+      "summary": "Exercises dynamic header storage, lookup, removal, and HTTP/1 line parsing.",
+      "unit_id": "unit2602",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit2603.json",
+      "kind": "h1-request",
+      "rust_test": "safe/tests/unit_port.rs::unit2603",
+      "source": "original/tests/unit/unit2603.c",
+      "summary": "Parses HTTP/1 request lines and header blocks across fragmented inputs.",
+      "unit_id": "unit2603",
+      "upstream_status": "source-only"
+    },
+    {
+      "case_file": "safe/tests/unit_port_cases/unit3200.json",
+      "kind": "get-line",
+      "rust_test": "safe/tests/unit_port.rs::unit3200",
+      "source": "original/tests/unit/unit3200.c",
+      "summary": "Exercises line reading with EOF, long-line, and control-character cases.",
+      "unit_id": "unit3200",
+      "upstream_status": "source-only"
+    }
+  ],
+  "integration_test": "safe/tests/unit_port.rs",
+  "schema_version": 1,
+  "source_manifest": "safe/metadata/test-manifest.json",
+  "unit_makefile": "original/tests/unit/Makefile.inc"
+}

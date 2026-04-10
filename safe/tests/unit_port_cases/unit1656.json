@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1656.json",
+  "id": "unit1656",
+  "kind": "x509-gtime",
+  "rust_test": "safe/tests/unit_port.rs::unit1656",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1656.c",
+  "source_markers": [
+    "Curl_x509_GTime2str",
+    "190321134340Z",
+    "UTC+02:30"
+  ],
+  "summary": "Formats ASN.1 GeneralizedTime inputs and rejects malformed variants.",
+  "upstream_status": "source-only"
+}

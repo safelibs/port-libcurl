@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1605.json",
+  "id": "unit1605",
+  "kind": "escape-negative-length",
+  "rust_test": "safe/tests/unit_port.rs::unit1605",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1605.c",
+  "source_markers": [
+    "curl_easy_escape",
+    "curl_easy_unescape",
+    "negative string length"
+  ],
+  "summary": "Checks that negative lengths are rejected by escape and unescape entry points.",
+  "upstream_status": "source-only"
+}

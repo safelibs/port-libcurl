@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1300.json",
+  "id": "unit1300",
+  "kind": "linked-list",
+  "rust_test": "safe/tests/unit_port.rs::unit1300",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1300.c",
+  "source_markers": [
+    "Curl_llist_init",
+    "Curl_llist_insert_next",
+    "Curl_llist_remove"
+  ],
+  "summary": "Models linked-list insertion and removal invariants from the upstream unit.",
+  "upstream_status": "source-only"
+}

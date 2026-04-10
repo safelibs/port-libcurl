@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1303.json",
+  "id": "unit1303",
+  "kind": "timeout",
+  "rust_test": "safe/tests/unit_port.rs::unit1303",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1303.c",
+  "source_markers": [
+    "Curl_timeleft",
+    "timeout_ms",
+    "connecttimeout_ms"
+  ],
+  "summary": "Replays the timeout matrix that combines overall and connect timeouts.",
+  "upstream_status": "source-only"
+}

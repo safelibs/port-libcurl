@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1610.json",
+  "id": "unit1610",
+  "kind": "sha256",
+  "rust_test": "safe/tests/unit_port.rs::unit1610",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1610.c",
+  "source_markers": [
+    "Curl_sha256it",
+    "hello-you-fool",
+    "SHA256_DIGEST_LENGTH"
+  ],
+  "summary": "Validates SHA-256 digest vectors used by the upstream helper.",
+  "upstream_status": "source-only"
+}

@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1608.json",
+  "id": "unit1608",
+  "kind": "shuffle-addr",
+  "rust_test": "safe/tests/unit_port.rs::unit1608",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1608.c",
+  "source_markers": [
+    "Curl_shuffle_addr",
+    "CURLOPT_DNS_SHUFFLE_ADDRESSES",
+    "addrhead"
+  ],
+  "summary": "Reorders a linked list of addresses while preserving membership.",
+  "upstream_status": "source-only"
+}

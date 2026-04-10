@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1607.json",
+  "id": "unit1607",
+  "kind": "hostpairs-load",
+  "rust_test": "safe/tests/unit_port.rs::unit1607",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1607.c",
+  "source_markers": [
+    "Curl_loadhostpairs",
+    "Curl_addr2string",
+    "Curl_hash_pick"
+  ],
+  "summary": "Loads host pairs into a cache model and validates the resulting lookup map.",
+  "upstream_status": "source-only"
+}

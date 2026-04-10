@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1307.json",
+  "id": "unit1307",
+  "kind": "fnmatch",
+  "rust_test": "safe/tests/unit_port.rs::unit1307",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1307.c",
+  "source_markers": [
+    "Curl_fnmatch",
+    "CURL_FNMATCH_MATCH",
+    "CURL_FNMATCH_NOMATCH"
+  ],
+  "summary": "Exercises wildcard and bracket matching semantics on curated patterns.",
+  "upstream_status": "source-only"
+}

@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1601.json",
+  "id": "unit1601",
+  "kind": "md5",
+  "rust_test": "safe/tests/unit_port.rs::unit1601",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1601.c",
+  "source_markers": [
+    "Curl_md5it",
+    "hello-you-fool",
+    "MD5_DIGEST_LEN"
+  ],
+  "summary": "Validates MD5 digest vectors used by the upstream helper.",
+  "upstream_status": "source-only"
+}

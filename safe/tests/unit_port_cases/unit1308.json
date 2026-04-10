@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1308.json",
+  "id": "unit1308",
+  "kind": "formpost",
+  "rust_test": "safe/tests/unit_port.rs::unit1308",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1308.c",
+  "source_markers": [
+    "curl_formadd",
+    "curl_formget",
+    "total_size"
+  ],
+  "summary": "Checks multipart form accumulation and serialized size accounting.",
+  "upstream_status": "upstream-unitprog"
+}

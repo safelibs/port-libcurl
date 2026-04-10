@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1604.json",
+  "id": "unit1604",
+  "kind": "sanitize-file-name",
+  "rust_test": "safe/tests/unit_port.rs::unit1604",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1604.c",
+  "source_markers": [
+    "sanitize_file_name",
+    "SANITIZE_ALLOW_PATH",
+    "SANITIZE_ALLOW_TRUNCATE"
+  ],
+  "summary": "Preserves the platform-conditional filename sanitization matrix.",
+  "upstream_status": "source-only"
+}

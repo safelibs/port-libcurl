@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1309.json",
+  "id": "unit1309",
+  "kind": "splay-tree",
+  "rust_test": "safe/tests/unit_port.rs::unit1309",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1309.c",
+  "source_markers": [
+    "Curl_splayinsert",
+    "Curl_splayremove",
+    "Curl_splaygetbest"
+  ],
+  "summary": "Validates ordered insert/remove/getbest behavior on a search tree model.",
+  "upstream_status": "source-only"
+}

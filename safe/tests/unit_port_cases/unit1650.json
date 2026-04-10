@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1650.json",
+  "id": "unit1650",
+  "kind": "doh-packet",
+  "rust_test": "safe/tests/unit_port.rs::unit1650",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1650.c",
+  "source_markers": [
+    "doh_encode",
+    "doh_decode",
+    "DNS_TYPE_A"
+  ],
+  "summary": "Checks DoH query encoding and response decoding on representative packets.",
+  "upstream_status": "source-only"
+}

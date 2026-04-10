@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1661.json",
+  "id": "unit1661",
+  "kind": "bufref",
+  "rust_test": "safe/tests/unit_port.rs::unit1661",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1661.c",
+  "source_markers": [
+    "Curl_bufref_init",
+    "Curl_bufref_memdup",
+    "Curl_bufref_free"
+  ],
+  "summary": "Checks reference, memdup, and destructor behavior for bufref state.",
+  "upstream_status": "source-only"
+}

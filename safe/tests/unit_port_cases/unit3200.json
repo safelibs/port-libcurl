@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit3200.json",
+  "id": "unit3200",
+  "kind": "get-line",
+  "rust_test": "safe/tests/unit_port.rs::unit3200",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit3200.c",
+  "source_markers": [
+    "Curl_get_line",
+    "LINE2 NONEWLINE",
+    "LINE1\\x1aTEST"
+  ],
+  "summary": "Exercises line reading with EOF, long-line, and control-character cases.",
+  "upstream_status": "source-only"
+}

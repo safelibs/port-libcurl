@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit2600.json",
+  "id": "unit2600",
+  "kind": "cfilter-failover",
+  "rust_test": "safe/tests/unit_port.rs::unit2600",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit2600.c",
+  "source_markers": [
+    "cf_test_connect",
+    "Curl_expire",
+    "CURLE_COULDNT_CONNECT"
+  ],
+  "summary": "Models connection-filter failover timing across IPv4 and IPv6 attempts.",
+  "upstream_status": "source-only"
+}

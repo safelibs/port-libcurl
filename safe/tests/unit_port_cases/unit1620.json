@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1620.json",
+  "id": "unit1620",
+  "kind": "parse-login-details",
+  "rust_test": "safe/tests/unit_port.rs::unit1620",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1620.c",
+  "source_markers": [
+    "Curl_parse_login_details",
+    "Curl_open",
+    "Curl_close"
+  ],
+  "summary": "Parses login details into user, password, and options segments.",
+  "upstream_status": "source-only"
+}

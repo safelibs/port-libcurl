@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1330.json",
+  "id": "unit1330",
+  "kind": "safefree",
+  "rust_test": "safe/tests/unit_port.rs::unit1330",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1330.c",
+  "source_markers": [
+    "Curl_safefree",
+    "unit_setup",
+    "UNITTEST_START"
+  ],
+  "summary": "Preserves the null-tolerant free semantics behind the original smoke unit.",
+  "upstream_status": "source-only"
+}

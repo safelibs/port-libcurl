@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1653.json",
+  "id": "unit1653",
+  "kind": "parse-port",
+  "rust_test": "safe/tests/unit_port.rs::unit1653",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1653.c",
+  "source_markers": [
+    "Curl_parse_port",
+    "curl_url_get",
+    "808"
+  ],
+  "summary": "Parses URL port suffixes including IPv6 address forms and malformed inputs.",
+  "upstream_status": "source-only"
+}

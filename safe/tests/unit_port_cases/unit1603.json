@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1603.json",
+  "id": "unit1603",
+  "kind": "hash-table",
+  "rust_test": "safe/tests/unit_port.rs::unit1603",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1603.c",
+  "source_markers": [
+    "Curl_hash_pick",
+    "Curl_hash_delete",
+    "Curl_hash_add"
+  ],
+  "summary": "Exercises lookup, replacement, deletion, and collision handling in a hash-table model.",
+  "upstream_status": "source-only"
+}

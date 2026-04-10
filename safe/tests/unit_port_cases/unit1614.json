@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1614.json",
+  "id": "unit1614",
+  "kind": "noproxy",
+  "rust_test": "safe/tests/unit_port.rs::unit1614",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1614.c",
+  "source_markers": [
+    "Curl_cidr4_match",
+    "Curl_cidr6_match",
+    "Curl_check_noproxy"
+  ],
+  "summary": "Exercises CIDR matching and no_proxy host filtering.",
+  "upstream_status": "source-only"
+}

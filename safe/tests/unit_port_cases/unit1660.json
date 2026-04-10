@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1660.json",
+  "id": "unit1660",
+  "kind": "hsts",
+  "rust_test": "safe/tests/unit_port.rs::unit1660",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1660.c",
+  "source_markers": [
+    "Curl_hsts_parse",
+    "Curl_hsts_loadfile",
+    "includeSubDomains"
+  ],
+  "summary": "Parses HSTS cache state, header directives, expiration, and save output.",
+  "upstream_status": "source-only"
+}

@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1654.json",
+  "id": "unit1654",
+  "kind": "altsvc",
+  "rust_test": "safe/tests/unit_port.rs::unit1654",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1654.c",
+  "source_markers": [
+    "Curl_altsvc_parse",
+    "Curl_altsvc_load",
+    "clear;"
+  ],
+  "summary": "Parses Alt-Svc entries, including clear directives and multi-entry lines.",
+  "upstream_status": "source-only"
+}

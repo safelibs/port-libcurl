@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1399.json",
+  "id": "unit1399",
+  "kind": "progress-timers",
+  "rust_test": "safe/tests/unit_port.rs::unit1399",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1399.c",
+  "source_markers": [
+    "Curl_pgrsTime",
+    "TIMER_STARTTRANSFER",
+    "t_redirect"
+  ],
+  "summary": "Models additive timer accounting across an initial transfer and a redirect.",
+  "upstream_status": "source-only"
+}

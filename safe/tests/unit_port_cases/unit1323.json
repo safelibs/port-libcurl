@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1323.json",
+  "id": "unit1323",
+  "kind": "timediff",
+  "rust_test": "safe/tests/unit_port.rs::unit1323",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1323.c",
+  "source_markers": [
+    "Curl_timediff",
+    "timeval",
+    "unexpected result"
+  ],
+  "summary": "Checks signed time-difference arithmetic across second and microsecond boundaries.",
+  "upstream_status": "source-only"
+}

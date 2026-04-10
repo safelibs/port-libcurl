@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1651.json",
+  "id": "unit1651",
+  "kind": "certinfo",
+  "rust_test": "safe/tests/unit_port.rs::unit1651",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1651.c",
+  "source_markers": [
+    "Curl_extract_certinfo",
+    "CURLE_OK",
+    "not tested since Curl_extract_certinfo() is not built-in"
+  ],
+  "summary": "Preserves the backend-conditional certificate info extraction scenario.",
+  "upstream_status": "source-only"
+}

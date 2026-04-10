@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1398.json",
+  "id": "unit1398",
+  "kind": "mprintf",
+  "rust_test": "safe/tests/unit_port.rs::unit1398",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1398.c",
+  "source_markers": [
+    "curl_msnprintf",
+    "%.*s",
+    "%8d%8d"
+  ],
+  "summary": "Exercises formatted output truncation and width/precision handling.",
+  "upstream_status": "upstream-unitprog"
+}

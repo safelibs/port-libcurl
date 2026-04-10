@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1600.json",
+  "id": "unit1600",
+  "kind": "ntlm-hash",
+  "rust_test": "safe/tests/unit_port.rs::unit1600",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1600.c",
+  "source_markers": [
+    "Curl_ntlm_core_mk_nt_hash",
+    "hello-you-fool",
+    "USE_NTLM"
+  ],
+  "summary": "Checks NT hash vectors by hashing UTF-16LE password material and appending the NTLM trailer.",
+  "upstream_status": "source-only"
+}

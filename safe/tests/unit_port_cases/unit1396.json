@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1396.json",
+  "id": "unit1396",
+  "kind": "escape",
+  "rust_test": "safe/tests/unit_port.rs::unit1396",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1396.c",
+  "source_markers": [
+    "curl_easy_unescape",
+    "curl_easy_escape",
+    "%61"
+  ],
+  "summary": "Covers percent escape and unescape behavior on representative vectors.",
+  "upstream_status": "upstream-unitprog"
+}

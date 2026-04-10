@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1621.json",
+  "id": "unit1621",
+  "kind": "stripcredentials",
+  "rust_test": "safe/tests/unit_port.rs::unit1621",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1621.c",
+  "source_markers": [
+    "stripcredentials",
+    "https://foo@example.com",
+    "http://daniel:password@localhost"
+  ],
+  "summary": "Removes credentials from URLs while preserving scheme, host, and port.",
+  "upstream_status": "source-only"
+}

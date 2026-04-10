@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit2602.json",
+  "id": "unit2602",
+  "kind": "dynhds",
+  "rust_test": "safe/tests/unit_port.rs::unit2602",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit2602.c",
+  "source_markers": [
+    "Curl_dynhds_add",
+    "Curl_dynhds_h1_cadd_line",
+    "Curl_dynhds_h1_dprint"
+  ],
+  "summary": "Exercises dynamic header storage, lookup, removal, and HTTP/1 line parsing.",
+  "upstream_status": "source-only"
+}

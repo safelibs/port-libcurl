@@ -1,0 +1,15 @@
+{
+  "case_file": "safe/tests/unit_port_cases/unit1652.json",
+  "id": "unit1652",
+  "kind": "infof-format",
+  "rust_test": "safe/tests/unit_port.rs::unit1652",
+  "schema_version": 1,
+  "source": "original/tests/unit/unit1652.c",
+  "source_markers": [
+    "Curl_infof",
+    "Simple Test 42 testing 43",
+    "2048"
+  ],
+  "summary": "Checks infof-style formatting and truncation behavior.",
+  "upstream_status": "source-only"
+}
