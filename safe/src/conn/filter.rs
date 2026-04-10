@@ -2,17 +2,26 @@ use core::ffi::c_long;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ConnectionFilterStep {
-    ResolveOverrides { count: usize },
-    ConnectTo { target: String },
-    Proxy { authority: String, tunnel: bool },
-    ShareLock { scope: String },
+    ResolveOverrides {
+        count: usize,
+    },
+    ConnectTo {
+        target: String,
+    },
+    Proxy {
+        authority: String,
+        tunnel: bool,
+    },
+    ShareLock {
+        scope: String,
+    },
     LowSpeedGuard {
         limit_bytes_per_second: c_long,
         time_window_secs: c_long,
     },
     ConnectOnly,
     FollowRedirects,
-    ReferenceBackend,
+    TransferLoop,
 }
 
 impl ConnectionFilterStep {
@@ -25,12 +34,12 @@ impl ConnectionFilterStep {
             Self::LowSpeedGuard { .. } => "low-speed-guard",
             Self::ConnectOnly => "connect-only",
             Self::FollowRedirects => "follow-location",
-            Self::ReferenceBackend => "reference-backend",
+            Self::TransferLoop => "transfer-loop",
         }
     }
 
     pub(crate) const fn is_terminal(&self) -> bool {
-        matches!(self, Self::ReferenceBackend)
+        matches!(self, Self::TransferLoop)
     }
 }
 
@@ -49,7 +58,10 @@ impl ConnectionFilterChain {
     }
 
     pub(crate) fn names(&self) -> Vec<&'static str> {
-        self.filters.iter().map(ConnectionFilterStep::name).collect()
+        self.filters
+            .iter()
+            .map(ConnectionFilterStep::name)
+            .collect()
     }
 
     pub(crate) fn terminal(&self) -> Option<&ConnectionFilterStep> {

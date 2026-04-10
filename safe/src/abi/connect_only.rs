@@ -1,5 +1,5 @@
-use crate::abi::{CURLcode, CURL};
-use core::ffi::{c_int, c_void};
+use crate::abi::{curl_off_t, curl_socket_t, CURLcode, CURLoption, CURL, CURLINFO};
+use core::ffi::{c_int, c_long, c_void};
 
 #[no_mangle]
 pub unsafe extern "C" fn curl_easy_perform(curl: *mut CURL) -> CURLcode {
@@ -48,8 +48,74 @@ pub unsafe extern "C" fn curl_safe_easy_setopt_observe_long(
 #[no_mangle]
 pub unsafe extern "C" fn curl_safe_easy_setopt_observe_ptr(
     handle: *mut CURL,
-    option: crate::abi::CURLoption,
+    option: CURLoption,
     value: *mut c_void,
 ) {
     crate::easy::perform::observe_easy_setopt_ptr(handle, option, value);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn curl_safe_easy_setopt_observe_function(
+    handle: *mut CURL,
+    option: CURLoption,
+    value: Option<unsafe extern "C" fn()>,
+) {
+    crate::easy::perform::observe_easy_setopt_function(handle, option, value);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn curl_safe_easy_setopt_observe_off_t(
+    handle: *mut CURL,
+    option: CURLoption,
+    value: curl_off_t,
+) {
+    crate::easy::perform::observe_easy_setopt_off_t(handle, option, value);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn curl_safe_easy_getinfo_long(
+    handle: *mut CURL,
+    info: CURLINFO,
+    value: *mut c_long,
+    result: *mut CURLcode,
+) -> c_int {
+    let Some(code) = crate::easy::perform::easy_getinfo_long(handle, info, value) else {
+        return 0;
+    };
+    if !result.is_null() {
+        unsafe { *result = code };
+    }
+    1
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn curl_safe_easy_getinfo_off_t(
+    handle: *mut CURL,
+    info: CURLINFO,
+    value: *mut curl_off_t,
+    result: *mut CURLcode,
+) -> c_int {
+    let Some(code) = crate::easy::perform::easy_getinfo_off_t(handle, info, value) else {
+        return 0;
+    };
+    if !result.is_null() {
+        unsafe { *result = code };
+    }
+    1
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn curl_safe_easy_getinfo_socket(
+    handle: *mut CURL,
+    info: CURLINFO,
+    value: *mut curl_socket_t,
+    result: *mut CURLcode,
+) -> c_int {
+    let Some(code) = crate::easy::perform::easy_getinfo_socket(handle, info, value) else {
+        return 0;
+    };
+    if !result.is_null() {
+        unsafe { *result = code };
+    }
+    1
 }

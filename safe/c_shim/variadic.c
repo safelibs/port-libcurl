@@ -15,6 +15,12 @@ typedef CURLFORMcode (*curl_formadd_fn)(struct curl_httppost **httppost,
 
 void curl_safe_easy_setopt_observe_long(CURL *handle, CURLoption option, long value);
 void curl_safe_easy_setopt_observe_ptr(CURL *handle, CURLoption option, void *value);
+void curl_safe_easy_setopt_observe_function(CURL *handle, CURLoption option, void (*value)(void));
+void curl_safe_easy_setopt_observe_off_t(CURL *handle, CURLoption option, curl_off_t value);
+int curl_safe_easy_getinfo_long(CURL *handle, CURLINFO info, long *value, CURLcode *result);
+int curl_safe_easy_getinfo_off_t(CURL *handle, CURLINFO info, curl_off_t *value, CURLcode *result);
+int curl_safe_easy_getinfo_socket(CURL *handle, CURLINFO info, curl_socket_t *value,
+                                  CURLcode *result);
 CURLMcode curl_safe_multi_setopt_long(CURLM *multi_handle, CURLMoption option, long value);
 CURLMcode curl_safe_multi_setopt_ptr(CURLM *multi_handle, CURLMoption option, void *value);
 CURLMcode curl_safe_multi_setopt_function(CURLM *multi_handle, CURLMoption option, void (*value)(void));
@@ -73,11 +79,21 @@ CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...) {
     break;
   }
   case 2:
-    result = fn(handle, option, va_arg(args, void (*)(void)));
+  {
+    void (*value)(void) = va_arg(args, void (*)(void));
+    result = fn(handle, option, value);
+    if(result == CURLE_OK)
+      curl_safe_easy_setopt_observe_function(handle, option, value);
     break;
+  }
   case 3:
-    result = fn(handle, option, va_arg(args, curl_off_t));
+  {
+    curl_off_t value = va_arg(args, curl_off_t);
+    result = fn(handle, option, value);
+    if(result == CURLE_OK)
+      curl_safe_easy_setopt_observe_off_t(handle, option, value);
     break;
+  }
   case 4:
     result = fn(handle, option, va_arg(args, struct curl_blob *));
     break;
@@ -103,17 +119,29 @@ CURLcode curl_easy_getinfo(CURL *handle, CURLINFO info, ...) {
     result = fn(handle, info, va_arg(args, void *));
     break;
   case CURLINFO_LONG:
-    result = fn(handle, info, va_arg(args, long *));
+  {
+    long *value = va_arg(args, long *);
+    if(!curl_safe_easy_getinfo_long(handle, info, value, &result))
+      result = fn(handle, info, value);
     break;
+  }
   case CURLINFO_DOUBLE:
     result = fn(handle, info, va_arg(args, double *));
     break;
   case CURLINFO_SOCKET:
-    result = fn(handle, info, va_arg(args, curl_socket_t *));
+  {
+    curl_socket_t *value = va_arg(args, curl_socket_t *);
+    if(!curl_safe_easy_getinfo_socket(handle, info, value, &result))
+      result = fn(handle, info, value);
     break;
+  }
   case CURLINFO_OFF_T:
-    result = fn(handle, info, va_arg(args, curl_off_t *));
+  {
+    curl_off_t *value = va_arg(args, curl_off_t *);
+    if(!curl_safe_easy_getinfo_off_t(handle, info, value, &result))
+      result = fn(handle, info, value);
     break;
+  }
   default:
     result = CURLE_UNKNOWN_OPTION;
     break;

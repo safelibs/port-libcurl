@@ -58,6 +58,7 @@ pub(crate) unsafe fn easy_cleanup(handle: *mut CURL) {
             crate::multi::remove_handle(attached_multi as *mut crate::abi::CURLM, handle)
         };
     }
+    crate::transfer::release_handle_state(handle);
     let private_multi = crate::easy::perform::unregister_handle(handle);
     if let Some(multi) = private_multi {
         unsafe { crate::multi::cleanup_owned_multi(multi as *mut crate::abi::CURLM) };
@@ -72,6 +73,7 @@ pub(crate) unsafe fn easy_duphandle(handle: *mut CURL) -> *mut CURL {
 }
 
 pub(crate) unsafe fn easy_reset(handle: *mut CURL) {
+    crate::transfer::release_handle_state(handle);
     crate::easy::perform::reset_handle(handle);
     unsafe { ref_easy_reset()(handle) };
 }

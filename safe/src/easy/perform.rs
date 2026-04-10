@@ -1,5 +1,6 @@
 use crate::abi::{
-    CURLcode, CURLoption, CURL, CURLE_BAD_FUNCTION_ARGUMENT, CURLE_FAILED_INIT, CURLM,
+    curl_off_t, curl_socket_t, CURLcode, CURLoption, CURL, CURLE_BAD_FUNCTION_ARGUMENT,
+    CURLE_FAILED_INIT, CURLINFO, CURLM,
 };
 use crate::dns::{self, ConnectOverride, ResolveOverride};
 use crate::multi::state::MultiState;
@@ -9,39 +10,62 @@ use std::collections::HashMap;
 use std::ffi::CStr;
 use std::sync::{Mutex, OnceLock};
 
+pub(crate) type CurlWriteCallback =
+    Option<unsafe extern "C" fn(*mut c_char, usize, usize, *mut c_void) -> usize>;
+pub(crate) type CurlXferInfoCallback = Option<
+    unsafe extern "C" fn(*mut c_void, curl_off_t, curl_off_t, curl_off_t, curl_off_t) -> c_int,
+>;
+
+const CURLOPT_WRITEDATA: CURLoption = 10001;
 const CURLOPT_URL: CURLoption = 10002;
 const CURLOPT_PROXY: CURLoption = 10004;
 const CURLOPT_USERPWD: CURLoption = 10005;
-const CURLOPT_PROXYUSERPWD: CURLoption = 10006;
+const CURLOPT_RANGE: CURLoption = 10007;
+const CURLOPT_ERRORBUFFER: CURLoption = 10010;
+const CURLOPT_WRITEFUNCTION: CURLoption = 20011;
 const CURLOPT_CUSTOMREQUEST: CURLoption = 10036;
 const CURLOPT_LOW_SPEED_LIMIT: CURLoption = 19;
 const CURLOPT_LOW_SPEED_TIME: CURLoption = 20;
+const CURLOPT_RESUME_FROM: CURLoption = 21;
+const CURLOPT_HEADERDATA: CURLoption = 10029;
+const CURLOPT_VERBOSE: CURLoption = 41;
 const CURLOPT_HEADER: CURLoption = 42;
+const CURLOPT_NOPROGRESS: CURLoption = 43;
 const CURLOPT_NOBODY: CURLoption = 44;
+const CURLOPT_FAILONERROR: CURLoption = 45;
 const CURLOPT_UPLOAD: CURLoption = 46;
 const CURLOPT_FOLLOWLOCATION: CURLoption = 52;
+const CURLOPT_XFERINFODATA: CURLoption = 10057;
 const CURLOPT_PROXYPORT: CURLoption = 59;
 const CURLOPT_HTTPPROXYTUNNEL: CURLoption = 61;
 const CURLOPT_SSL_VERIFYPEER: CURLoption = 64;
 const CURLOPT_MAXCONNECTS: CURLoption = 71;
+const CURLOPT_HEADERFUNCTION: CURLoption = 20079;
 const CURLOPT_HTTPGET: CURLoption = 80;
 const CURLOPT_SSL_VERIFYHOST: CURLoption = 81;
 const CURLOPT_SHARE: CURLoption = 10100;
+const CURLOPT_RESUME_FROM_LARGE: CURLoption = 30116;
 const CURLOPT_CONNECT_ONLY: CURLoption = 141;
 const CURLOPT_USERNAME: CURLoption = 10173;
 const CURLOPT_PASSWORD: CURLoption = 10174;
 const CURLOPT_PROXYUSERNAME: CURLoption = 10175;
 const CURLOPT_PROXYPASSWORD: CURLoption = 10176;
 const CURLOPT_RESOLVE: CURLoption = 10203;
+const CURLOPT_XFERINFOFUNCTION: CURLoption = 20219;
 const CURLOPT_XOAUTH2_BEARER: CURLoption = 10220;
 const CURLOPT_PINNEDPUBLICKEY: CURLoption = 10230;
 const CURLOPT_CONNECT_TO: CURLoption = 10243;
 const CURLOPT_PRE_PROXY: CURLoption = 10262;
 
-#[derive(Clone, Debug)]
+const CURLINFO_RESPONSE_CODE: u32 = 0x200000 + 2;
+const CURLINFO_RETRY_AFTER: u32 = 0x600000 + 57;
+const CURL_ERROR_SIZE: usize = 256;
+
+#[derive(Clone)]
 pub(crate) struct EasyMetadata {
     pub url: Option<String>,
     pub custom_request: Option<String>,
+    pub range: Option<String>,
     pub resolve_overrides: Vec<ResolveOverride>,
     pub connect_overrides: Vec<ConnectOverride>,
     pub proxy: Option<String>,
@@ -65,6 +89,9 @@ pub(crate) struct EasyMetadata {
     pub nobody: bool,
     pub upload: bool,
     pub http_get: bool,
+    pub verbose: bool,
+    pub fail_on_error: bool,
+    pub resume_from: i64,
     pub low_speed: LowSpeedWindow,
     pub maxconnects: Option<c_long>,
 }
@@ -86,21 +113,9 @@ impl EasyMetadata {
         push_auth_part(&mut parts, "proxy_userpwd", self.proxy_userpwd.as_deref());
         push_auth_part(&mut parts, "username", self.username.as_deref());
         push_auth_part(&mut parts, "password", self.password.as_deref());
-        push_auth_part(
-            &mut parts,
-            "proxy_username",
-            self.proxy_username.as_deref(),
-        );
-        push_auth_part(
-            &mut parts,
-            "proxy_password",
-            self.proxy_password.as_deref(),
-        );
-        push_auth_part(
-            &mut parts,
-            "bearer",
-            self.xoauth2_bearer.as_deref(),
-        );
+        push_auth_part(&mut parts, "proxy_username", self.proxy_username.as_deref());
+        push_auth_part(&mut parts, "proxy_password", self.proxy_password.as_deref());
+        push_auth_part(&mut parts, "bearer", self.xoauth2_bearer.as_deref());
         if parts.is_empty() {
             None
         } else {
@@ -114,6 +129,7 @@ impl Default for EasyMetadata {
         Self {
             url: None,
             custom_request: None,
+            range: None,
             resolve_overrides: Vec::new(),
             connect_overrides: Vec::new(),
             proxy: None,
@@ -137,17 +153,41 @@ impl Default for EasyMetadata {
             nobody: false,
             upload: false,
             http_get: false,
+            verbose: false,
+            fail_on_error: false,
+            resume_from: 0,
             low_speed: LowSpeedWindow::default(),
             maxconnects: None,
         }
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Default)]
+pub(crate) struct EasyCallbacks {
+    pub write_function: CurlWriteCallback,
+    pub write_data: usize,
+    pub header_function: CurlWriteCallback,
+    pub header_data: usize,
+    pub xferinfo_function: CurlXferInfoCallback,
+    pub xferinfo_data: usize,
+    pub error_buffer: usize,
+    pub no_progress: bool,
+}
+
+#[derive(Clone, Default)]
+struct EasyInfo {
+    response_code: c_long,
+    retry_after: curl_off_t,
+    retry_after_set: bool,
+}
+
+#[derive(Clone)]
 struct EasyShadow {
     private_multi: Option<usize>,
     attached_multi: Option<usize>,
     metadata: EasyMetadata,
+    callbacks: EasyCallbacks,
+    info: EasyInfo,
     state: MultiState,
 }
 
@@ -157,6 +197,8 @@ impl Default for EasyShadow {
             private_multi: None,
             attached_multi: None,
             metadata: EasyMetadata::default(),
+            callbacks: EasyCallbacks::default(),
+            info: EasyInfo::default(),
             state: MultiState::Init,
         }
     }
@@ -199,6 +241,8 @@ pub(crate) fn register_duplicate(source: *mut CURL, duplicate: *mut CURL) {
                 private_multi: None,
                 attached_multi: None,
                 metadata: shadow.metadata,
+                callbacks: shadow.callbacks,
+                info: EasyInfo::default(),
                 state: MultiState::Init,
             },
         );
@@ -214,6 +258,8 @@ pub(crate) fn reset_handle(handle: *mut CURL) {
         .get_mut(&(handle as usize))
     {
         shadow.metadata = EasyMetadata::default();
+        shadow.callbacks = EasyCallbacks::default();
+        shadow.info = EasyInfo::default();
         shadow.state = MultiState::Init;
     }
 }
@@ -236,21 +282,25 @@ pub(crate) fn observe_easy_setopt_long(handle: *mut CURL, option: CURLoption, va
     }
 
     let mut guard = registry().lock().expect("easy registry mutex poisoned");
-    let metadata = &mut guard.entry(handle as usize).or_default().metadata;
+    let shadow = guard.entry(handle as usize).or_default();
     match option {
-        CURLOPT_MAXCONNECTS => metadata.maxconnects = Some(value),
-        CURLOPT_CONNECT_ONLY => metadata.connect_only = value != 0,
-        CURLOPT_LOW_SPEED_LIMIT => metadata.low_speed.limit_bytes_per_second = value,
-        CURLOPT_LOW_SPEED_TIME => metadata.low_speed.time_window_secs = value,
-        CURLOPT_HEADER => metadata.header = value != 0,
-        CURLOPT_NOBODY => metadata.nobody = value != 0,
-        CURLOPT_UPLOAD => metadata.upload = value != 0,
-        CURLOPT_FOLLOWLOCATION => metadata.follow_location = value != 0,
-        CURLOPT_HTTPGET => metadata.http_get = value != 0,
-        CURLOPT_PROXYPORT => metadata.proxy_port = u16::try_from(value).ok(),
-        CURLOPT_HTTPPROXYTUNNEL => metadata.tunnel_proxy = value != 0,
-        CURLOPT_SSL_VERIFYPEER => metadata.ssl_verify_peer = value != 0,
-        CURLOPT_SSL_VERIFYHOST => metadata.ssl_verify_host = value,
+        CURLOPT_MAXCONNECTS => shadow.metadata.maxconnects = Some(value),
+        CURLOPT_CONNECT_ONLY => shadow.metadata.connect_only = value != 0,
+        CURLOPT_LOW_SPEED_LIMIT => shadow.metadata.low_speed.limit_bytes_per_second = value,
+        CURLOPT_LOW_SPEED_TIME => shadow.metadata.low_speed.time_window_secs = value,
+        CURLOPT_RESUME_FROM => shadow.metadata.resume_from = value as i64,
+        CURLOPT_HEADER => shadow.metadata.header = value != 0,
+        CURLOPT_VERBOSE => shadow.metadata.verbose = value != 0,
+        CURLOPT_NOPROGRESS => shadow.callbacks.no_progress = value != 0,
+        CURLOPT_NOBODY => shadow.metadata.nobody = value != 0,
+        CURLOPT_FAILONERROR => shadow.metadata.fail_on_error = value != 0,
+        CURLOPT_UPLOAD => shadow.metadata.upload = value != 0,
+        CURLOPT_FOLLOWLOCATION => shadow.metadata.follow_location = value != 0,
+        CURLOPT_HTTPGET => shadow.metadata.http_get = value != 0,
+        CURLOPT_PROXYPORT => shadow.metadata.proxy_port = u16::try_from(value).ok(),
+        CURLOPT_HTTPPROXYTUNNEL => shadow.metadata.tunnel_proxy = value != 0,
+        CURLOPT_SSL_VERIFYPEER => shadow.metadata.ssl_verify_peer = value != 0,
+        CURLOPT_SSL_VERIFYHOST => shadow.metadata.ssl_verify_host = value,
         _ => {}
     }
 }
@@ -261,26 +311,74 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
     }
 
     let mut guard = registry().lock().expect("easy registry mutex poisoned");
-    let metadata = &mut guard.entry(handle as usize).or_default().metadata;
+    let shadow = guard.entry(handle as usize).or_default();
     match option {
-        CURLOPT_URL => metadata.url = copy_c_string(value.cast()),
-        CURLOPT_CUSTOMREQUEST => metadata.custom_request = copy_c_string(value.cast()),
-        CURLOPT_PROXY => metadata.proxy = copy_c_string(value.cast()),
-        CURLOPT_PRE_PROXY => metadata.pre_proxy = copy_c_string(value.cast()),
-        CURLOPT_USERPWD => metadata.userpwd = copy_c_string(value.cast()),
-        CURLOPT_PROXYUSERPWD => metadata.proxy_userpwd = copy_c_string(value.cast()),
-        CURLOPT_USERNAME => metadata.username = copy_c_string(value.cast()),
-        CURLOPT_PASSWORD => metadata.password = copy_c_string(value.cast()),
-        CURLOPT_PROXYUSERNAME => metadata.proxy_username = copy_c_string(value.cast()),
-        CURLOPT_PROXYPASSWORD => metadata.proxy_password = copy_c_string(value.cast()),
-        CURLOPT_XOAUTH2_BEARER => metadata.xoauth2_bearer = copy_c_string(value.cast()),
-        CURLOPT_PINNEDPUBLICKEY => metadata.pinned_public_key = copy_c_string(value.cast()),
-        CURLOPT_SHARE => metadata.share_handle = (!value.is_null()).then_some(value as usize),
-        CURLOPT_RESOLVE => metadata.resolve_overrides = dns::collect_resolve_overrides(value.cast()),
+        CURLOPT_WRITEDATA => shadow.callbacks.write_data = value as usize,
+        CURLOPT_URL => shadow.metadata.url = copy_c_string(value.cast()),
+        CURLOPT_PROXY => shadow.metadata.proxy = copy_c_string(value.cast()),
+        CURLOPT_USERPWD => shadow.metadata.userpwd = copy_c_string(value.cast()),
+        CURLOPT_RANGE => shadow.metadata.range = copy_c_string(value.cast()),
+        CURLOPT_ERRORBUFFER => shadow.callbacks.error_buffer = value as usize,
+        CURLOPT_HEADERDATA => shadow.callbacks.header_data = value as usize,
+        CURLOPT_CUSTOMREQUEST => shadow.metadata.custom_request = copy_c_string(value.cast()),
+        CURLOPT_XFERINFODATA => shadow.callbacks.xferinfo_data = value as usize,
+        CURLOPT_SHARE => {
+            shadow.metadata.share_handle = (!value.is_null()).then_some(value as usize)
+        }
+        CURLOPT_USERNAME => shadow.metadata.username = copy_c_string(value.cast()),
+        CURLOPT_PASSWORD => shadow.metadata.password = copy_c_string(value.cast()),
+        CURLOPT_PROXYUSERNAME => shadow.metadata.proxy_username = copy_c_string(value.cast()),
+        CURLOPT_PROXYPASSWORD => shadow.metadata.proxy_password = copy_c_string(value.cast()),
+        CURLOPT_RESOLVE => {
+            shadow.metadata.resolve_overrides = dns::collect_resolve_overrides(value.cast())
+        }
+        CURLOPT_XOAUTH2_BEARER => shadow.metadata.xoauth2_bearer = copy_c_string(value.cast()),
+        CURLOPT_PINNEDPUBLICKEY => shadow.metadata.pinned_public_key = copy_c_string(value.cast()),
         CURLOPT_CONNECT_TO => {
-            metadata.connect_overrides = dns::collect_connect_overrides(value.cast())
+            shadow.metadata.connect_overrides = dns::collect_connect_overrides(value.cast())
+        }
+        CURLOPT_PRE_PROXY => shadow.metadata.pre_proxy = copy_c_string(value.cast()),
+        _ => {}
+    }
+}
+
+pub(crate) fn observe_easy_setopt_function(
+    handle: *mut CURL,
+    option: CURLoption,
+    value: Option<unsafe extern "C" fn()>,
+) {
+    if handle.is_null() {
+        return;
+    }
+
+    let mut guard = registry().lock().expect("easy registry mutex poisoned");
+    let shadow = guard.entry(handle as usize).or_default();
+    match option {
+        CURLOPT_WRITEFUNCTION => {
+            shadow.callbacks.write_function = unsafe { core::mem::transmute(value) }
+        }
+        CURLOPT_HEADERFUNCTION => {
+            shadow.callbacks.header_function = unsafe { core::mem::transmute(value) }
+        }
+        CURLOPT_XFERINFOFUNCTION => {
+            shadow.callbacks.xferinfo_function = unsafe { core::mem::transmute(value) }
         }
         _ => {}
+    }
+}
+
+pub(crate) fn observe_easy_setopt_off_t(handle: *mut CURL, option: CURLoption, value: curl_off_t) {
+    if handle.is_null() {
+        return;
+    }
+    if option == CURLOPT_RESUME_FROM_LARGE {
+        registry()
+            .lock()
+            .expect("easy registry mutex poisoned")
+            .entry(handle as usize)
+            .or_default()
+            .metadata
+            .resume_from = value as i64;
     }
 }
 
@@ -333,6 +431,137 @@ pub(crate) fn snapshot_metadata(handle: *mut CURL) -> EasyMetadata {
         .unwrap_or_default()
 }
 
+pub(crate) fn snapshot_callbacks(handle: *mut CURL) -> EasyCallbacks {
+    registry()
+        .lock()
+        .expect("easy registry mutex poisoned")
+        .get(&(handle as usize))
+        .map(|shadow| shadow.callbacks)
+        .unwrap_or_default()
+}
+
+pub(crate) fn clear_transfer_info(handle: *mut CURL) {
+    if handle.is_null() {
+        return;
+    }
+    if let Some(shadow) = registry()
+        .lock()
+        .expect("easy registry mutex poisoned")
+        .get_mut(&(handle as usize))
+    {
+        shadow.info = EasyInfo::default();
+    }
+}
+
+pub(crate) fn record_transfer_info(
+    handle: *mut CURL,
+    response_code: c_long,
+    retry_after: Option<curl_off_t>,
+) {
+    if handle.is_null() {
+        return;
+    }
+    if let Some(shadow) = registry()
+        .lock()
+        .expect("easy registry mutex poisoned")
+        .get_mut(&(handle as usize))
+    {
+        shadow.info.response_code = response_code;
+        if let Some(retry_after) = retry_after {
+            shadow.info.retry_after = retry_after;
+            shadow.info.retry_after_set = true;
+        }
+    }
+}
+
+pub(crate) fn easy_getinfo_long(
+    handle: *mut CURL,
+    info: u32,
+    value: *mut c_long,
+) -> Option<CURLcode> {
+    if handle.is_null() || value.is_null() {
+        return Some(CURLE_BAD_FUNCTION_ARGUMENT);
+    }
+    if info != CURLINFO_RESPONSE_CODE {
+        return None;
+    }
+
+    let response_code = registry()
+        .lock()
+        .expect("easy registry mutex poisoned")
+        .get(&(handle as usize))
+        .map(|shadow| shadow.info.response_code)
+        .unwrap_or(0);
+    unsafe { *value = response_code };
+    Some(crate::abi::CURLE_OK)
+}
+
+pub(crate) fn easy_getinfo_off_t(
+    handle: *mut CURL,
+    info: u32,
+    value: *mut curl_off_t,
+) -> Option<CURLcode> {
+    if handle.is_null() || value.is_null() {
+        return Some(CURLE_BAD_FUNCTION_ARGUMENT);
+    }
+    if info != CURLINFO_RETRY_AFTER {
+        return None;
+    }
+
+    let retry_after = registry()
+        .lock()
+        .expect("easy registry mutex poisoned")
+        .get(&(handle as usize))
+        .and_then(|shadow| {
+            shadow
+                .info
+                .retry_after_set
+                .then_some(shadow.info.retry_after)
+        })
+        .unwrap_or(0);
+    unsafe { *value = retry_after };
+    Some(crate::abi::CURLE_OK)
+}
+
+pub(crate) fn easy_getinfo_socket(
+    handle: *mut CURL,
+    info: CURLINFO,
+    value: *mut curl_socket_t,
+) -> Option<CURLcode> {
+    if handle.is_null() || value.is_null() {
+        return Some(CURLE_BAD_FUNCTION_ARGUMENT);
+    }
+    if info != crate::transfer::CURLINFO_ACTIVESOCKET {
+        return None;
+    }
+
+    unsafe {
+        *value = crate::transfer::active_socket(handle).unwrap_or(-1);
+    }
+    Some(crate::abi::CURLE_OK)
+}
+
+pub(crate) fn clear_error_buffer(handle: *mut CURL) {
+    let error_buffer = snapshot_callbacks(handle).error_buffer;
+    if error_buffer != 0 {
+        unsafe { *(error_buffer as *mut c_char) = 0 };
+    }
+}
+
+pub(crate) fn set_error_buffer(handle: *mut CURL, message: &str) {
+    let error_buffer = snapshot_callbacks(handle).error_buffer;
+    if error_buffer == 0 {
+        return;
+    }
+
+    let bytes = message.as_bytes();
+    let max_len = bytes.len().min(CURL_ERROR_SIZE.saturating_sub(1));
+    unsafe {
+        core::ptr::copy_nonoverlapping(bytes.as_ptr(), error_buffer as *mut u8, max_len);
+        *((error_buffer as *mut u8).add(max_len)) = 0;
+    }
+}
+
 fn private_multi_for(handle: *mut CURL) -> Option<usize> {
     registry()
         .lock()
@@ -371,8 +600,12 @@ pub(crate) unsafe fn easy_perform(handle: *mut CURL) -> CURLcode {
         return CURLE_BAD_FUNCTION_ARGUMENT;
     }
     register_handle(handle);
+    crate::transfer::release_handle_state(handle);
+    clear_error_buffer(handle);
+    clear_transfer_info(handle);
 
     if attached_multi_for(handle).is_some() {
+        set_error_buffer(handle, "easy handle already used in multi handle");
         return CURLE_FAILED_INIT;
     }
 
@@ -450,7 +683,7 @@ pub(crate) unsafe fn easy_perform(handle: *mut CURL) -> CURLcode {
 }
 
 pub(crate) unsafe fn easy_pause(handle: *mut CURL, bitmask: c_int) -> CURLcode {
-    unsafe { crate::transfer::easy_pause_backend(handle, bitmask) }
+    crate::transfer::pause_handle(handle, bitmask)
 }
 
 pub(crate) unsafe fn easy_recv(
@@ -459,7 +692,7 @@ pub(crate) unsafe fn easy_recv(
     buflen: usize,
     nread: *mut usize,
 ) -> CURLcode {
-    unsafe { crate::transfer::easy_recv_backend(handle, buffer, buflen, nread) }
+    crate::transfer::recv_handle(handle, buffer, buflen, nread)
 }
 
 pub(crate) unsafe fn easy_send(
@@ -468,18 +701,22 @@ pub(crate) unsafe fn easy_send(
     buflen: usize,
     nwritten: *mut usize,
 ) -> CURLcode {
-    unsafe { crate::transfer::easy_send_backend(handle, buffer, buflen, nwritten) }
+    crate::transfer::send_handle(handle, buffer, buflen, nwritten)
 }
 
 pub(crate) unsafe fn easy_upkeep(handle: *mut CURL) -> CURLcode {
-    unsafe { crate::transfer::easy_upkeep_backend(handle) }
+    crate::transfer::upkeep_handle(handle)
 }
 
 fn copy_c_string(value: *const c_char) -> Option<String> {
     if value.is_null() {
         None
     } else {
-        Some(unsafe { CStr::from_ptr(value) }.to_string_lossy().into_owned())
+        Some(
+            unsafe { CStr::from_ptr(value) }
+                .to_string_lossy()
+                .into_owned(),
+        )
     }
 }
 

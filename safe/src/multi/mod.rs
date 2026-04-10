@@ -230,11 +230,14 @@ pub(crate) unsafe fn add_handle(multi: *mut CURLM, easy_handle: *mut CURL) -> CU
         if guard.records.contains_key(&(easy_handle as usize)) {
             return CURLM_ADDED_ALREADY;
         }
-        let maxconnects = guard.maxconnects.max(metadata.maxconnects.unwrap_or(0).max(0) as usize);
+        let maxconnects = guard
+            .maxconnects
+            .max(metadata.maxconnects.unwrap_or(0).max(0) as usize);
         let next_connection_id = guard.next_connection_id;
-        let (connection_id, reused) = guard
-            .conncache
-            .remember(plan.cache_key.clone(), maxconnects, next_connection_id);
+        let (connection_id, reused) =
+            guard
+                .conncache
+                .remember(plan.cache_key.clone(), maxconnects, next_connection_id);
         if !reused {
             guard.next_connection_id += 1;
         }
@@ -416,7 +419,10 @@ pub(crate) unsafe fn timeout_handle(multi: *mut CURLM, milliseconds: *mut c_long
         if guard.dead {
             0
         } else if !guard.messages.is_empty()
-            || guard.records.values().any(|record| !record.started && !record.completed)
+            || guard
+                .records
+                .values()
+                .any(|record| !record.started && !record.completed)
         {
             0
         } else if guard.records.values().any(|record| !record.completed) {
@@ -689,12 +695,12 @@ fn start_pending_transfers(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> CURL
             record.started = true;
             let states = state_path_for(&record.plan);
             record.state = *states.last().unwrap_or(&state::MultiState::Performing);
-            starts.push((record.easy, states));
+            starts.push((record.easy, record.plan.clone(), states));
         }
         starts
     };
 
-    for (easy_handle, states) in starts {
+    for (easy_handle, plan, states) in starts {
         for next_state in states {
             easy::perform::on_transfer_progress(easy_handle, next_state);
         }
@@ -704,11 +710,8 @@ fn start_pending_transfers(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> CURL
         }
         let sender = wrapper.sender.clone();
         let easy_key = easy_handle as usize;
-        let join = transfer::spawn_reference_transfer(easy_key, move |result| {
-            let _ = sender.send(TransferEvent::Completed {
-                easy_key,
-                result,
-            });
+        let join = transfer::spawn_transfer(easy_key, plan, move |result| {
+            let _ = sender.send(TransferEvent::Completed { easy_key, result });
         });
         if let Some(record) = wrapper
             .inner
@@ -750,7 +753,10 @@ fn wait_common(
     let mut activity = drain_events(wrapper);
     let has_unstarted = {
         let guard = wrapper.inner.lock().expect("multi mutex poisoned");
-        guard.records.values().any(|record| !record.started && !record.completed)
+        guard
+            .records
+            .values()
+            .any(|record| !record.started && !record.completed)
     };
     if has_unstarted {
         if !ret.is_null() {
@@ -780,7 +786,10 @@ fn wait_common(
 
 fn wait_for_event(wrapper: &MultiHandle, timeout_ms: c_int) -> Result<c_int, CURLMcode> {
     let event = {
-        let receiver = wrapper.receiver.lock().expect("multi receiver mutex poisoned");
+        let receiver = wrapper
+            .receiver
+            .lock()
+            .expect("multi receiver mutex poisoned");
         match receiver.recv_timeout(Duration::from_millis(timeout_ms as u64)) {
             Ok(event) => Some(event),
             Err(RecvTimeoutError::Timeout) => None,
@@ -798,7 +807,10 @@ fn wait_for_event(wrapper: &MultiHandle, timeout_ms: c_int) -> Result<c_int, CUR
 
 fn drain_events(wrapper: &MultiHandle) -> c_int {
     let events = {
-        let receiver = wrapper.receiver.lock().expect("multi receiver mutex poisoned");
+        let receiver = wrapper
+            .receiver
+            .lock()
+            .expect("multi receiver mutex poisoned");
         let mut events = Vec::new();
         loop {
             match receiver.try_recv() {
@@ -861,7 +873,10 @@ fn update_timer(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> CURLMcode {
         let timeout_ms = if guard.dead {
             0
         } else if !guard.messages.is_empty()
-            || guard.records.values().any(|record| !record.started && !record.completed)
+            || guard
+                .records
+                .values()
+                .any(|record| !record.started && !record.completed)
         {
             0
         } else if guard.records.values().any(|record| !record.completed) {
@@ -916,7 +931,11 @@ fn invoke_socket_callback(
             .get(&CURL_SOCKET_BAD)
             .copied()
             .unwrap_or(ptr::null_mut());
-        (guard.callbacks.socket_cb, guard.callbacks.socket_userp, socketp)
+        (
+            guard.callbacks.socket_cb,
+            guard.callbacks.socket_userp,
+            socketp,
+        )
     };
 
     let Some(callback) = callback else {
