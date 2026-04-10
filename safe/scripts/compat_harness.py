@@ -791,8 +791,9 @@ def cmd_export(args: argparse.Namespace) -> None:
 def cmd_build(args: argparse.Namespace) -> None:
     manifest = load_manifest()
     flavor = flavor_config(args.flavor)
-    vendor_assets(manifest)
-    targets = selected_targets(manifest, args.target)
+    if not VENDOR_ROOT.exists():
+        vendor_assets(manifest)
+    targets = selected_targets(manifest, [] if args.all else args.target)
     build_targets(flavor, targets, jobs=args.jobs or os.cpu_count() or 1)
 
 
@@ -810,6 +811,7 @@ def main() -> int:
 
     build_parser = subparsers.add_parser("build")
     build_parser.add_argument("--flavor", choices=["openssl", "gnutls"], required=True)
+    build_parser.add_argument("--all", action="store_true")
     build_parser.add_argument("--target", action="append", default=[])
     build_parser.add_argument("--jobs", type=int, default=0)
     build_parser.set_defaults(func=cmd_build)
