@@ -107,7 +107,7 @@ impl Read for TlsConnection {
         if rc >= 0 {
             Ok(rc as usize)
         } else {
-            Err(std::io::Error::other("tls read failed"))
+            Err(std::io::Error::last_os_error())
         }
     }
 }
@@ -118,7 +118,7 @@ impl Write for TlsConnection {
         if rc >= 0 {
             Ok(rc as usize)
         } else {
-            Err(std::io::Error::other("tls write failed"))
+            Err(std::io::Error::last_os_error())
         }
     }
 

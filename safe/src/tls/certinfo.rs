@@ -64,10 +64,7 @@ impl Drop for StoredCertInfo {
 }
 
 unsafe extern "C" {
-    fn curl_safe_tls_certinfo(
-        conn: *mut super::SafeTlsConnection,
-        out_len: *mut usize,
-    ) -> *mut u8;
+    fn curl_safe_tls_certinfo(conn: *mut super::SafeTlsConnection, out_len: *mut usize) -> *mut u8;
 }
 
 fn registry() -> &'static Mutex<HashMap<usize, StoredCertInfo>> {

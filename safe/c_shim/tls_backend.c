@@ -603,19 +603,41 @@ int curl_safe_tls_connect(int fd,
 ssize_t curl_safe_tls_read(struct safe_tls_connection *conn, void *buf, size_t len)
 {
   int rc;
+  int err;
   if(!conn || !buf)
     return -1;
   rc = SSL_read(conn->ssl, buf, (int)len);
-  return rc > 0 ? (ssize_t)rc : -1;
+  if(rc > 0)
+    return (ssize_t)rc;
+  err = SSL_get_error(conn->ssl, rc);
+  if(err == SSL_ERROR_ZERO_RETURN)
+    return 0;
+  if(err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+    errno = EAGAIN;
+    return -1;
+  }
+  errno = EIO;
+  return -1;
 }
 
 ssize_t curl_safe_tls_write(struct safe_tls_connection *conn, const void *buf, size_t len)
 {
   int rc;
+  int err;
   if(!conn || !buf)
     return -1;
   rc = SSL_write(conn->ssl, buf, (int)len);
-  return rc > 0 ? (ssize_t)rc : -1;
+  if(rc > 0)
+    return (ssize_t)rc;
+  err = SSL_get_error(conn->ssl, rc);
+  if(err == SSL_ERROR_ZERO_RETURN)
+    return 0;
+  if(err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+    errno = EAGAIN;
+    return -1;
+  }
+  errno = EIO;
+  return -1;
 }
 
 void curl_safe_tls_close(struct safe_tls_connection *conn)
@@ -804,6 +826,32 @@ static int gnutls_check_pinned_key(gnutls_session_t session, const char *spec)
   return ok;
 }
 
+static int gnutls_verify_hostname_only(gnutls_session_t session, const char *host)
+{
+  const gnutls_datum_t *peers;
+  unsigned int peer_count = 0;
+  gnutls_x509_crt_t cert = NULL;
+  int ok = -1;
+
+  if(!host || !*host)
+    return 0;
+
+  peers = gnutls_certificate_get_peers(session, &peer_count);
+  if(!peers || peer_count == 0)
+    return -1;
+
+  if(gnutls_x509_crt_init(&cert) < 0)
+    return -1;
+  if(gnutls_x509_crt_import(cert, &peers[0], GNUTLS_X509_FMT_DER) < 0) {
+    gnutls_x509_crt_deinit(cert);
+    return -1;
+  }
+
+  ok = gnutls_x509_crt_check_hostname(cert, host) ? 0 : -1;
+  gnutls_x509_crt_deinit(cert);
+  return ok;
+}
+
 unsigned char *curl_safe_tls_certinfo(struct safe_tls_connection *conn,
                                       size_t *out_len)
 {
@@ -959,7 +1007,7 @@ int curl_safe_tls_connect(int fd,
     return -1;
   }
 
-  if(verify_peer || verify_host) {
+  if(verify_peer) {
     unsigned int verify_status = 0;
     rc = gnutls_certificate_verify_peers3(conn->session,
                                           (verify_host && host && *host) ? host : NULL,
@@ -972,6 +1020,14 @@ int curl_safe_tls_connect(int fd,
       free(conn);
       return -1;
     }
+  }
+  else if(verify_host && gnutls_verify_hostname_only(conn->session, host)) {
+    set_error(errbuf, errlen, "TLS peer hostname verification failed");
+    gnutls_bye(conn->session, GNUTLS_SHUT_RDWR);
+    gnutls_deinit(conn->session);
+    gnutls_certificate_free_credentials(conn->creds);
+    free(conn);
+    return -1;
   }
 
   if(gnutls_check_pinned_key(conn->session, pinned_public_key)) {
@@ -1005,7 +1061,14 @@ ssize_t curl_safe_tls_read(struct safe_tls_connection *conn, void *buf, size_t l
   do {
     rc = gnutls_record_recv(conn->session, buf, len);
   } while(rc == GNUTLS_E_INTERRUPTED);
-  return rc >= 0 ? rc : -1;
+  if(rc >= 0)
+    return rc;
+  if(rc == GNUTLS_E_AGAIN) {
+    errno = EAGAIN;
+    return -1;
+  }
+  errno = EIO;
+  return -1;
 }
 
 ssize_t curl_safe_tls_write(struct safe_tls_connection *conn, const void *buf, size_t len)
@@ -1016,7 +1079,14 @@ ssize_t curl_safe_tls_write(struct safe_tls_connection *conn, const void *buf, s
   do {
     rc = gnutls_record_send(conn->session, buf, len);
   } while(rc == GNUTLS_E_INTERRUPTED);
-  return rc >= 0 ? rc : -1;
+  if(rc >= 0)
+    return rc;
+  if(rc == GNUTLS_E_AGAIN) {
+    errno = EAGAIN;
+    return -1;
+  }
+  errno = EIO;
+  return -1;
 }
 
 void curl_safe_tls_close(struct safe_tls_connection *conn)

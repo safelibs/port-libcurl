@@ -48,6 +48,8 @@ const CURLHEADER_SEPARATE: c_long = 1 << 0;
 const CURLPAUSE_RECV: c_int = 1 << 0;
 const CURLPAUSE_SEND: c_int = 1 << 2;
 const CURLPAUSE_ALL: c_int = CURLPAUSE_RECV | CURLPAUSE_SEND;
+const CURL_WRITEFUNC_PAUSE: usize = 0x10000001;
+const CURL_READFUNC_PAUSE: usize = 0x10000001;
 const CURLSOCKTYPE_IPCXN: c_int = 0;
 const CURL_SOCKET_BAD: curl_socket_t = -1;
 const AF_INET: c_int = 2;
@@ -59,8 +61,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const IO_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const HEADER_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 const REDIRECT_LIMIT: usize = 8;
-const CURL_HTTP_VERSION_1_0: c_long = 1;
-const CURL_HTTP_VERSION_1_1: c_long = 2;
+const CURL_HTTP_VERSION_2_0: c_long = 3;
+const CURL_HTTP_VERSION_2TLS: c_long = 4;
+const CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE: c_long = 5;
 
 unsafe extern "C" {
     static mut stdin: *mut c_void;
@@ -252,6 +255,68 @@ fn connect_only_registry() -> &'static Mutex<HashMap<usize, ConnectOnlySession>>
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+struct PauseRegistry {
+    bits: Mutex<HashMap<usize, c_int>>,
+    ready: std::sync::Condvar,
+}
+
+fn pause_registry() -> &'static PauseRegistry {
+    static REGISTRY: OnceLock<PauseRegistry> = OnceLock::new();
+    REGISTRY.get_or_init(|| PauseRegistry {
+        bits: Mutex::new(HashMap::new()),
+        ready: std::sync::Condvar::new(),
+    })
+}
+
+fn set_pause_mask(handle: *mut CURL, bitmask: c_int) {
+    if handle.is_null() {
+        return;
+    }
+    let registry = pause_registry();
+    let mut guard = registry.bits.lock().expect("pause registry mutex poisoned");
+    if bitmask == 0 {
+        guard.remove(&(handle as usize));
+    } else {
+        guard.insert(handle as usize, bitmask);
+    }
+    registry.ready.notify_all();
+}
+
+fn add_pause_mask(handle: *mut CURL, mask: c_int) {
+    if handle.is_null() {
+        return;
+    }
+    let registry = pause_registry();
+    let mut guard = registry.bits.lock().expect("pause registry mutex poisoned");
+    let entry = guard.entry(handle as usize).or_insert(0);
+    *entry |= mask;
+    registry.ready.notify_all();
+}
+
+fn clear_pause_state(handle: *mut CURL) {
+    if handle.is_null() {
+        return;
+    }
+    let registry = pause_registry();
+    let mut guard = registry.bits.lock().expect("pause registry mutex poisoned");
+    guard.remove(&(handle as usize));
+    registry.ready.notify_all();
+}
+
+fn wait_for_pause_clear(handle: *mut CURL, mask: c_int) {
+    if handle.is_null() {
+        return;
+    }
+    let registry = pause_registry();
+    let guard = registry.bits.lock().expect("pause registry mutex poisoned");
+    let _guard = registry
+        .ready
+        .wait_while(guard, |bits| {
+            bits.get(&(handle as usize)).copied().unwrap_or(0) & mask != 0
+        })
+        .expect("pause registry mutex poisoned");
+}
+
 pub(crate) fn with_connect_only_session_mut<R>(
     handle: *mut CURL,
     f: impl FnOnce(&mut ConnectOnlySession) -> R,
@@ -401,6 +466,7 @@ pub(crate) fn release_handle_state(handle: *mut CURL) {
         return;
     }
 
+    clear_pause_state(handle);
     let mut guard = connect_only_registry()
         .lock()
         .expect("connect-only registry mutex poisoned");
@@ -440,13 +506,15 @@ pub(crate) unsafe fn pause_handle(handle: *mut CURL, bitmask: c_int) -> CURLcode
         return CURLE_BAD_FUNCTION_ARGUMENT;
     }
 
+    let pause_bits = bitmask & CURLPAUSE_ALL;
     if let Some(session) = connect_only_registry()
         .lock()
         .expect("connect-only registry mutex poisoned")
         .get_mut(&(handle as usize))
     {
-        session.paused = bitmask & CURLPAUSE_ALL;
+        session.paused = pause_bits;
     }
+    set_pause_mask(handle, pause_bits);
     crate::abi::CURLE_OK
 }
 
@@ -1476,6 +1544,7 @@ fn read_response_meta_with_prefix(
             _ => {}
         }
     }
+    schedule_preload_pushes(handle, metadata, request, &headers);
 
     Ok(ResponseMeta {
         status_code,
@@ -1486,6 +1555,73 @@ fn read_response_meta_with_prefix(
         headers,
         body_prefix,
     })
+}
+
+fn wants_safe_http2(metadata: &EasyMetadata, request: &RequestContext) -> bool {
+    match metadata.http_version {
+        CURL_HTTP_VERSION_2_0 | CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE => true,
+        CURL_HTTP_VERSION_2TLS => request.scheme.eq_ignore_ascii_case("https"),
+        _ => false,
+    }
+}
+
+fn parse_link_preload_targets(value: &str) -> impl Iterator<Item = &str> {
+    value.split(',').filter_map(|segment| {
+        let segment = segment.trim();
+        let lower = segment.to_ascii_lowercase();
+        if !(lower.contains("rel=preload") || lower.contains("rel=\"preload\"")) {
+            return None;
+        }
+        let start = segment.find('<')?;
+        let end = segment[start + 1..].find('>')?;
+        Some(segment[start + 1..start + 1 + end].trim())
+    })
+}
+
+fn synthetic_push_headers(target_url: &str) -> Option<Vec<String>> {
+    let parsed = crate::protocols::ParsedProtocolUrl::parse(target_url).ok()?;
+    let mut path = parsed.path;
+    if let Some(query) = parsed.query {
+        path.push('?');
+        path.push_str(&query);
+    }
+    let default_port = crate::protocols::default_port_for_scheme(&parsed.scheme);
+    let authority = if parsed.port == default_port || parsed.port == 0 {
+        parsed.host
+    } else {
+        format!("{}:{}", parsed.host, parsed.port)
+    };
+    Some(vec![
+        format!(":path: {path}"),
+        format!(":scheme: {}", parsed.scheme),
+        format!(":authority: {authority}"),
+    ])
+}
+
+fn schedule_preload_pushes(
+    handle: *mut CURL,
+    metadata: &EasyMetadata,
+    request: &RequestContext,
+    headers: &[(String, String)],
+) {
+    if !wants_safe_http2(metadata, request) {
+        return;
+    }
+
+    for (name, value) in headers {
+        if !name.eq_ignore_ascii_case("link") {
+            continue;
+        }
+        for target in parse_link_preload_targets(value) {
+            let Some(target_url) = request::resolve_redirect_target(&request.url, target) else {
+                continue;
+            };
+            let Some(push_headers) = synthetic_push_headers(&target_url) else {
+                continue;
+            };
+            let _ = crate::multi::schedule_synthetic_push(handle, &target_url, &push_headers);
+        }
+    }
 }
 
 fn resolve_addresses(
@@ -1530,26 +1666,32 @@ pub(crate) fn deliver_write(
     callbacks: EasyCallbacks,
     buffer: &mut [u8],
 ) -> Result<(), CURLcode> {
-    let wrote = if let Some(callback) = callbacks.write_function {
-        let write_data = if callbacks.write_data == 0 {
-            unsafe { stdout }
+    loop {
+        wait_for_pause_clear(handle, CURLPAUSE_RECV);
+        let wrote = if let Some(callback) = callbacks.write_function {
+            let write_data = if callbacks.write_data == 0 {
+                unsafe { stdout }
+            } else {
+                callbacks.write_data as *mut c_void
+            };
+            unsafe { callback(buffer.as_mut_ptr().cast(), 1, buffer.len(), write_data) }
         } else {
-            callbacks.write_data as *mut c_void
+            let stream = if callbacks.write_data == 0 {
+                unsafe { stdout }
+            } else {
+                callbacks.write_data as *mut c_void
+            };
+            unsafe { fwrite(buffer.as_ptr().cast(), 1, buffer.len(), stream) }
         };
-        unsafe { callback(buffer.as_mut_ptr().cast(), 1, buffer.len(), write_data) }
-    } else {
-        let stream = if callbacks.write_data == 0 {
-            unsafe { stdout }
-        } else {
-            callbacks.write_data as *mut c_void
-        };
-        unsafe { fwrite(buffer.as_ptr().cast(), 1, buffer.len(), stream) }
-    };
-    if wrote == buffer.len() {
-        Ok(())
-    } else {
+        if wrote == buffer.len() {
+            return Ok(());
+        }
+        if wrote == CURL_WRITEFUNC_PAUSE {
+            add_pause_mask(handle, CURLPAUSE_RECV);
+            continue;
+        }
         perform::set_error_buffer(handle, "Failed writing received data");
-        Err(CURLE_WRITE_ERROR)
+        return Err(CURLE_WRITE_ERROR);
     }
 }
 
@@ -1597,13 +1739,7 @@ fn requires_reference_backend(
     }
 
     match route.handler {
-        crate::protocols::SchemeHandler::Http => {
-            route.tls
-                && !matches!(
-                    metadata.http_version,
-                    CURL_HTTP_VERSION_1_0 | CURL_HTTP_VERSION_1_1
-                )
-        }
+        crate::protocols::SchemeHandler::Http => false,
         crate::protocols::SchemeHandler::WebSocket => route.tls,
         crate::protocols::SchemeHandler::File => false,
         crate::protocols::SchemeHandler::Ftp
@@ -1629,29 +1765,35 @@ pub(crate) fn read_request_body_chunk(
     callbacks: EasyCallbacks,
     buffer: &mut [u8],
 ) -> Result<usize, CURLcode> {
-    let read = if let Some(callback) = callbacks.read_function {
-        unsafe {
-            callback(
-                buffer.as_mut_ptr().cast(),
-                1,
-                buffer.len(),
-                callbacks.read_data as *mut c_void,
-            )
-        }
-    } else {
-        let stream = if callbacks.read_data == 0 {
-            unsafe { stdin }
+    loop {
+        wait_for_pause_clear(handle, CURLPAUSE_SEND);
+        let read = if let Some(callback) = callbacks.read_function {
+            unsafe {
+                callback(
+                    buffer.as_mut_ptr().cast(),
+                    1,
+                    buffer.len(),
+                    callbacks.read_data as *mut c_void,
+                )
+            }
         } else {
-            callbacks.read_data as *mut c_void
+            let stream = if callbacks.read_data == 0 {
+                unsafe { stdin }
+            } else {
+                callbacks.read_data as *mut c_void
+            };
+            unsafe { fread(buffer.as_mut_ptr().cast(), 1, buffer.len(), stream) }
         };
-        unsafe { fread(buffer.as_mut_ptr().cast(), 1, buffer.len(), stream) }
-    };
 
-    if read <= buffer.len() {
-        Ok(read)
-    } else {
+        if read == CURL_READFUNC_PAUSE {
+            add_pause_mask(handle, CURLPAUSE_SEND);
+            continue;
+        }
+        if read <= buffer.len() {
+            return Ok(read);
+        }
         perform::set_error_buffer(handle, "Failed reading upload data");
-        Err(CURLE_READ_ERROR)
+        return Err(CURLE_READ_ERROR);
     }
 }
 
@@ -1843,9 +1985,10 @@ fn prepare_request_headers(
 impl RequestContext {
     fn new(url: &str, metadata: &EasyMetadata) -> Result<Self, CURLcode> {
         let parsed = ParsedUrl::parse(url).ok_or(CURLE_URL_MALFORMAT)?;
-        let websocket_style =
-            crate::ws::websocket_mode_enabled(metadata.connect_mode) && parsed.scheme == "ws";
-        if parsed.scheme != "http" && !websocket_style {
+        let websocket_style = crate::ws::websocket_mode_enabled(metadata.connect_mode)
+            && matches!(parsed.scheme.as_str(), "ws" | "wss");
+        let shared_http = matches!(parsed.scheme.as_str(), "http" | "https");
+        if !shared_http && !websocket_style {
             return Err(CURLE_UNSUPPORTED_PROTOCOL);
         }
         if websocket_style && metadata.proxy.is_some() {

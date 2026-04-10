@@ -1125,10 +1125,18 @@ pub(crate) unsafe fn easy_perform(handle: *mut CURL) -> CURLcode {
 }
 
 pub(crate) unsafe fn easy_pause(handle: *mut CURL, bitmask: c_int) -> CURLcode {
-    if crate::transfer::has_connect_only_session(handle) {
-        crate::transfer::pause_handle(handle, bitmask)
+    let ref_rc = unsafe { ref_easy_pause()(handle, bitmask) };
+    let rc = crate::transfer::pause_handle(handle, bitmask);
+    if rc != crate::abi::CURLE_OK {
+        return rc;
+    }
+    if let Some(multi) = attached_multi_for(handle) {
+        let _ = unsafe { crate::multi::wakeup_handle(multi as *mut crate::abi::CURLM) };
+    }
+    if ref_rc == crate::abi::CURLE_OK {
+        crate::abi::CURLE_OK
     } else {
-        unsafe { ref_easy_pause()(handle, bitmask) }
+        rc
     }
 }
 

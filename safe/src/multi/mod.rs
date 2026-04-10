@@ -11,6 +11,7 @@ use crate::{alloc, easy, global, transfer};
 use core::ffi::{c_char, c_int, c_long, c_uint, c_void};
 use core::{mem, ptr};
 use std::collections::{HashMap, VecDeque};
+use std::ffi::CString;
 use std::io::Write;
 use std::mem::size_of;
 use std::os::fd::AsRawFd;
@@ -45,6 +46,7 @@ const CURL_PUSH_ERROROUT: c_int = 2;
 
 const CURLMOPT_PIPELINING: CURLMoption = 3;
 const CURLOPT_VERBOSE: c_long = 41;
+const CURLOPT_URL: c_long = 10002;
 const CURLMOPT_SOCKETFUNCTION: CURLMoption = 20001;
 const CURLMOPT_SOCKETDATA: CURLMoption = 10002;
 const CURLMOPT_TIMERFUNCTION: CURLMoption = 20004;
@@ -437,6 +439,79 @@ unsafe extern "C" fn reference_push_callback(
         state::MultiState::Performing,
     );
     CURL_PUSH_OK
+}
+
+pub(crate) fn schedule_synthetic_push(
+    parent: *mut CURL,
+    target_url: &str,
+    headers: &[String],
+) -> bool {
+    let Some(multi) = easy::perform::attached_multi_for(parent).map(|value| value as *mut CURLM)
+    else {
+        return false;
+    };
+    let Some(wrapper) = wrapper_from_ptr(multi) else {
+        return false;
+    };
+
+    let push_cb = wrapper
+        .inner
+        .lock()
+        .expect("multi mutex poisoned")
+        .callbacks
+        .push_cb;
+    if push_cb.is_none() {
+        return false;
+    }
+
+    let easy_handle = unsafe { crate::easy::handle::easy_duphandle(parent) };
+    if easy_handle.is_null() {
+        return false;
+    }
+
+    let url_value = match CString::new(target_url) {
+        Ok(value) => value,
+        Err(_) => {
+            unsafe { crate::easy::handle::easy_cleanup(easy_handle) };
+            return false;
+        }
+    };
+    easy::perform::observe_easy_setopt_ptr(
+        easy_handle,
+        CURLOPT_URL as crate::abi::CURLoption,
+        url_value.as_ptr().cast_mut().cast(),
+    );
+
+    let headers_handle = crate::protocols::create_push_headers(headers);
+    let decision = {
+        let guard = wrapper.inner.lock().expect("multi mutex poisoned");
+        let Some(push_cb) = guard.callbacks.push_cb else {
+            crate::protocols::release_push_headers(headers_handle);
+            unsafe { crate::easy::handle::easy_cleanup(easy_handle) };
+            return false;
+        };
+        unsafe {
+            push_cb(
+                parent,
+                easy_handle,
+                headers.len(),
+                headers_handle,
+                guard.callbacks.push_userp,
+            )
+        }
+    };
+    crate::protocols::release_push_headers(headers_handle);
+    if decision != CURL_PUSH_OK {
+        unsafe { crate::easy::handle::easy_cleanup(easy_handle) };
+        return false;
+    }
+
+    if unsafe { add_handle(multi, easy_handle) } != crate::abi::CURLM_OK {
+        unsafe { crate::easy::handle::easy_cleanup(easy_handle) };
+        return false;
+    }
+    let _ = unsafe { wakeup_handle(multi) };
+    true
 }
 
 pub(crate) unsafe fn init_handle() -> *mut CURLM {

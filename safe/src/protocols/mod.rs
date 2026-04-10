@@ -16,8 +16,9 @@ use crate::abi::{curl_pushheaders, CURLcode, CURL};
 use crate::easy::perform::{EasyCallbacks, EasyMetadata};
 use crate::transfer::TransferPlan;
 use core::ffi::{c_char, c_long};
-use std::ffi::CStr;
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::ffi::{CStr, CString};
+use std::sync::{Mutex, OnceLock};
 
 const CURLE_UNSUPPORTED_PROTOCOL: CURLcode = 1;
 const CURLE_URL_MALFORMAT: CURLcode = 3;
@@ -57,11 +58,11 @@ pub(crate) struct TransferRoute {
 
 impl TransferRoute {
     pub(crate) const fn uses_shared_http(self) -> bool {
-        matches!(self.handler, SchemeHandler::Http) && !self.tls
+        matches!(self.handler, SchemeHandler::Http)
     }
 
     pub(crate) const fn uses_shared_websocket(self) -> bool {
-        matches!(self.handler, SchemeHandler::WebSocket) && self.websocket_mode && !self.tls
+        matches!(self.handler, SchemeHandler::WebSocket) && self.websocket_mode
     }
 
     pub(crate) const fn is_http_family(self) -> bool {
@@ -70,7 +71,6 @@ impl TransferRoute {
 
     pub(crate) fn requires_reference_multi(self, http_version: c_long) -> bool {
         crate::vquic::requires_reference_backend(http_version)
-            || (self.is_http_family() && http_version >= 2)
     }
 }
 
@@ -384,9 +384,99 @@ pub(crate) fn unsupported(handle: *mut CURL, message: &str) -> CURLcode {
     CURLE_UNSUPPORTED_PROTOCOL
 }
 
-pub(crate) unsafe fn capture_push_headers(_headers: *mut curl_pushheaders, _num_headers: usize) {}
+struct CapturedPushHeaders {
+    owned_handle: Option<Box<u8>>,
+    headers: Vec<CString>,
+    names: Vec<(String, CString)>,
+}
 
-pub(crate) fn release_push_headers(_headers: *mut curl_pushheaders) {}
+fn push_header_registry() -> &'static Mutex<HashMap<usize, CapturedPushHeaders>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<usize, CapturedPushHeaders>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn parse_push_header(entry: &str) -> Option<(String, String)> {
+    if let Some(stripped) = entry.strip_prefix(':') {
+        let (name, value) = stripped.split_once(':')?;
+        return Some((format!(":{}", name.trim()), value.trim().to_string()));
+    }
+
+    let (name, value) = entry.split_once(':')?;
+    Some((name.trim().to_ascii_lowercase(), value.trim().to_string()))
+}
+
+fn store_push_headers(
+    headers: *mut curl_pushheaders,
+    owned_handle: Option<Box<u8>>,
+    captured: Vec<String>,
+) {
+    if headers.is_null() {
+        return;
+    }
+
+    let mut header_values = Vec::with_capacity(captured.len());
+    let mut names = Vec::with_capacity(captured.len());
+    for entry in captured {
+        let Ok(header) = CString::new(entry.clone()) else {
+            return;
+        };
+        if let Some((name, value)) = parse_push_header(&entry) {
+            if let Ok(value) = CString::new(value) {
+                names.push((name, value));
+            }
+        }
+        header_values.push(header);
+    }
+
+    push_header_registry()
+        .lock()
+        .expect("push header registry mutex poisoned")
+        .insert(
+            headers as usize,
+            CapturedPushHeaders {
+                owned_handle,
+                headers: header_values,
+                names,
+            },
+        );
+}
+
+pub(crate) unsafe fn capture_push_headers(headers: *mut curl_pushheaders, num_headers: usize) {
+    if headers.is_null() {
+        return;
+    }
+
+    let mut captured = Vec::with_capacity(num_headers);
+    for index in 0..num_headers {
+        let value = unsafe { ref_pushheader_bynum()(headers, index) };
+        if value.is_null() {
+            continue;
+        }
+        captured.push(
+            unsafe { CStr::from_ptr(value) }
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
+    store_push_headers(headers, None, captured);
+}
+
+pub(crate) fn create_push_headers(entries: &[String]) -> *mut curl_pushheaders {
+    let mut owned_handle = Box::new(0u8);
+    let headers = (&mut *owned_handle as *mut u8).cast::<curl_pushheaders>();
+    store_push_headers(headers, Some(owned_handle), entries.to_vec());
+    headers
+}
+
+pub(crate) fn release_push_headers(headers: *mut curl_pushheaders) {
+    if headers.is_null() {
+        return;
+    }
+    push_header_registry()
+        .lock()
+        .expect("push header registry mutex poisoned")
+        .remove(&(headers as usize));
+}
 
 pub(crate) unsafe fn pushheader_byname(
     headers: *mut curl_pushheaders,
@@ -402,12 +492,40 @@ pub(crate) unsafe fn pushheader_byname(
     if query.is_empty() || query == ":" || query[1..].contains(':') {
         return core::ptr::null_mut();
     }
+    if let Some(value) = push_header_registry()
+        .lock()
+        .expect("push header registry mutex poisoned")
+        .get(&(headers as usize))
+        .and_then(|captured| {
+            captured
+                .names
+                .iter()
+                .find_map(|(header_name, header_value)| {
+                    let matches = if header_name.starts_with(':') || query.starts_with(':') {
+                        header_name == query
+                    } else {
+                        header_name.eq_ignore_ascii_case(query)
+                    };
+                    matches.then_some(header_value.as_ptr().cast_mut())
+                })
+        })
+    {
+        return value;
+    }
     unsafe { ref_pushheader_byname()(headers, name) }
 }
 
 pub(crate) unsafe fn pushheader_bynum(headers: *mut curl_pushheaders, index: usize) -> *mut c_char {
     if headers.is_null() {
         return core::ptr::null_mut();
+    }
+    if let Some(value) = push_header_registry()
+        .lock()
+        .expect("push header registry mutex poisoned")
+        .get(&(headers as usize))
+        .and_then(|captured| captured.headers.get(index))
+    {
+        return value.as_ptr().cast_mut();
     }
     unsafe { ref_pushheader_bynum()(headers, index) }
 }

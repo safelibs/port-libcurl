@@ -293,7 +293,9 @@ fn perform_transfer_inner(
             &mut data.stream,
             handle,
             callbacks,
-            metadata.upload_size.and_then(|size| usize::try_from(size).ok()),
+            metadata
+                .upload_size
+                .and_then(|size| usize::try_from(size).ok()),
             &mut low_speed,
         )
     } else {

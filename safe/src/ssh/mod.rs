@@ -105,7 +105,10 @@ pub(crate) fn perform_transfer(
     let stream = match connected.stream {
         TransportStream::Plain(stream) => stream,
         TransportStream::Tls(_) => {
-            crate::easy::perform::set_error_buffer(handle, "SSH transport unexpectedly negotiated TLS");
+            crate::easy::perform::set_error_buffer(
+                handle,
+                "SSH transport unexpectedly negotiated TLS",
+            );
             return CURLE_COULDNT_CONNECT;
         }
     };
@@ -175,8 +178,12 @@ pub(crate) fn perform_transfer(
         curl_safe_ssh_transfer(
             stream.as_raw_fd(),
             scheme_c.as_ptr(),
-            user_c.as_ref().map_or(core::ptr::null(), |value| value.as_ptr()),
-            pass_c.as_ref().map_or(core::ptr::null(), |value| value.as_ptr()),
+            user_c
+                .as_ref()
+                .map_or(core::ptr::null(), |value| value.as_ptr()),
+            pass_c
+                .as_ref()
+                .map_or(core::ptr::null(), |value| value.as_ptr()),
             path_c.as_ptr(),
             metadata.upload as c_int,
             upload_data.as_ptr(),
@@ -186,9 +193,9 @@ pub(crate) fn perform_transfer(
             } else {
                 Some(ssh_write_callback)
             },
-            write_ctx
-                .as_mut()
-                .map_or(core::ptr::null_mut(), |ctx| ctx.as_mut() as *mut _ as *mut c_void),
+            write_ctx.as_mut().map_or(core::ptr::null_mut(), |ctx| {
+                ctx.as_mut() as *mut _ as *mut c_void
+            }),
             &mut transferred,
             errbuf.as_mut_ptr(),
             errbuf.len(),
@@ -253,7 +260,10 @@ fn ssh_credentials(parsed: &ParsedProtocolUrl, metadata: &EasyMetadata) -> SshCr
             .username
             .clone()
             .or_else(|| std::env::var("USER").ok()),
-        password: parsed.password.clone().or_else(|| metadata.password.clone()),
+        password: parsed
+            .password
+            .clone()
+            .or_else(|| metadata.password.clone()),
     }
 }
 
