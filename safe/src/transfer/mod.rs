@@ -12,11 +12,11 @@ use crate::http::hsts;
 use crate::http::request::{self, Origin};
 use crate::http::response::{self, HEADER_ORIGIN_1XX, HEADER_ORIGIN_HEADER};
 use core::ffi::{c_int, c_long, c_void};
-use std::fs::File;
 use std::collections::HashMap;
+use std::fs::File;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream, ToSocketAddrs};
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, IntoRawFd};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -24,6 +24,7 @@ pub(crate) const EASY_PERFORM_WAIT_TIMEOUT_MS: c_int = 1000;
 pub(crate) const CURLINFO_ACTIVESOCKET: CURLINFO = 0x500000 + 44;
 
 const CURLM_OUT_OF_MEMORY: CURLMcode = 3;
+const CURLE_LOGIN_DENIED: CURLcode = 67;
 
 const CURLE_UNSUPPORTED_PROTOCOL: CURLcode = 1;
 const CURLE_URL_MALFORMAT: CURLcode = 3;
@@ -47,6 +48,12 @@ const CURLHEADER_SEPARATE: c_long = 1 << 0;
 const CURLPAUSE_RECV: c_int = 1 << 0;
 const CURLPAUSE_SEND: c_int = 1 << 2;
 const CURLPAUSE_ALL: c_int = CURLPAUSE_RECV | CURLPAUSE_SEND;
+const CURLSOCKTYPE_IPCXN: c_int = 0;
+const CURL_SOCKET_BAD: curl_socket_t = -1;
+const AF_INET: c_int = 2;
+const AF_INET6: c_int = 10;
+const SOCK_STREAM: c_int = 1;
+const IPPROTO_TCP: c_int = 6;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const IO_POLL_INTERVAL: Duration = Duration::from_millis(200);
@@ -60,6 +67,7 @@ unsafe extern "C" {
     static mut stdout: *mut c_void;
     fn fread(ptr: *mut c_void, size: usize, nmemb: usize, stream: *mut c_void) -> usize;
     fn fwrite(ptr: *const c_void, size: usize, nmemb: usize, stream: *mut c_void) -> usize;
+    fn close(fd: c_int) -> c_int;
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -94,25 +102,25 @@ pub(crate) struct ConnectOnlySession {
     pub(crate) websocket: Option<crate::ws::WebSocketSession>,
 }
 
-struct ConnectedStream {
+pub(crate) struct ConnectedStream {
     stream: TcpStream,
     info: RecordedTransferInfo,
 }
 
-enum TransportStream {
+pub(crate) enum TransportStream {
     Plain(TcpStream),
     Tls(crate::tls::TlsConnection),
 }
 
 impl TransportStream {
-    fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+    pub(crate) fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
         match self {
             Self::Plain(stream) => stream.set_read_timeout(timeout),
             Self::Tls(stream) => stream.set_read_timeout(timeout),
         }
     }
 
-    fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+    pub(crate) fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
         match self {
             Self::Plain(stream) => stream.set_write_timeout(timeout),
             Self::Tls(stream) => stream.set_write_timeout(timeout),
@@ -189,14 +197,14 @@ struct TransferOutcome {
     info: RecordedTransferInfo,
 }
 
-struct LowSpeedGuard {
+pub(crate) struct LowSpeedGuard {
     window: LowSpeedWindow,
     window_start: Instant,
     window_bytes: usize,
 }
 
 impl LowSpeedGuard {
-    fn new(window: LowSpeedWindow) -> Self {
+    pub(crate) fn new(window: LowSpeedWindow) -> Self {
         Self {
             window,
             window_start: Instant::now(),
@@ -204,11 +212,11 @@ impl LowSpeedGuard {
         }
     }
 
-    fn observe_idle(&mut self) -> Result<(), CURLcode> {
+    pub(crate) fn observe_idle(&mut self) -> Result<(), CURLcode> {
         self.check(Instant::now())
     }
 
-    fn observe_progress(&mut self, count: usize) -> Result<(), CURLcode> {
+    pub(crate) fn observe_progress(&mut self, count: usize) -> Result<(), CURLcode> {
         self.window_bytes = self.window_bytes.saturating_add(count);
         let now = Instant::now();
         self.check(now)?;
@@ -541,8 +549,14 @@ fn perform_transfer(handle_key: usize, plan: TransferPlan) -> CURLcode {
 
     let metadata = perform::snapshot_metadata(handle);
     let callbacks = perform::snapshot_callbacks(handle);
-    if matches!(plan.route.handler, crate::protocols::SchemeHandler::File) {
-        return perform_file_transfer(handle, &metadata, callbacks);
+    match plan.route.handler {
+        crate::protocols::SchemeHandler::File => {
+            return perform_file_transfer(handle, &metadata, callbacks);
+        }
+        crate::protocols::SchemeHandler::Http | crate::protocols::SchemeHandler::WebSocket => {}
+        _ => {
+            return crate::protocols::perform_transfer(handle, &plan, &metadata, callbacks);
+        }
     }
     let Some(initial_url) = metadata.url.clone() else {
         perform::set_error_buffer(handle, "No URL set");
@@ -983,7 +997,7 @@ fn flush_cookie_jar(handle: *mut CURL, metadata: &EasyMetadata) {
     let _ = with_cookie_store_mut(handle, metadata, |store| store.flush_to_path(path));
 }
 
-fn transfer_body(
+pub(crate) fn transfer_body(
     stream: &mut TransportStream,
     handle: *mut CURL,
     callbacks: EasyCallbacks,
@@ -1056,6 +1070,97 @@ fn connect_stream(
 
     let _ = last_error;
     Err(CURLE_COULDNT_CONNECT)
+}
+
+pub(crate) fn connect_protocol_transport(
+    host: &str,
+    port: u16,
+    plan: &TransferPlan,
+    metadata: &EasyMetadata,
+    callbacks: EasyCallbacks,
+) -> Result<ConnectedTransport, CURLcode> {
+    let resolve_started = Instant::now();
+    let addrs = resolve_addresses(host, port, &plan.resolve_overrides)?;
+    let namelookup_time_us = elapsed_us(resolve_started.elapsed());
+
+    let mut last_error = None;
+    for addr in addrs {
+        notify_open_socket(callbacks, &addr)?;
+        match TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT) {
+            Ok(stream) => {
+                let connect_time_us = elapsed_us(resolve_started.elapsed());
+                let info = describe_connection(&stream, namelookup_time_us, connect_time_us);
+                let stream = if let Some(policy) = plan.tls.as_ref() {
+                    TransportStream::Tls(crate::tls::connect(stream, host, port, metadata, policy)?)
+                } else {
+                    TransportStream::Plain(stream)
+                };
+                return Ok(ConnectedTransport { stream, info });
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+
+    let _ = last_error;
+    Err(CURLE_COULDNT_CONNECT)
+}
+
+pub(crate) struct ConnectedTransport {
+    pub stream: TransportStream,
+    pub info: RecordedTransferInfo,
+}
+
+pub(crate) fn close_transport(stream: TransportStream, callbacks: EasyCallbacks) {
+    match stream {
+        TransportStream::Plain(stream) => close_plain_stream(stream, callbacks),
+        TransportStream::Tls(stream) => drop(stream),
+    }
+}
+
+fn notify_open_socket(callbacks: EasyCallbacks, addr: &SocketAddr) -> Result<(), CURLcode> {
+    let Some(callback) = callbacks.open_socket_function else {
+        return Ok(());
+    };
+
+    let family = match addr {
+        SocketAddr::V4(_) => AF_INET,
+        SocketAddr::V6(_) => AF_INET6,
+    };
+    let mut sockaddr = crate::abi::curl_sockaddr {
+        family,
+        socktype: SOCK_STREAM,
+        protocol: IPPROTO_TCP,
+        addrlen: core::mem::size_of::<crate::abi::sockaddr>() as u32,
+        addr: crate::abi::sockaddr {
+            sa_family: family as u16,
+            sa_data: [0; 14],
+        },
+    };
+    let fd = unsafe {
+        callback(
+            callbacks.open_socket_data as *mut c_void,
+            CURLSOCKTYPE_IPCXN,
+            &mut sockaddr,
+        )
+    };
+    if fd == CURL_SOCKET_BAD {
+        return Err(CURLE_COULDNT_CONNECT);
+    }
+    unsafe {
+        close(fd as c_int);
+    }
+    Ok(())
+}
+
+fn close_plain_stream(stream: TcpStream, callbacks: EasyCallbacks) {
+    let fd = stream.into_raw_fd() as curl_socket_t;
+    if let Some(callback) = callbacks.close_socket_function {
+        let _ = unsafe { callback(callbacks.close_socket_data as *mut c_void, fd) };
+    } else {
+        unsafe {
+            close(fd as c_int);
+        }
+    }
 }
 
 fn establish_proxy_tunnel(
@@ -1406,7 +1511,7 @@ fn resolve_addresses(
     }
 }
 
-fn deliver_write(
+pub(crate) fn deliver_write(
     handle: *mut CURL,
     callbacks: EasyCallbacks,
     buffer: &mut [u8],
@@ -1452,7 +1557,7 @@ fn describe_connection(
     }
 }
 
-fn elapsed_us(duration: Duration) -> curl_off_t {
+pub(crate) fn elapsed_us(duration: Duration) -> curl_off_t {
     duration.as_micros().min(curl_off_t::MAX as u128) as curl_off_t
 }
 
@@ -1501,11 +1606,11 @@ fn requires_reference_backend(
         | crate::protocols::SchemeHandler::Mqtt
         | crate::protocols::SchemeHandler::Scp
         | crate::protocols::SchemeHandler::Sftp
-        | crate::protocols::SchemeHandler::Unknown => true,
+        | crate::protocols::SchemeHandler::Unknown => false,
     }
 }
 
-fn read_request_body_chunk(
+pub(crate) fn read_request_body_chunk(
     handle: *mut CURL,
     callbacks: EasyCallbacks,
     buffer: &mut [u8],
@@ -1536,7 +1641,7 @@ fn read_request_body_chunk(
     }
 }
 
-fn deliver_header(
+pub(crate) fn deliver_header(
     handle: *mut CURL,
     callbacks: EasyCallbacks,
     metadata: &EasyMetadata,
@@ -1557,14 +1662,30 @@ fn deliver_header(
         return Err(CURLE_WRITE_ERROR);
     }
 
-    if metadata.header {
+    if callbacks.header_data != 0 {
+        let wrote = unsafe {
+            fwrite(
+                raw_line.as_ptr().cast(),
+                1,
+                raw_line.len(),
+                callbacks.header_data as *mut c_void,
+            )
+        };
+        if wrote == raw_line.len() {
+            return Ok(());
+        }
+        perform::set_error_buffer(handle, "Failed writing received header");
+        return Err(CURLE_WRITE_ERROR);
+    }
+
+    if metadata.header || callbacks.write_function.is_some() || callbacks.write_data != 0 {
         let mut line = raw_line.to_vec();
         deliver_write(handle, callbacks, &mut line)?;
     }
     Ok(())
 }
 
-fn invoke_progress_callback(
+pub(crate) fn invoke_progress_callback(
     callbacks: EasyCallbacks,
     downloaded: usize,
     total: Option<usize>,

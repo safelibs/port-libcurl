@@ -17,9 +17,7 @@ pub(crate) fn decode_url_path(url: &str) -> Result<PathBuf, CURLcode> {
     let path = if rest.starts_with('/') {
         rest
     } else {
-        let (authority, suffix) = rest
-            .split_once('/')
-            .ok_or(CURLE_URL_MALFORMAT)?;
+        let (authority, suffix) = rest.split_once('/').ok_or(CURLE_URL_MALFORMAT)?;
         if !(authority.is_empty() || authority.eq_ignore_ascii_case("localhost")) {
             return Err(CURLE_URL_MALFORMAT);
         }
@@ -27,7 +25,10 @@ pub(crate) fn decode_url_path(url: &str) -> Result<PathBuf, CURLcode> {
     };
 
     let decoded = percent_decode(path.as_bytes())?;
-    Ok(PathBuf::from(format!("/{}", decoded.trim_start_matches('/'))))
+    Ok(PathBuf::from(format!(
+        "/{}",
+        decoded.trim_start_matches('/')
+    )))
 }
 
 fn percent_decode(input: &[u8]) -> Result<String, CURLcode> {

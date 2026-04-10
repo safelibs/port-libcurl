@@ -1,7 +1,7 @@
 use crate::abi::{
-    curl_hstsread_callback, curl_hstswrite_callback, curl_off_t, curl_slist, curl_socket_t,
-    CURLcode, CURLoption, CURL, CURLE_BAD_FUNCTION_ARGUMENT, CURLE_FAILED_INIT, CURLINFO, CURLM,
-    CURLU, CURLUPART_URL,
+    curl_hstsread_callback, curl_hstswrite_callback, curl_off_t, curl_slist, curl_sockaddr,
+    curl_socket_t, CURLcode, CURLoption, CURL, CURLE_BAD_FUNCTION_ARGUMENT, CURLE_FAILED_INIT,
+    CURLINFO, CURLM, CURLU, CURLUPART_URL,
 };
 use crate::dns::{self, ConnectOverride, ResolveOverride};
 use crate::multi::state::MultiState;
@@ -21,6 +21,10 @@ pub(crate) type CurlTrailerCallback =
 pub(crate) type CurlXferInfoCallback = Option<
     unsafe extern "C" fn(*mut c_void, curl_off_t, curl_off_t, curl_off_t, curl_off_t) -> c_int,
 >;
+pub(crate) type CurlOpenSocketCallback =
+    Option<unsafe extern "C" fn(*mut c_void, c_int, *mut curl_sockaddr) -> curl_socket_t>;
+pub(crate) type CurlCloseSocketCallback =
+    Option<unsafe extern "C" fn(*mut c_void, curl_socket_t) -> c_int>;
 
 const CURLOPT_READDATA: CURLoption = 10009;
 const CURLOPT_WRITEDATA: CURLoption = 10001;
@@ -52,6 +56,7 @@ const CURLOPT_FAILONERROR: CURLoption = 45;
 const CURLOPT_UPLOAD: CURLoption = 46;
 const CURLOPT_NETRC: CURLoption = 51;
 const CURLOPT_FOLLOWLOCATION: CURLoption = 52;
+const CURLOPT_TRANSFERTEXT: CURLoption = 53;
 const CURLOPT_AUTOREFERER: CURLoption = 58;
 const CURLOPT_XFERINFODATA: CURLoption = 10057;
 const CURLOPT_PROXYPORT: CURLoption = 59;
@@ -75,11 +80,15 @@ const CURLOPT_COOKIELIST: CURLoption = 10135;
 const CURLOPT_INFILESIZE_LARGE: CURLoption = 30115;
 const CURLOPT_RESUME_FROM_LARGE: CURLoption = 30116;
 const CURLOPT_CONNECT_ONLY: CURLoption = 141;
+const CURLOPT_OPENSOCKETDATA: CURLoption = 10164;
 const CURLOPT_USERNAME: CURLoption = 10173;
 const CURLOPT_PASSWORD: CURLoption = 10174;
 const CURLOPT_PROXYUSERNAME: CURLoption = 10175;
 const CURLOPT_PROXYPASSWORD: CURLoption = 10176;
 const CURLOPT_RESOLVE: CURLoption = 10203;
+const CURLOPT_RTSP_SESSION_ID: CURLoption = 10190;
+const CURLOPT_RTSP_STREAM_URI: CURLoption = 10191;
+const CURLOPT_RTSP_TRANSPORT: CURLoption = 10192;
 const CURLOPT_XFERINFOFUNCTION: CURLoption = 20219;
 const CURLOPT_XOAUTH2_BEARER: CURLoption = 10220;
 const CURLOPT_PINNEDPUBLICKEY: CURLoption = 10230;
@@ -100,6 +109,10 @@ const CURLOPT_TRAILERFUNCTION: CURLoption = 20283;
 const CURLOPT_TRAILERDATA: CURLoption = 10284;
 const CURLOPT_SSL_ENABLE_ALPN: CURLoption = 226;
 const CURLOPT_DOH_URL: CURLoption = 10279;
+const CURLOPT_OPENSOCKETFUNCTION: CURLoption = 20163;
+const CURLOPT_RTSP_REQUEST: CURLoption = 189;
+const CURLOPT_CLOSESOCKETFUNCTION: CURLoption = 20208;
+const CURLOPT_CLOSESOCKETDATA: CURLoption = 10209;
 
 const CURLINFO_RESPONSE_CODE: u32 = 0x200000 + 2;
 const CURLINFO_PRIMARY_IP: u32 = 0x100000 + 32;
@@ -108,6 +121,7 @@ const CURLINFO_LOCAL_IP: u32 = 0x100000 + 41;
 const CURLINFO_LOCAL_PORT: u32 = 0x200000 + 42;
 const CURLINFO_COOKIELIST: u32 = 0x400000 + 28;
 const CURLINFO_SCHEME: u32 = 0x100000 + 49;
+const CURLINFO_RTSP_SESSION_ID: u32 = 0x100000 + 36;
 const CURLINFO_TOTAL_TIME_T: u32 = 0x600000 + 50;
 const CURLINFO_NAMELOOKUP_TIME_T: u32 = 0x600000 + 51;
 const CURLINFO_CONNECT_TIME_T: u32 = 0x600000 + 52;
@@ -166,10 +180,15 @@ pub(crate) struct EasyMetadata {
     pub max_redirs: Option<c_long>,
     pub httpauth: c_long,
     pub proxyauth: c_long,
+    pub transfer_text: bool,
     pub headeropt: c_long,
     pub connect_mode: c_long,
     pub ws_options: c_long,
     pub curlu_handle: Option<usize>,
+    pub rtsp_request: c_long,
+    pub rtsp_session_id: Option<String>,
+    pub rtsp_stream_uri: Option<String>,
+    pub rtsp_transport: Option<String>,
     pub hsts_file: Option<String>,
     pub hsts_ctrl: c_long,
     pub altsvc_file: Option<String>,
@@ -241,10 +260,15 @@ impl Default for EasyMetadata {
             max_redirs: None,
             httpauth: 0,
             proxyauth: 0,
+            transfer_text: false,
             headeropt: 0,
             connect_mode: 0,
             ws_options: 0,
             curlu_handle: None,
+            rtsp_request: 0,
+            rtsp_session_id: None,
+            rtsp_stream_uri: None,
+            rtsp_transport: None,
             hsts_file: None,
             hsts_ctrl: 0,
             altsvc_file: None,
@@ -289,6 +313,10 @@ pub(crate) struct EasyCallbacks {
     pub hsts_read_data: usize,
     pub hsts_write_function: curl_hstswrite_callback,
     pub hsts_write_data: usize,
+    pub open_socket_function: CurlOpenSocketCallback,
+    pub open_socket_data: usize,
+    pub close_socket_function: CurlCloseSocketCallback,
+    pub close_socket_data: usize,
     pub no_progress: bool,
 }
 
@@ -299,6 +327,7 @@ struct EasyInfo {
     primary_port: c_long,
     local_ip: Option<CString>,
     local_port: c_long,
+    rtsp_session_id: Option<CString>,
     total_time_us: curl_off_t,
     namelookup_time_us: curl_off_t,
     connect_time_us: curl_off_t,
@@ -455,6 +484,7 @@ pub(crate) fn observe_easy_setopt_long(handle: *mut CURL, option: CURLoption, va
         CURLOPT_UPLOAD => shadow.metadata.upload = value != 0,
         CURLOPT_NETRC => shadow.metadata.netrc_mode = value,
         CURLOPT_FOLLOWLOCATION => shadow.metadata.follow_location = value != 0,
+        CURLOPT_TRANSFERTEXT => shadow.metadata.transfer_text = value != 0,
         CURLOPT_AUTOREFERER => shadow.metadata.auto_referer = value != 0,
         CURLOPT_HTTPGET => shadow.metadata.http_get = value != 0,
         CURLOPT_HTTP_VERSION => shadow.metadata.http_version = value,
@@ -469,6 +499,7 @@ pub(crate) fn observe_easy_setopt_long(handle: *mut CURL, option: CURLoption, va
         CURLOPT_UNRESTRICTED_AUTH => shadow.metadata.unrestricted_auth = value != 0,
         CURLOPT_HTTPAUTH => shadow.metadata.httpauth = value,
         CURLOPT_PROXYAUTH => shadow.metadata.proxyauth = value,
+        CURLOPT_RTSP_REQUEST => shadow.metadata.rtsp_request = value,
         CURLOPT_HEADEROPT => shadow.metadata.headeropt = value,
         CURLOPT_ALTSVC_CTRL => {
             shadow.metadata.altsvc_ctrl = value;
@@ -510,6 +541,7 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
         CURLOPT_SHARE => {
             shadow.metadata.share_handle = (!value.is_null()).then_some(value as usize)
         }
+        CURLOPT_OPENSOCKETDATA => shadow.callbacks.open_socket_data = value as usize,
         CURLOPT_USERNAME => shadow.metadata.username = copy_c_string(value.cast()),
         CURLOPT_PASSWORD => shadow.metadata.password = copy_c_string(value.cast()),
         CURLOPT_PROXYUSERNAME => shadow.metadata.proxy_username = copy_c_string(value.cast()),
@@ -567,6 +599,9 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
         CURLOPT_XOAUTH2_BEARER => shadow.metadata.xoauth2_bearer = copy_c_string(value.cast()),
         CURLOPT_PINNEDPUBLICKEY => shadow.metadata.pinned_public_key = copy_c_string(value.cast()),
         CURLOPT_DOH_URL => shadow.metadata.doh_url = copy_c_string(value.cast()),
+        CURLOPT_RTSP_SESSION_ID => shadow.metadata.rtsp_session_id = copy_c_string(value.cast()),
+        CURLOPT_RTSP_STREAM_URI => shadow.metadata.rtsp_stream_uri = copy_c_string(value.cast()),
+        CURLOPT_RTSP_TRANSPORT => shadow.metadata.rtsp_transport = copy_c_string(value.cast()),
         CURLOPT_CONNECT_TO => {
             shadow.metadata.connect_overrides = dns::collect_connect_overrides(value.cast())
         }
@@ -582,6 +617,7 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
         CURLOPT_HSTS => shadow.metadata.hsts_file = copy_c_string(value.cast()),
         CURLOPT_HSTSREADDATA => shadow.callbacks.hsts_read_data = value as usize,
         CURLOPT_HSTSWRITEDATA => shadow.callbacks.hsts_write_data = value as usize,
+        CURLOPT_CLOSESOCKETDATA => shadow.callbacks.close_socket_data = value as usize,
         _ => {}
     }
 }
@@ -618,6 +654,12 @@ pub(crate) fn observe_easy_setopt_function(
         }
         CURLOPT_HSTSWRITEFUNCTION => {
             shadow.callbacks.hsts_write_function = unsafe { core::mem::transmute(value) }
+        }
+        CURLOPT_OPENSOCKETFUNCTION => {
+            shadow.callbacks.open_socket_function = unsafe { core::mem::transmute(value) }
+        }
+        CURLOPT_CLOSESOCKETFUNCTION => {
+            shadow.callbacks.close_socket_function = unsafe { core::mem::transmute(value) }
         }
         _ => {}
     }
@@ -752,6 +794,19 @@ pub(crate) fn record_transfer_info(handle: *mut CURL, info: RecordedTransferInfo
     }
 }
 
+pub(crate) fn record_rtsp_session_id(handle: *mut CURL, session_id: Option<&str>) {
+    if handle.is_null() {
+        return;
+    }
+    if let Some(shadow) = registry()
+        .lock()
+        .expect("easy registry mutex poisoned")
+        .get_mut(&(handle as usize))
+    {
+        shadow.info.rtsp_session_id = session_id.map(str::to_string).and_then(to_c_string);
+    }
+}
+
 pub(crate) fn easy_getinfo_long(
     handle: *mut CURL,
     info: u32,
@@ -816,7 +871,10 @@ pub(crate) fn easy_getinfo_string(
                     "pop3" => c"pop3".as_ptr().cast_mut(),
                     "pop3s" => c"pop3s".as_ptr().cast_mut(),
                     "rtsp" => c"rtsp".as_ptr().cast_mut(),
+                    "scp" => c"scp".as_ptr().cast_mut(),
                     "smb" => c"smb".as_ptr().cast_mut(),
+                    "smbs" => c"smbs".as_ptr().cast_mut(),
+                    "sftp" => c"sftp".as_ptr().cast_mut(),
                     "smtp" => c"smtp".as_ptr().cast_mut(),
                     "smtps" => c"smtps".as_ptr().cast_mut(),
                     "telnet" => c"telnet".as_ptr().cast_mut(),
@@ -832,6 +890,10 @@ pub(crate) fn easy_getinfo_string(
                 .unwrap_or_else(|| c"".as_ptr().cast_mut()),
             CURLINFO_LOCAL_IP => shadow
                 .and_then(|shadow| shadow.info.local_ip.as_ref())
+                .map(|value| value.as_ptr().cast_mut())
+                .unwrap_or_else(|| c"".as_ptr().cast_mut()),
+            CURLINFO_RTSP_SESSION_ID => shadow
+                .and_then(|shadow| shadow.info.rtsp_session_id.as_ref())
                 .map(|value| value.as_ptr().cast_mut())
                 .unwrap_or_else(|| c"".as_ptr().cast_mut()),
             _ => return None,
