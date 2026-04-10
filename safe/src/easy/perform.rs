@@ -12,10 +12,13 @@ use std::sync::{Mutex, OnceLock};
 
 pub(crate) type CurlWriteCallback =
     Option<unsafe extern "C" fn(*mut c_char, usize, usize, *mut c_void) -> usize>;
+pub(crate) type CurlReadCallback =
+    Option<unsafe extern "C" fn(*mut c_char, usize, usize, *mut c_void) -> usize>;
 pub(crate) type CurlXferInfoCallback = Option<
     unsafe extern "C" fn(*mut c_void, curl_off_t, curl_off_t, curl_off_t, curl_off_t) -> c_int,
 >;
 
+const CURLOPT_READDATA: CURLoption = 10009;
 const CURLOPT_WRITEDATA: CURLoption = 10001;
 const CURLOPT_URL: CURLoption = 10002;
 const CURLOPT_PROXY: CURLoption = 10004;
@@ -23,7 +26,9 @@ const CURLOPT_USERPWD: CURLoption = 10005;
 const CURLOPT_RANGE: CURLoption = 10007;
 const CURLOPT_ERRORBUFFER: CURLoption = 10010;
 const CURLOPT_WRITEFUNCTION: CURLoption = 20011;
+const CURLOPT_READFUNCTION: CURLoption = 20012;
 const CURLOPT_CUSTOMREQUEST: CURLoption = 10036;
+const CURLOPT_INFILESIZE: CURLoption = 14;
 const CURLOPT_LOW_SPEED_LIMIT: CURLoption = 19;
 const CURLOPT_LOW_SPEED_TIME: CURLoption = 20;
 const CURLOPT_RESUME_FROM: CURLoption = 21;
@@ -44,6 +49,7 @@ const CURLOPT_HEADERFUNCTION: CURLoption = 20079;
 const CURLOPT_HTTPGET: CURLoption = 80;
 const CURLOPT_SSL_VERIFYHOST: CURLoption = 81;
 const CURLOPT_SHARE: CURLoption = 10100;
+const CURLOPT_INFILESIZE_LARGE: CURLoption = 30115;
 const CURLOPT_RESUME_FROM_LARGE: CURLoption = 30116;
 const CURLOPT_CONNECT_ONLY: CURLoption = 141;
 const CURLOPT_USERNAME: CURLoption = 10173;
@@ -58,6 +64,7 @@ const CURLOPT_CONNECT_TO: CURLoption = 10243;
 const CURLOPT_PRE_PROXY: CURLoption = 10262;
 
 const CURLINFO_RESPONSE_CODE: u32 = 0x200000 + 2;
+const CURLINFO_SCHEME: u32 = 0x100000 + 49;
 const CURLINFO_RETRY_AFTER: u32 = 0x600000 + 57;
 const CURL_ERROR_SIZE: usize = 256;
 
@@ -88,6 +95,7 @@ pub(crate) struct EasyMetadata {
     pub header: bool,
     pub nobody: bool,
     pub upload: bool,
+    pub upload_size: Option<curl_off_t>,
     pub http_get: bool,
     pub verbose: bool,
     pub fail_on_error: bool,
@@ -152,6 +160,7 @@ impl Default for EasyMetadata {
             header: false,
             nobody: false,
             upload: false,
+            upload_size: None,
             http_get: false,
             verbose: false,
             fail_on_error: false,
@@ -164,6 +173,8 @@ impl Default for EasyMetadata {
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct EasyCallbacks {
+    pub read_function: CurlReadCallback,
+    pub read_data: usize,
     pub write_function: CurlWriteCallback,
     pub write_data: usize,
     pub header_function: CurlWriteCallback,
@@ -269,11 +280,14 @@ pub(crate) fn unregister_handle(handle: *mut CURL) -> Option<usize> {
         return None;
     }
 
-    registry()
-        .lock()
-        .expect("easy registry mutex poisoned")
+    let mut guard = registry().lock().expect("easy registry mutex poisoned");
+    let private_multi = guard
         .remove(&(handle as usize))
-        .and_then(|shadow| shadow.private_multi)
+        .and_then(|shadow| shadow.private_multi);
+    if guard.is_empty() {
+        guard.shrink_to_fit();
+    }
+    private_multi
 }
 
 pub(crate) fn observe_easy_setopt_long(handle: *mut CURL, option: CURLoption, value: c_long) {
@@ -284,6 +298,7 @@ pub(crate) fn observe_easy_setopt_long(handle: *mut CURL, option: CURLoption, va
     let mut guard = registry().lock().expect("easy registry mutex poisoned");
     let shadow = guard.entry(handle as usize).or_default();
     match option {
+        CURLOPT_INFILESIZE => shadow.metadata.upload_size = (value >= 0).then_some(value as i64),
         CURLOPT_MAXCONNECTS => shadow.metadata.maxconnects = Some(value),
         CURLOPT_CONNECT_ONLY => shadow.metadata.connect_only = value != 0,
         CURLOPT_LOW_SPEED_LIMIT => shadow.metadata.low_speed.limit_bytes_per_second = value,
@@ -313,6 +328,7 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
     let mut guard = registry().lock().expect("easy registry mutex poisoned");
     let shadow = guard.entry(handle as usize).or_default();
     match option {
+        CURLOPT_READDATA => shadow.callbacks.read_data = value as usize,
         CURLOPT_WRITEDATA => shadow.callbacks.write_data = value as usize,
         CURLOPT_URL => shadow.metadata.url = copy_c_string(value.cast()),
         CURLOPT_PROXY => shadow.metadata.proxy = copy_c_string(value.cast()),
@@ -354,6 +370,9 @@ pub(crate) fn observe_easy_setopt_function(
     let mut guard = registry().lock().expect("easy registry mutex poisoned");
     let shadow = guard.entry(handle as usize).or_default();
     match option {
+        CURLOPT_READFUNCTION => {
+            shadow.callbacks.read_function = unsafe { core::mem::transmute(value) }
+        }
         CURLOPT_WRITEFUNCTION => {
             shadow.callbacks.write_function = unsafe { core::mem::transmute(value) }
         }
@@ -371,14 +390,12 @@ pub(crate) fn observe_easy_setopt_off_t(handle: *mut CURL, option: CURLoption, v
     if handle.is_null() {
         return;
     }
+    let mut guard = registry().lock().expect("easy registry mutex poisoned");
+    let metadata = &mut guard.entry(handle as usize).or_default().metadata;
     if option == CURLOPT_RESUME_FROM_LARGE {
-        registry()
-            .lock()
-            .expect("easy registry mutex poisoned")
-            .entry(handle as usize)
-            .or_default()
-            .metadata
-            .resume_from = value as i64;
+        metadata.resume_from = value as i64;
+    } else if option == CURLOPT_INFILESIZE_LARGE {
+        metadata.upload_size = (value >= 0).then_some(value);
     }
 }
 
@@ -493,6 +510,35 @@ pub(crate) fn easy_getinfo_long(
         .map(|shadow| shadow.info.response_code)
         .unwrap_or(0);
     unsafe { *value = response_code };
+    Some(crate::abi::CURLE_OK)
+}
+
+pub(crate) fn easy_getinfo_string(
+    handle: *mut CURL,
+    info: u32,
+    value: *mut *mut c_char,
+) -> Option<CURLcode> {
+    if handle.is_null() || value.is_null() {
+        return Some(CURLE_BAD_FUNCTION_ARGUMENT);
+    }
+    if info != CURLINFO_SCHEME {
+        return None;
+    }
+
+    let scheme = registry()
+        .lock()
+        .expect("easy registry mutex poisoned")
+        .get(&(handle as usize))
+        .and_then(|shadow| shadow.metadata.url.as_deref())
+        .and_then(|url| url.split_once("://").map(|(scheme, _)| scheme))
+        .unwrap_or("http")
+        .to_ascii_lowercase();
+    unsafe {
+        *value = match scheme.as_str() {
+            "https" => c"https".as_ptr().cast_mut(),
+            _ => c"http".as_ptr().cast_mut(),
+        };
+    }
     Some(crate::abi::CURLE_OK)
 }
 

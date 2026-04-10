@@ -58,7 +58,43 @@ trap cleanup EXIT
 if [[ -z "${build_state}" ]]; then
   build_state="${safe_dir}/.compat/${flavor}/build-state.json"
 fi
-[[ -f "${build_state}" ]] || "${script_dir}/build-compat-consumers.sh" --flavor "${flavor}"
+current_source_fingerprint="$(
+  python3 - "${safe_dir}" <<'PY'
+import hashlib
+import pathlib
+import subprocess
+import sys
+
+safe_dir = pathlib.Path(sys.argv[1]).resolve()
+repo_root = safe_dir.parent
+completed = subprocess.run(
+    ["git", "ls-files", "-z", "--", "safe"],
+    cwd=repo_root,
+    check=True,
+    capture_output=True,
+)
+digest = hashlib.sha256()
+for raw in completed.stdout.split(b"\0"):
+    if not raw:
+        continue
+    rel = raw.decode("utf-8")
+    path = repo_root / rel
+    if not path.is_file():
+        continue
+    digest.update(rel.encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(path.read_bytes())
+    digest.update(b"\0")
+print(digest.hexdigest())
+PY
+)"
+state_source_fingerprint=""
+if [[ -f "${build_state}" ]]; then
+  state_source_fingerprint="$(jq -r '.source_fingerprint // ""' "${build_state}")"
+fi
+if [[ ! -f "${build_state}" || "${state_source_fingerprint}" != "${current_source_fingerprint}" ]]; then
+  "${script_dir}/build-compat-consumers.sh" --flavor "${flavor}"
+fi
 [[ -f "${build_state}" ]] || { echo "missing build state: ${build_state}" >&2; exit 1; }
 
 has_required_runtime_targets="$(

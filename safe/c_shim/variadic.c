@@ -17,6 +17,7 @@ void curl_safe_easy_setopt_observe_long(CURL *handle, CURLoption option, long va
 void curl_safe_easy_setopt_observe_ptr(CURL *handle, CURLoption option, void *value);
 void curl_safe_easy_setopt_observe_function(CURL *handle, CURLoption option, void (*value)(void));
 void curl_safe_easy_setopt_observe_off_t(CURL *handle, CURLoption option, curl_off_t value);
+int curl_safe_easy_getinfo_string(CURL *handle, CURLINFO info, char **value, CURLcode *result);
 int curl_safe_easy_getinfo_long(CURL *handle, CURLINFO info, long *value, CURLcode *result);
 int curl_safe_easy_getinfo_off_t(CURL *handle, CURLINFO info, curl_off_t *value, CURLcode *result);
 int curl_safe_easy_getinfo_socket(CURL *handle, CURLINFO info, curl_socket_t *value,
@@ -115,6 +116,12 @@ CURLcode curl_easy_getinfo(CURL *handle, CURLINFO info, ...) {
   va_start(args, info);
   switch(type_mask) {
   case CURLINFO_STRING:
+  {
+    char **value = va_arg(args, char **);
+    if(!curl_safe_easy_getinfo_string(handle, info, value, &result))
+      result = fn(handle, info, value);
+    break;
+  }
   case CURLINFO_SLIST:
     result = fn(handle, info, va_arg(args, void *));
     break;

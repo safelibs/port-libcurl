@@ -104,6 +104,19 @@ def sha256_path(path: Path) -> str:
     return digest.hexdigest()
 
 
+def safe_source_fingerprint() -> str:
+    digest = hashlib.sha256()
+    for path in git_ls_files(["safe"]):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(REPO_ROOT).as_posix()
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def git_tracked(paths: list[Path]) -> set[Path]:
     if not paths:
         return set()
@@ -720,6 +733,7 @@ def build_targets(flavor: FlavorConfig, targets: list[dict], jobs: int) -> dict:
     state = {
         "schema_version": 1,
         "flavor": flavor.name,
+        "source_fingerprint": safe_source_fingerprint(),
         "worktree": flavor.worktree_dir.as_posix(),
         "stage": {
             "include_dir": Path(stage_info["include_dir"]).as_posix(),

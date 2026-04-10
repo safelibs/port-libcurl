@@ -41,6 +41,13 @@ const IO_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const HEADER_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 const REDIRECT_LIMIT: usize = 8;
 
+unsafe extern "C" {
+    static mut stdin: *mut c_void;
+    static mut stdout: *mut c_void;
+    fn fread(ptr: *mut c_void, size: usize, nmemb: usize, stream: *mut c_void) -> usize;
+    fn fwrite(ptr: *const c_void, size: usize, nmemb: usize, stream: *mut c_void) -> usize;
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct LowSpeedWindow {
     pub limit_bytes_per_second: c_long,
@@ -87,6 +94,7 @@ struct RequestContext {
     request_target: String,
     method: String,
     range_header: Option<String>,
+    body_length: Option<usize>,
 }
 
 struct ResponseMeta {
@@ -286,12 +294,14 @@ pub(crate) fn release_handle_state(handle: *mut CURL) {
         return;
     }
 
-    if let Some(session) = connect_only_registry()
+    let mut guard = connect_only_registry()
         .lock()
-        .expect("connect-only registry mutex poisoned")
-        .remove(&(handle as usize))
-    {
+        .expect("connect-only registry mutex poisoned");
+    if let Some(session) = guard.remove(&(handle as usize)) {
         let _ = session.stream.shutdown(Shutdown::Both);
+    }
+    if guard.is_empty() {
+        guard.shrink_to_fit();
     }
 }
 
@@ -506,6 +516,9 @@ fn execute_http_transfer(
         .set_write_timeout(Some(CONNECT_TIMEOUT))
         .map_err(|_| CURLE_COULDNT_CONNECT)?;
     write_request(&mut stream, request)?;
+    if metadata.upload {
+        write_request_body(&mut stream, handle, callbacks, request.body_length)?;
+    }
 
     let response = read_response_meta(&mut stream, handle, callbacks, metadata)?;
     let mut outcome = TransferOutcome {
@@ -630,7 +643,11 @@ fn write_request(stream: &mut TcpStream, request: &RequestContext) -> Result<(),
     encoded.push_str(&request.host_header);
     encoded.push_str("\r\n");
     encoded.push_str("Accept: */*\r\n");
-    encoded.push_str("Connection: close\r\n");
+    if let Some(body_length) = request.body_length {
+        encoded.push_str("Content-Length: ");
+        encoded.push_str(&body_length.to_string());
+        encoded.push_str("\r\n");
+    }
     if let Some(range) = request.range_header.as_ref() {
         encoded.push_str("Range: ");
         encoded.push_str(range);
@@ -641,6 +658,29 @@ fn write_request(stream: &mut TcpStream, request: &RequestContext) -> Result<(),
     stream
         .write_all(encoded.as_bytes())
         .map_err(|_| CURLE_SEND_ERROR)
+}
+
+fn write_request_body(
+    stream: &mut TcpStream,
+    handle: *mut CURL,
+    callbacks: EasyCallbacks,
+    body_length: Option<usize>,
+) -> Result<(), CURLcode> {
+    let mut remaining = body_length.unwrap_or(0);
+    let mut buf = vec![0u8; 16 * 1024];
+    while remaining > 0 {
+        let chunk_len = remaining.min(buf.len());
+        let read = read_request_body_chunk(handle, callbacks, &mut buf[..chunk_len])?;
+        if read == 0 {
+            perform::set_error_buffer(handle, "Failed reading upload data");
+            return Err(CURLE_READ_ERROR);
+        }
+        stream
+            .write_all(&buf[..read])
+            .map_err(|_| CURLE_SEND_ERROR)?;
+        remaining -= read;
+    }
+    stream.flush().map_err(|_| CURLE_SEND_ERROR)
 }
 
 fn read_response_meta(
@@ -753,22 +793,59 @@ fn deliver_write(
     callbacks: EasyCallbacks,
     buffer: &mut [u8],
 ) -> Result<(), CURLcode> {
-    let Some(callback) = callbacks.write_function else {
-        return Ok(());
-    };
-    let wrote = unsafe {
-        callback(
-            buffer.as_mut_ptr().cast(),
-            1,
-            buffer.len(),
-            callbacks.write_data as *mut c_void,
-        )
+    let wrote = if let Some(callback) = callbacks.write_function {
+        unsafe {
+            callback(
+                buffer.as_mut_ptr().cast(),
+                1,
+                buffer.len(),
+                callbacks.write_data as *mut c_void,
+            )
+        }
+    } else {
+        let stream = if callbacks.write_data == 0 {
+            unsafe { stdout }
+        } else {
+            callbacks.write_data as *mut c_void
+        };
+        unsafe { fwrite(buffer.as_ptr().cast(), 1, buffer.len(), stream) }
     };
     if wrote == buffer.len() {
         Ok(())
     } else {
         perform::set_error_buffer(handle, "Failed writing received data");
         Err(CURLE_WRITE_ERROR)
+    }
+}
+
+fn read_request_body_chunk(
+    handle: *mut CURL,
+    callbacks: EasyCallbacks,
+    buffer: &mut [u8],
+) -> Result<usize, CURLcode> {
+    let read = if let Some(callback) = callbacks.read_function {
+        unsafe {
+            callback(
+                buffer.as_mut_ptr().cast(),
+                1,
+                buffer.len(),
+                callbacks.read_data as *mut c_void,
+            )
+        }
+    } else {
+        let stream = if callbacks.read_data == 0 {
+            unsafe { stdin }
+        } else {
+            callbacks.read_data as *mut c_void
+        };
+        unsafe { fread(buffer.as_mut_ptr().cast(), 1, buffer.len(), stream) }
+    };
+
+    if read <= buffer.len() {
+        Ok(read)
+    } else {
+        perform::set_error_buffer(handle, "Failed reading upload data");
+        Err(CURLE_READ_ERROR)
     }
 }
 
@@ -873,6 +950,9 @@ impl RequestContext {
             },
             method: effective_method(metadata),
             range_header: effective_range_header(metadata),
+            body_length: metadata
+                .upload
+                .then(|| metadata.upload_size.unwrap_or(0).max(0) as usize),
         })
     }
 }

@@ -1,5 +1,5 @@
 use crate::abi::{curl_off_t, curl_socket_t, CURLcode, CURLoption, CURL, CURLINFO};
-use core::ffi::{c_int, c_long, c_void};
+use core::ffi::{c_char, c_int, c_long, c_void};
 
 #[no_mangle]
 pub unsafe extern "C" fn curl_easy_perform(curl: *mut CURL) -> CURLcode {
@@ -80,6 +80,22 @@ pub unsafe extern "C" fn curl_safe_easy_getinfo_long(
     result: *mut CURLcode,
 ) -> c_int {
     let Some(code) = crate::easy::perform::easy_getinfo_long(handle, info, value) else {
+        return 0;
+    };
+    if !result.is_null() {
+        unsafe { *result = code };
+    }
+    1
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn curl_safe_easy_getinfo_string(
+    handle: *mut CURL,
+    info: CURLINFO,
+    value: *mut *mut c_char,
+    result: *mut CURLcode,
+) -> c_int {
+    let Some(code) = crate::easy::perform::easy_getinfo_string(handle, info, value) else {
         return 0;
     };
     if !result.is_null() {

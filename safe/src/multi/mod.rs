@@ -11,8 +11,7 @@ use core::ffi::{c_char, c_int, c_long, c_uint, c_void};
 use core::{mem, ptr};
 use std::collections::{HashMap, VecDeque};
 use std::mem::size_of;
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
-use std::sync::Mutex;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 pub(crate) const CURLM_BAD_HANDLE: CURLMcode = 1;
@@ -86,6 +85,38 @@ enum TransferEvent {
     Wakeup,
 }
 
+struct EventQueue {
+    queue: Mutex<VecDeque<TransferEvent>>,
+    ready: Condvar,
+}
+
+impl EventQueue {
+    fn push(&self, event: TransferEvent) {
+        let mut guard = self.queue.lock().expect("multi event queue mutex poisoned");
+        guard.push_back(event);
+        self.ready.notify_all();
+    }
+
+    fn pop_timeout(&self, timeout: Duration) -> Option<TransferEvent> {
+        let guard = self.queue.lock().expect("multi event queue mutex poisoned");
+        let mut guard = if guard.is_empty() {
+            let (guard, _) = self
+                .ready
+                .wait_timeout_while(guard, timeout, |queue| queue.is_empty())
+                .expect("multi event queue mutex poisoned");
+            guard
+        } else {
+            guard
+        };
+        guard.pop_front()
+    }
+
+    fn drain(&self) -> Vec<TransferEvent> {
+        let mut guard = self.queue.lock().expect("multi event queue mutex poisoned");
+        guard.drain(..).collect()
+    }
+}
+
 struct TransferRecord {
     easy: *mut CURL,
     state: state::MultiState,
@@ -137,8 +168,7 @@ impl Default for MultiInner {
 
 pub(crate) struct MultiHandle {
     magic: usize,
-    sender: Sender<TransferEvent>,
-    receiver: Mutex<Receiver<TransferEvent>>,
+    events: Arc<EventQueue>,
     inner: Mutex<MultiInner>,
 }
 
@@ -157,11 +187,12 @@ fn wrapper_from_ptr(multi: *mut CURLM) -> Option<&'static MultiHandle> {
 }
 
 pub(crate) unsafe fn init_handle() -> *mut CURLM {
-    let (sender, receiver) = mpsc::channel();
     let wrapper = Box::new(MultiHandle {
         magic: MULTI_MAGIC,
-        sender,
-        receiver: Mutex::new(receiver),
+        events: Arc::new(EventQueue {
+            queue: Mutex::new(VecDeque::new()),
+            ready: Condvar::new(),
+        }),
         inner: Mutex::new(MultiInner::default()),
     });
     Box::into_raw(wrapper).cast()
@@ -439,11 +470,8 @@ pub(crate) unsafe fn wakeup_handle(multi: *mut CURLM) -> CURLMcode {
     let Some(wrapper) = wrapper_from_ptr(multi) else {
         return CURLM_BAD_HANDLE;
     };
-    if wrapper.sender.send(TransferEvent::Wakeup).is_err() {
-        CURLM_WAKEUP_FAILURE
-    } else {
-        crate::abi::CURLM_OK
-    }
+    wrapper.events.push(TransferEvent::Wakeup);
+    crate::abi::CURLM_OK
 }
 
 pub(crate) unsafe fn info_read_handle(
@@ -708,10 +736,10 @@ fn start_pending_transfers(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> CURL
         if socket_rc != crate::abi::CURLM_OK {
             return socket_rc;
         }
-        let sender = wrapper.sender.clone();
+        let events = Arc::clone(&wrapper.events);
         let easy_key = easy_handle as usize;
         let join = transfer::spawn_transfer(easy_key, plan, move |result| {
-            let _ = sender.send(TransferEvent::Completed { easy_key, result });
+            events.push(TransferEvent::Completed { easy_key, result });
         });
         if let Some(record) = wrapper
             .inner
@@ -785,18 +813,9 @@ fn wait_common(
 }
 
 fn wait_for_event(wrapper: &MultiHandle, timeout_ms: c_int) -> Result<c_int, CURLMcode> {
-    let event = {
-        let receiver = wrapper
-            .receiver
-            .lock()
-            .expect("multi receiver mutex poisoned");
-        match receiver.recv_timeout(Duration::from_millis(timeout_ms as u64)) {
-            Ok(event) => Some(event),
-            Err(RecvTimeoutError::Timeout) => None,
-            Err(RecvTimeoutError::Disconnected) => return Err(CURLM_INTERNAL_ERROR),
-        }
-    };
-
+    let event = wrapper
+        .events
+        .pop_timeout(Duration::from_millis(timeout_ms as u64));
     let mut activity = 0;
     if let Some(event) = event {
         activity += process_event(wrapper, event);
@@ -806,22 +825,7 @@ fn wait_for_event(wrapper: &MultiHandle, timeout_ms: c_int) -> Result<c_int, CUR
 }
 
 fn drain_events(wrapper: &MultiHandle) -> c_int {
-    let events = {
-        let receiver = wrapper
-            .receiver
-            .lock()
-            .expect("multi receiver mutex poisoned");
-        let mut events = Vec::new();
-        loop {
-            match receiver.try_recv() {
-                Ok(event) => events.push(event),
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => break,
-            }
-        }
-        events
-    };
-
+    let events = wrapper.events.drain();
     let mut activity = 0;
     for event in events {
         activity += process_event(wrapper, event);

@@ -39,6 +39,13 @@ fn main() {
         &variadic,
         &mprintf,
         &reference_script,
+        &manifest_dir.join("src/lib.rs"),
+        &manifest_dir.join("src/abi/connect_only.rs"),
+        &manifest_dir.join("src/abi/multi.rs"),
+        &manifest_dir.join("src/easy/handle.rs"),
+        &manifest_dir.join("src/easy/perform.rs"),
+        &manifest_dir.join("src/multi/mod.rs"),
+        &manifest_dir.join("src/transfer/mod.rs"),
         &manifest_dir.join("include/curl/curl.h"),
         &manifest_dir.join("include/curl/options.h"),
         &manifest_dir.join("original/lib/easyoptions.c"),
@@ -121,7 +128,11 @@ fn parse_symbols(path: &Path) -> SymbolManifest {
             symbols.push(name.to_string());
         }
     }
-    assert!(!namespace.is_empty(), "missing symbol namespace in {}", path.display());
+    assert!(
+        !namespace.is_empty(),
+        "missing symbol namespace in {}",
+        path.display()
+    );
     SymbolManifest {
         soname,
         namespace,
@@ -184,8 +195,14 @@ fn compile_c_shims(manifest_dir: &Path, flavor: &str) {
         .flag_if_supported("-Wall")
         .flag_if_supported("-Wextra")
         .warnings(true)
-        .define("REFERENCE_LIBRARY_FILE", Some(reference_file_define.as_str()))
-        .define("REFERENCE_LIBRARY_ABSPATH", Some(reference_abs_define.as_str()))
+        .define(
+            "REFERENCE_LIBRARY_FILE",
+            Some(reference_file_define.as_str()),
+        )
+        .define(
+            "REFERENCE_LIBRARY_ABSPATH",
+            Some(reference_abs_define.as_str()),
+        )
         .define("BRIDGE_FLAVOR", Some(flavor_define.as_str()))
         .compile("port_libcurl_safe_shims");
 }
@@ -198,12 +215,7 @@ fn generate_easy_option_table(manifest_dir: &Path, abi_manifest_path: &Path, out
         .expect("option_metadata.entries");
     let ids: Vec<String> = entries
         .iter()
-        .map(|entry| {
-            entry["id"]
-                .as_str()
-                .expect("option id")
-                .to_string()
-        })
+        .map(|entry| entry["id"].as_str().expect("option id").to_string())
         .collect();
     let values = resolve_curl_option_values(manifest_dir, out_dir, &ids);
 
@@ -213,7 +225,9 @@ fn generate_easy_option_table(manifest_dir: &Path, abi_manifest_path: &Path, out
         "pub(crate) const EASY_OPTION_COUNT: usize = {};\n\n",
         entries.len()
     ));
-    output.push_str("pub(crate) const EASY_OPTIONS: [crate::abi::curl_easyoption; EASY_OPTION_COUNT + 1] = [\n");
+    output.push_str(
+        "pub(crate) const EASY_OPTIONS: [crate::abi::curl_easyoption; EASY_OPTION_COUNT + 1] = [\n",
+    );
     for entry in entries {
         let id_name = entry["id"].as_str().expect("option id");
         let id_value = values
