@@ -8,11 +8,16 @@ void *curl_safe_resolve_reference_symbol(const char *name);
 
 typedef CURLcode (*curl_easy_setopt_fn)(CURL *handle, CURLoption option, ...);
 typedef CURLcode (*curl_easy_getinfo_fn)(CURL *handle, CURLINFO info, ...);
-typedef CURLMcode (*curl_multi_setopt_fn)(CURLM *multi_handle, CURLMoption option, ...);
 typedef CURLSHcode (*curl_share_setopt_fn)(CURLSH *share, CURLSHoption option, ...);
 typedef CURLFORMcode (*curl_formadd_fn)(struct curl_httppost **httppost,
                                         struct curl_httppost **last_post,
                                         ...);
+
+void curl_safe_easy_setopt_observe_long(CURL *handle, CURLoption option, long value);
+CURLMcode curl_safe_multi_setopt_long(CURLM *multi_handle, CURLMoption option, long value);
+CURLMcode curl_safe_multi_setopt_ptr(CURLM *multi_handle, CURLMoption option, void *value);
+CURLMcode curl_safe_multi_setopt_function(CURLM *multi_handle, CURLMoption option, void (*value)(void));
+CURLMcode curl_safe_multi_setopt_off_t(CURLM *multi_handle, CURLMoption option, curl_off_t value);
 
 static curl_easy_setopt_fn resolve_easy_setopt(void) {
   static curl_easy_setopt_fn fn = NULL;
@@ -25,13 +30,6 @@ static curl_easy_getinfo_fn resolve_easy_getinfo(void) {
   static curl_easy_getinfo_fn fn = NULL;
   if(!fn)
     fn = (curl_easy_getinfo_fn)curl_safe_resolve_reference_symbol("curl_easy_getinfo");
-  return fn;
-}
-
-static curl_multi_setopt_fn resolve_multi_setopt(void) {
-  static curl_multi_setopt_fn fn = NULL;
-  if(!fn)
-    fn = (curl_multi_setopt_fn)curl_safe_resolve_reference_symbol("curl_multi_setopt");
   return fn;
 }
 
@@ -58,8 +56,13 @@ CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...) {
   va_start(args, option);
   switch(option_class) {
   case 0:
-    result = fn(handle, option, va_arg(args, long));
+  {
+    long value = va_arg(args, long);
+    result = fn(handle, option, value);
+    if(result == CURLE_OK)
+      curl_safe_easy_setopt_observe_long(handle, option, value);
     break;
+  }
   case 1:
     result = fn(handle, option, va_arg(args, void *));
     break;
@@ -118,21 +121,20 @@ CURLMcode curl_multi_setopt(CURLM *multi_handle, CURLMoption option, ...) {
   CURLMcode result;
   va_list args;
   long option_class = ((long)option) / 10000L;
-  curl_multi_setopt_fn fn = resolve_multi_setopt();
 
   va_start(args, option);
   switch(option_class) {
   case 0:
-    result = fn(multi_handle, option, va_arg(args, long));
+    result = curl_safe_multi_setopt_long(multi_handle, option, va_arg(args, long));
     break;
   case 1:
-    result = fn(multi_handle, option, va_arg(args, void *));
+    result = curl_safe_multi_setopt_ptr(multi_handle, option, va_arg(args, void *));
     break;
   case 2:
-    result = fn(multi_handle, option, va_arg(args, void (*)(void)));
+    result = curl_safe_multi_setopt_function(multi_handle, option, va_arg(args, void (*)(void)));
     break;
   case 3:
-    result = fn(multi_handle, option, va_arg(args, curl_off_t));
+    result = curl_safe_multi_setopt_off_t(multi_handle, option, va_arg(args, curl_off_t));
     break;
   default:
     result = CURLM_UNKNOWN_OPTION;

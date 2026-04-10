@@ -1,11 +1,10 @@
 use crate::abi::{
     curl_calloc_callback, curl_free_callback, curl_malloc_callback, curl_realloc_callback,
-    curl_strdup_callback, curl_ssl_backend, curl_sslbackend, CURLcode, CURLsslset, CURLM,
-    CURL, CURLE_FAILED_INIT, CURLE_OK, CURL_GLOBAL_DEFAULT,
+    curl_ssl_backend, curl_sslbackend, curl_strdup_callback, CURLcode, CURLsslset, CURL,
+    CURLE_FAILED_INIT, CURLE_OK, CURLM, CURL_GLOBAL_DEFAULT,
 };
 use crate::{alloc, version};
 use core::ffi::{c_char, c_long, c_void};
-use core::{mem::size_of, ptr};
 use std::mem;
 use std::process;
 use std::sync::{Mutex, OnceLock};
@@ -32,11 +31,12 @@ type CurlGlobalInitMemFn = unsafe extern "C" fn(
 ) -> CURLcode;
 type CurlGlobalCleanupFn = unsafe extern "C" fn();
 type CurlGlobalTraceFn = unsafe extern "C" fn(*const c_char) -> CURLcode;
-type CurlGlobalSslSetFn =
-    unsafe extern "C" fn(curl_sslbackend, *const c_char, *mut *const *const curl_ssl_backend) -> CURLsslset;
+type CurlGlobalSslSetFn = unsafe extern "C" fn(
+    curl_sslbackend,
+    *const c_char,
+    *mut *const *const curl_ssl_backend,
+) -> CURLsslset;
 type CurlFreeFn = unsafe extern "C" fn(*mut c_void);
-type CurlMultiGetHandlesFn = unsafe extern "C" fn(*mut CURLM) -> *mut *mut CURL;
-
 pub(crate) unsafe fn load_reference<T: Copy>(symbol: &'static [u8]) -> T {
     let ptr = unsafe { curl_safe_resolve_reference_symbol(symbol.as_ptr().cast()) };
     if ptr.is_null() {
@@ -75,13 +75,12 @@ fn ref_curl_free() -> CurlFreeFn {
     *FN.get_or_init(|| unsafe { load_reference(b"curl_free\0") })
 }
 
-fn ref_multi_get_handles() -> CurlMultiGetHandlesFn {
-    static FN: OnceLock<CurlMultiGetHandlesFn> = OnceLock::new();
-    *FN.get_or_init(|| unsafe { load_reference(b"curl_multi_get_handles\0") })
-}
-
 pub(crate) fn ensure_global_init_for_easy() -> Result<(), CURLcode> {
-    let should_init = GLOBAL_STATE.lock().expect("global mutex poisoned").init_depth == 0;
+    let should_init = GLOBAL_STATE
+        .lock()
+        .expect("global mutex poisoned")
+        .init_depth
+        == 0;
     if !should_init {
         return Ok(());
     }
@@ -103,7 +102,11 @@ pub(crate) unsafe fn free_reference_allocation(ptr: *mut c_void) {
 
 #[no_mangle]
 pub unsafe extern "C" fn curl_global_init(flags: c_long) -> CURLcode {
-    let first_init = GLOBAL_STATE.lock().expect("global mutex poisoned").init_depth == 0;
+    let first_init = GLOBAL_STATE
+        .lock()
+        .expect("global mutex poisoned")
+        .init_depth
+        == 0;
     if first_init {
         version::clear_cached_version();
         alloc::reset_to_default();
@@ -126,12 +129,20 @@ pub unsafe extern "C" fn curl_global_init_mem(
     strdup: curl_strdup_callback,
     calloc: curl_calloc_callback,
 ) -> CURLcode {
-    if malloc.is_none() || free.is_none() || realloc.is_none() || strdup.is_none() || calloc.is_none()
+    if malloc.is_none()
+        || free.is_none()
+        || realloc.is_none()
+        || strdup.is_none()
+        || calloc.is_none()
     {
         return CURLE_FAILED_INIT;
     }
 
-    let first_init = GLOBAL_STATE.lock().expect("global mutex poisoned").init_depth == 0;
+    let first_init = GLOBAL_STATE
+        .lock()
+        .expect("global mutex poisoned")
+        .init_depth
+        == 0;
     if first_init {
         version::clear_cached_version();
     }
@@ -180,26 +191,5 @@ pub unsafe extern "C" fn curl_global_sslset(
 
 #[no_mangle]
 pub unsafe extern "C" fn curl_multi_get_handles(multi_handle: *mut CURLM) -> *mut *mut CURL {
-    let reference_handles = unsafe { ref_multi_get_handles()(multi_handle) };
-    if reference_handles.is_null() {
-        return ptr::null_mut();
-    }
-
-    let mut count = 0usize;
-    while unsafe { !(*reference_handles.add(count)).is_null() } {
-        count += 1;
-    }
-
-    let bytes = (count + 1) * size_of::<*mut CURL>();
-    let handles = unsafe { alloc::calloc_bytes(1, bytes) } as *mut *mut CURL;
-    if handles.is_null() {
-        unsafe { free_reference_allocation(reference_handles.cast()) };
-        return ptr::null_mut();
-    }
-
-    unsafe {
-        ptr::copy_nonoverlapping(reference_handles, handles, count);
-        free_reference_allocation(reference_handles.cast());
-    }
-    handles
+    unsafe { crate::multi::get_handles_copy(multi_handle) }
 }

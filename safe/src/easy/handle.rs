@@ -47,22 +47,35 @@ pub(crate) unsafe fn easy_init() -> *mut CURL {
     if global::ensure_global_init_for_easy().is_err() {
         return core::ptr::null_mut();
     }
-    unsafe { ref_easy_init()() }
+    let handle = unsafe { ref_easy_init()() };
+    crate::easy::perform::register_handle(handle);
+    handle
 }
 
 pub(crate) unsafe fn easy_cleanup(handle: *mut CURL) {
+    let private_multi = crate::easy::perform::unregister_handle(handle);
+    if let Some(multi) = private_multi {
+        unsafe { crate::multi::cleanup_owned_multi(multi as *mut crate::abi::CURLM) };
+    }
     unsafe { ref_easy_cleanup()(handle) };
 }
 
 pub(crate) unsafe fn easy_duphandle(handle: *mut CURL) -> *mut CURL {
-    unsafe { ref_easy_duphandle()(handle) }
+    let duplicate = unsafe { ref_easy_duphandle()(handle) };
+    crate::easy::perform::register_duplicate(handle, duplicate);
+    duplicate
 }
 
 pub(crate) unsafe fn easy_reset(handle: *mut CURL) {
+    crate::easy::perform::reset_handle(handle);
     unsafe { ref_easy_reset()(handle) };
 }
 
-pub(crate) unsafe fn easy_escape(handle: *mut CURL, input: *const c_char, len: c_int) -> *mut c_char {
+pub(crate) unsafe fn easy_escape(
+    handle: *mut CURL,
+    input: *const c_char,
+    len: c_int,
+) -> *mut c_char {
     let escaped = unsafe { ref_easy_escape()(handle, input, len) };
     if escaped.is_null() {
         return ptr::null_mut();

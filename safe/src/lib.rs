@@ -14,17 +14,25 @@ pub mod abi {
 }
 
 mod alloc;
-mod global;
-mod version;
-mod slist;
-mod mime;
-mod form;
-mod urlapi;
-mod share;
+mod conn;
+mod dns;
 mod easy;
+mod form;
+mod global;
+mod mime;
+mod multi;
+mod share;
+mod slist;
+mod transfer;
+mod urlapi;
+mod version;
 
+#[path = "abi/connect_only.rs"]
+mod abi_connect_only;
 #[path = "abi/easy.rs"]
 mod abi_easy;
+#[path = "abi/multi.rs"]
+mod abi_multi;
 #[path = "abi/share.rs"]
 mod abi_share;
 #[path = "abi/url.rs"]
