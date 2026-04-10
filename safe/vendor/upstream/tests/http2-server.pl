@@ -108,8 +108,8 @@ $certfile = abs_path($certfile);
 $keyfile = abs_path($keyfile);
 
 my $cmdline="$nghttpx --backend=$connect ".
-    "--frontend=\"*,$listenport;no-tls\" ".
-    "--frontend=\"*,$listenport2\" ".
+    "--frontend=\"127.0.0.1,$listenport;no-tls\" ".
+    "--frontend=\"127.0.0.1,$listenport2\" ".
     "--log-level=INFO ".
     "--pid-file=$pidfile ".
     "--conf=$conf ".

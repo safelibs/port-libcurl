@@ -172,6 +172,7 @@ pub unsafe extern "C" fn curl_global_cleanup() {
 
     if should_clear {
         version::clear_cached_version();
+        crate::easy::perform::clear_registry();
     }
 }
 

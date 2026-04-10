@@ -70,6 +70,7 @@ pub(crate) struct TransferPlan {
     pub filters: ConnectionFilterChain,
     pub low_speed: LowSpeedWindow,
     pub connect_only: bool,
+    pub reference_backend: bool,
 }
 
 struct ConnectOnlySession {
@@ -281,6 +282,7 @@ pub(crate) fn build_plan(metadata: &EasyMetadata, resolver_owner: ResolverOwner)
         filters,
         low_speed: metadata.low_speed,
         connect_only: metadata.connect_only,
+        reference_backend: requires_reference_backend(metadata),
     }
 }
 
@@ -937,6 +939,17 @@ fn describe_connection(
 
 fn elapsed_us(duration: Duration) -> curl_off_t {
     duration.as_micros().min(curl_off_t::MAX as u128) as curl_off_t
+}
+
+fn requires_reference_backend(metadata: &EasyMetadata) -> bool {
+    let Some(url) = metadata.url.as_deref() else {
+        return false;
+    };
+    let Some(authority) = parse_url_authority(url) else {
+        return false;
+    };
+
+    authority.scheme != "http" || metadata.http_version >= 3
 }
 
 fn read_request_body_chunk(

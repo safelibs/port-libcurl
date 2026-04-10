@@ -11,11 +11,13 @@ typedef CURLcode (*curl_easy_getinfo_fn)(CURL *handle, CURLINFO info, ...);
 typedef CURLFORMcode (*curl_formadd_fn)(struct curl_httppost **httppost,
                                         struct curl_httppost **last_post,
                                         ...);
+typedef CURLMcode (*curl_multi_setopt_fn)(CURLM *multi_handle, CURLMoption option, ...);
 
 void curl_safe_easy_setopt_observe_long(CURL *handle, CURLoption option, long value);
 void curl_safe_easy_setopt_observe_ptr(CURL *handle, CURLoption option, void *value);
 void curl_safe_easy_setopt_observe_function(CURL *handle, CURLoption option, void (*value)(void));
 void curl_safe_easy_setopt_observe_off_t(CURL *handle, CURLoption option, curl_off_t value);
+CURLcode curl_safe_reference_easy_setopt_long(CURL *handle, CURLoption option, long value);
 CURLSHcode curl_safe_share_setopt_int(CURLSH *share, CURLSHoption option, int value);
 CURLSHcode curl_safe_share_setopt_function(CURLSH *share, CURLSHoption option, void (*value)(void));
 CURLSHcode curl_safe_share_setopt_ptr(CURLSH *share, CURLSHoption option, void *value);
@@ -28,6 +30,10 @@ CURLMcode curl_safe_multi_setopt_long(CURLM *multi_handle, CURLMoption option, l
 CURLMcode curl_safe_multi_setopt_ptr(CURLM *multi_handle, CURLMoption option, void *value);
 CURLMcode curl_safe_multi_setopt_function(CURLM *multi_handle, CURLMoption option, void (*value)(void));
 CURLMcode curl_safe_multi_setopt_off_t(CURLM *multi_handle, CURLMoption option, curl_off_t value);
+CURLMcode curl_safe_reference_multi_setopt_long(CURLM *multi_handle, CURLMoption option, long value);
+CURLMcode curl_safe_reference_multi_setopt_ptr(CURLM *multi_handle, CURLMoption option, void *value);
+CURLMcode curl_safe_reference_multi_setopt_function(CURLM *multi_handle, CURLMoption option, void (*value)(void));
+CURLMcode curl_safe_reference_multi_setopt_off_t(CURLM *multi_handle, CURLMoption option, curl_off_t value);
 
 static curl_easy_setopt_fn resolve_easy_setopt(void) {
   static curl_easy_setopt_fn fn = NULL;
@@ -43,10 +49,22 @@ static curl_easy_getinfo_fn resolve_easy_getinfo(void) {
   return fn;
 }
 
+CURLcode curl_safe_reference_easy_setopt_long(CURL *handle, CURLoption option, long value) {
+  curl_easy_setopt_fn fn = resolve_easy_setopt();
+  return fn(handle, option, value);
+}
+
 static curl_formadd_fn resolve_formadd(void) {
   static curl_formadd_fn fn = NULL;
   if(!fn)
     fn = (curl_formadd_fn)curl_safe_resolve_reference_symbol("curl_formadd");
+  return fn;
+}
+
+static curl_multi_setopt_fn resolve_reference_multi_setopt(void) {
+  static curl_multi_setopt_fn fn = NULL;
+  if(!fn)
+    fn = (curl_multi_setopt_fn)curl_safe_resolve_reference_symbol("curl_multi_setopt");
   return fn;
 }
 
@@ -179,6 +197,34 @@ CURLMcode curl_multi_setopt(CURLM *multi_handle, CURLMoption option, ...) {
   va_end(args);
 
   return result;
+}
+
+CURLMcode curl_safe_reference_multi_setopt_long(CURLM *multi_handle,
+                                                CURLMoption option,
+                                                long value) {
+  curl_multi_setopt_fn fn = resolve_reference_multi_setopt();
+  return fn(multi_handle, option, value);
+}
+
+CURLMcode curl_safe_reference_multi_setopt_ptr(CURLM *multi_handle,
+                                               CURLMoption option,
+                                               void *value) {
+  curl_multi_setopt_fn fn = resolve_reference_multi_setopt();
+  return fn(multi_handle, option, value);
+}
+
+CURLMcode curl_safe_reference_multi_setopt_function(CURLM *multi_handle,
+                                                    CURLMoption option,
+                                                    void (*value)(void)) {
+  curl_multi_setopt_fn fn = resolve_reference_multi_setopt();
+  return fn(multi_handle, option, value);
+}
+
+CURLMcode curl_safe_reference_multi_setopt_off_t(CURLM *multi_handle,
+                                                 CURLMoption option,
+                                                 curl_off_t value) {
+  curl_multi_setopt_fn fn = resolve_reference_multi_setopt();
+  return fn(multi_handle, option, value);
 }
 
 CURLSHcode curl_share_setopt(CURLSH *share, CURLSHoption option, ...) {

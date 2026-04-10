@@ -46,6 +46,7 @@ const CURLOPT_FOLLOWLOCATION: CURLoption = 52;
 const CURLOPT_XFERINFODATA: CURLoption = 10057;
 const CURLOPT_PROXYPORT: CURLoption = 59;
 const CURLOPT_HTTPPROXYTUNNEL: CURLoption = 61;
+const CURLOPT_HTTP_VERSION: CURLoption = 84;
 const CURLOPT_SSL_VERIFYPEER: CURLoption = 64;
 const CURLOPT_MAXCONNECTS: CURLoption = 71;
 const CURLOPT_HEADERFUNCTION: CURLoption = 20079;
@@ -112,6 +113,7 @@ pub(crate) struct EasyMetadata {
     pub upload: bool,
     pub upload_size: Option<curl_off_t>,
     pub http_get: bool,
+    pub http_version: c_long,
     pub verbose: bool,
     pub fail_on_error: bool,
     pub resume_from: i64,
@@ -178,6 +180,7 @@ impl Default for EasyMetadata {
             upload: false,
             upload_size: None,
             http_get: false,
+            http_version: 0,
             verbose: false,
             fail_on_error: false,
             resume_from: 0,
@@ -262,6 +265,11 @@ fn registry() -> &'static Mutex<HashMap<usize, EasyShadow>> {
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+pub(crate) fn clear_registry() {
+    let mut guard = registry().lock().expect("easy registry mutex poisoned");
+    *guard = HashMap::new();
+}
+
 pub(crate) fn register_handle(handle: *mut CURL) {
     if handle.is_null() {
         return;
@@ -327,7 +335,7 @@ pub(crate) fn unregister_handle(handle: *mut CURL) -> Option<usize> {
         .remove(&(handle as usize))
         .and_then(|shadow| shadow.private_multi);
     if guard.is_empty() {
-        guard.shrink_to_fit();
+        *guard = HashMap::new();
     }
     private_multi
 }
@@ -354,6 +362,7 @@ pub(crate) fn observe_easy_setopt_long(handle: *mut CURL, option: CURLoption, va
         CURLOPT_UPLOAD => shadow.metadata.upload = value != 0,
         CURLOPT_FOLLOWLOCATION => shadow.metadata.follow_location = value != 0,
         CURLOPT_HTTPGET => shadow.metadata.http_get = value != 0,
+        CURLOPT_HTTP_VERSION => shadow.metadata.http_version = value,
         CURLOPT_PROXYPORT => shadow.metadata.proxy_port = u16::try_from(value).ok(),
         CURLOPT_HTTPPROXYTUNNEL => shadow.metadata.tunnel_proxy = value != 0,
         CURLOPT_SSL_VERIFYPEER => shadow.metadata.ssl_verify_peer = value != 0,
