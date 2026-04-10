@@ -12695,10 +12695,6 @@
   ],
   "public_function_declarations": [
     {
-      "declaration": "CURL_EXTERN #elif defined(_WIN32) || \\ (__has_declspec_attribute(dllexport) && \\ __has_declspec_attribute(dllimport)) # if defined(BUILDING_LIBCURL) # define CURL_EXTERN __declspec(dllexport) # else # define CURL_EXTERN __declspec(dllimport) # endif #elif defined(BUILDING_LIBCURL) && defined(CURL_HIDDEN_SYMBOLS) # define CURL_EXTERN CURL_EXTERN_SYMBOL #else # define CURL_EXTERN #endif #ifndef curl_socket_typedef /* socket typedef */ #if defined(_WIN32) && !defined(__LWIP_OPT_H__) && !defined(LWIP_HDR_OPT_H) typedef SOCKET curl_socket_t;",
-      "header": "curl.h"
-    },
-    {
       "declaration": "CURL_EXTERN int curl_strequal(const char *s1, const char *s2);",
       "header": "curl.h"
     },
@@ -12903,7 +12899,7 @@
       "header": "header.h"
     },
     {
-      "declaration": "CURL_EXTERN */ #ifdef __cplusplus extern \"C\" { #endif #if (defined(__GNUC__) || defined(__clang__)) && \\ defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) && \\ !defined(__MINGW32__) && !defined(CURL_NO_FMT_CHECKS) #define CURL_TEMP_PRINTF(a,b) __attribute__ ((format(printf, a, b))) #else #define CURL_TEMP_PRINTF(a,b) #endif CURL_EXTERN int curl_mprintf(const char *format, ...) CURL_TEMP_PRINTF(1, 2);",
+      "declaration": "CURL_EXTERN int curl_mprintf(const char *format, ...) CURL_TEMP_PRINTF(1, 2);",
       "header": "mprintf.h"
     },
     {

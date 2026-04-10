@@ -245,17 +245,47 @@ def tokenize_make_value(value: str) -> list[str]:
     return [token for token in normalize_whitespace(value).split(" ") if token]
 
 
+def strip_preprocessor_directives(text: str) -> str:
+    kept_lines: list[str] = []
+    skip_continuation = False
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        if skip_continuation:
+            skip_continuation = line.endswith("\\")
+            continue
+        if line.lstrip().startswith("#"):
+            skip_continuation = line.endswith("\\")
+            continue
+        kept_lines.append(raw_line)
+    return "\n".join(kept_lines)
+
+
 def collect_function_declarations(header_dir: pathlib.Path) -> list[dict]:
     declarations: list[dict] = []
     for header_path in sorted(header_dir.glob("*.h")):
-        text = header_path.read_text()
-        for match in re.finditer(r"CURL_EXTERN\b.*?;", text, re.S):
-            declarations.append(
-                {
-                    "header": header_path.name,
-                    "declaration": normalize_whitespace(match.group(0)),
-                }
-            )
+        text = strip_preprocessor_directives(BLOCK_COMMENT_RE.sub("", header_path.read_text()))
+        current: list[str] = []
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not current:
+                if "CURL_EXTERN" not in line:
+                    continue
+                current.append(line)
+            else:
+                if line:
+                    current.append(line)
+            if ";" not in line:
+                continue
+            declaration = normalize_whitespace(" ".join(current))
+            declaration = declaration.split(";", 1)[0] + ";"
+            if "(" in declaration and ")" in declaration:
+                declarations.append(
+                    {
+                        "header": header_path.name,
+                        "declaration": declaration,
+                    }
+                )
+            current = []
     return declarations
 
 
@@ -818,16 +848,19 @@ def build_abi_manifest(repo_root: pathlib.Path, safe_dir: pathlib.Path) -> dict:
 
 def build_cve_manifest(repo_root: pathlib.Path) -> dict:
     curated = load_json(repo_root / "relevant_cves.json")
+    curated_ids = {entry["cve_id"] for entry in curated["cves"]}
     patch_mappings = []
     for patch_path in sorted((repo_root / "original/debian/patches").glob("CVE-*.patch")):
-        name = patch_path.name
-        cve_id = name.replace(".patch", "")
-        cve_id = re.sub(r"-(pre\d+|\d+)$", "", cve_id)
+        stem = patch_path.stem
+        cve_id = stem
+        suffix_match = re.match(r"^(CVE-\d{4}-\d+)(?:-(?:pre\d+|\d+))$", stem)
+        if cve_id not in curated_ids and suffix_match:
+            cve_id = suffix_match.group(1)
         patch_mappings.append(
             {
                 "patch": str(patch_path.relative_to(repo_root)),
                 "mapped_cve_id": cve_id,
-                "match_found": any(entry["cve_id"] == cve_id for entry in curated["cves"]),
+                "match_found": cve_id in curated_ids,
             }
         )
     return {
@@ -874,4 +907,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
