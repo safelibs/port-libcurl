@@ -1,0 +1,16 @@
+[package]
+name = "port-libcurl-safe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+
+[features]
+default = []
+openssl-flavor = []
+gnutls-flavor = []
+
+[lib]
+name = "port_libcurl_safe"
+path = "src/lib.rs"
+
