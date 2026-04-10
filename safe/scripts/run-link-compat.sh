@@ -2,7 +2,37 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 --flavor <openssl|gnutls> [--build-state <path>] [--target <target-id>]..." >&2
+  echo "usage: $0 --flavor <openssl|gnutls> [--build-state <path>] [--target <target-id>]... [--tests <selector>...]" >&2
+}
+
+normalize_target() {
+  case "$1" in
+    *:*)
+      printf '%s\n' "$1"
+      ;;
+    curl)
+      printf 'src:curl\n'
+      ;;
+    [0-9]*)
+      printf 'libtest:lib%s\n' "$1"
+      ;;
+    lib*|chkhostname|libauthretry|libntlmconnect|libprereq)
+      printf 'libtest:%s\n' "$1"
+      ;;
+    disabled|fake_ntlm|getpart|mqttd|resolve|rtspd|sockfilt|socksd|sws|tftpd)
+      printf 'server:%s\n' "$1"
+      ;;
+    h2-download|h2-pausing|h2-serverpush|h2-upgrade-extreme|tls-session-reuse|ws-data|ws-pingpong)
+      printf 'http-client:%s\n' "$1"
+      ;;
+    ldap-bindata)
+      printf 'debian:ldap-bindata\n'
+      ;;
+    *)
+      echo "unsupported target selector: $1" >&2
+      return 1
+      ;;
+  esac
 }
 
 flavor=""
@@ -22,9 +52,23 @@ while [[ $# -gt 0 ]]; do
       targets+=("${2:-}")
       shift 2
       ;;
+    --tests)
+      shift
+      added=0
+      while [[ $# -gt 0 && "$1" != -* ]]; do
+        targets+=("$(normalize_target "$1")")
+        shift
+        added=1
+      done
+      (( added )) || { usage; exit 2; }
+      ;;
     *)
-      usage
-      exit 2
+      if [[ "$1" == -* ]]; then
+        usage
+        exit 2
+      fi
+      targets+=("$(normalize_target "$1")")
+      shift
       ;;
   esac
 done

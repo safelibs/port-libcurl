@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 --flavor <openssl|gnutls> [--build-state <path>] [--test <n>]... [--require-all-runtests]" >&2
+  echo "usage: $0 --flavor <openssl|gnutls> [--build-state <path>] [--test <n>]... [--tests <n>...] [--require-all-runtests]" >&2
 }
 
 flavor=""
@@ -23,6 +23,16 @@ while [[ $# -gt 0 ]]; do
     --test)
       tests+=("${2:-}")
       shift 2
+      ;;
+    --tests)
+      shift
+      added=0
+      while [[ $# -gt 0 && "$1" != -* ]]; do
+        tests+=("$1")
+        shift
+        added=1
+      done
+      (( added )) || { usage; exit 2; }
       ;;
     --require-all-runtests)
       require_all=1
