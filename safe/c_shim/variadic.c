@@ -8,7 +8,6 @@ void *curl_safe_resolve_reference_symbol(const char *name);
 
 typedef CURLcode (*curl_easy_setopt_fn)(CURL *handle, CURLoption option, ...);
 typedef CURLcode (*curl_easy_getinfo_fn)(CURL *handle, CURLINFO info, ...);
-typedef CURLSHcode (*curl_share_setopt_fn)(CURLSH *share, CURLSHoption option, ...);
 typedef CURLFORMcode (*curl_formadd_fn)(struct curl_httppost **httppost,
                                         struct curl_httppost **last_post,
                                         ...);
@@ -17,6 +16,9 @@ void curl_safe_easy_setopt_observe_long(CURL *handle, CURLoption option, long va
 void curl_safe_easy_setopt_observe_ptr(CURL *handle, CURLoption option, void *value);
 void curl_safe_easy_setopt_observe_function(CURL *handle, CURLoption option, void (*value)(void));
 void curl_safe_easy_setopt_observe_off_t(CURL *handle, CURLoption option, curl_off_t value);
+CURLSHcode curl_safe_share_setopt_int(CURLSH *share, CURLSHoption option, int value);
+CURLSHcode curl_safe_share_setopt_function(CURLSH *share, CURLSHoption option, void (*value)(void));
+CURLSHcode curl_safe_share_setopt_ptr(CURLSH *share, CURLSHoption option, void *value);
 int curl_safe_easy_getinfo_string(CURL *handle, CURLINFO info, char **value, CURLcode *result);
 int curl_safe_easy_getinfo_long(CURL *handle, CURLINFO info, long *value, CURLcode *result);
 int curl_safe_easy_getinfo_off_t(CURL *handle, CURLINFO info, curl_off_t *value, CURLcode *result);
@@ -38,13 +40,6 @@ static curl_easy_getinfo_fn resolve_easy_getinfo(void) {
   static curl_easy_getinfo_fn fn = NULL;
   if(!fn)
     fn = (curl_easy_getinfo_fn)curl_safe_resolve_reference_symbol("curl_easy_getinfo");
-  return fn;
-}
-
-static curl_share_setopt_fn resolve_share_setopt(void) {
-  static curl_share_setopt_fn fn = NULL;
-  if(!fn)
-    fn = (curl_share_setopt_fn)curl_safe_resolve_reference_symbol("curl_share_setopt");
   return fn;
 }
 
@@ -189,21 +184,29 @@ CURLMcode curl_multi_setopt(CURLM *multi_handle, CURLMoption option, ...) {
 CURLSHcode curl_share_setopt(CURLSH *share, CURLSHoption option, ...) {
   CURLSHcode result;
   va_list args;
-  curl_share_setopt_fn fn = resolve_share_setopt();
 
   va_start(args, option);
   switch(option) {
   case CURLSHOPT_SHARE:
   case CURLSHOPT_UNSHARE:
-    result = fn(share, option, va_arg(args, int));
+  {
+    int value = va_arg(args, int);
+    result = curl_safe_share_setopt_int(share, option, value);
     break;
+  }
   case CURLSHOPT_LOCKFUNC:
   case CURLSHOPT_UNLOCKFUNC:
-    result = fn(share, option, va_arg(args, void (*)(void)));
+  {
+    void (*value)(void) = va_arg(args, void (*)(void));
+    result = curl_safe_share_setopt_function(share, option, value);
     break;
+  }
   case CURLSHOPT_USERDATA:
-    result = fn(share, option, va_arg(args, void *));
+  {
+    void *value = va_arg(args, void *);
+    result = curl_safe_share_setopt_ptr(share, option, value);
     break;
+  }
   default:
     result = CURLSHE_BAD_OPTION;
     break;

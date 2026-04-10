@@ -10,7 +10,10 @@ use crate::{alloc, easy, transfer};
 use core::ffi::{c_char, c_int, c_long, c_uint, c_void};
 use core::{mem, ptr};
 use std::collections::{HashMap, VecDeque};
+use std::io::Write;
 use std::mem::size_of;
+use std::os::fd::AsRawFd;
+use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -31,6 +34,7 @@ pub(crate) const CURLMSG_DONE: CURLMSG = 1;
 
 const MULTI_MAGIC: usize = 0x4352_4d52;
 const CURL_SOCKET_BAD: curl_socket_t = -1;
+const CURL_POLL_IN: c_int = 1;
 const CURL_POLL_INOUT: c_int = 3;
 const CURL_POLL_REMOVE: c_int = 4;
 const CURLM_CALL_MULTI_PERFORM: CURLMcode = -1;
@@ -122,6 +126,7 @@ struct TransferRecord {
     state: state::MultiState,
     plan: transfer::TransferPlan,
     connection_id: usize,
+    poll_reader: Option<UnixStream>,
     worker: Option<std::thread::JoinHandle<()>>,
     started: bool,
     completed: bool,
@@ -282,6 +287,7 @@ pub(crate) unsafe fn add_handle(multi: *mut CURLM, easy_handle: *mut CURL) -> CU
                 state: state::MultiState::Pending,
                 plan,
                 connection_id,
+                poll_reader: None,
                 worker: None,
                 started: false,
                 completed: false,
@@ -732,13 +738,20 @@ fn start_pending_transfers(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> CURL
         for next_state in states {
             easy::perform::on_transfer_progress(easy_handle, next_state);
         }
-        let socket_rc = invoke_socket_callback(wrapper, multi_ptr, easy_handle, CURL_POLL_INOUT);
+        let Ok((poll_reader, mut poll_writer)) = UnixStream::pair() else {
+            return CURLM_INTERNAL_ERROR;
+        };
+        let socket_fd = poll_reader.as_raw_fd() as curl_socket_t;
+        let socket_rc =
+            invoke_socket_callback(wrapper, multi_ptr, easy_handle, socket_fd, CURL_POLL_IN);
         if socket_rc != crate::abi::CURLM_OK {
             return socket_rc;
         }
         let events = Arc::clone(&wrapper.events);
         let easy_key = easy_handle as usize;
         let join = transfer::spawn_transfer(easy_key, plan, move |result| {
+            let _ = poll_writer.write_all(&[1]);
+            let _ = poll_writer.flush();
             events.push(TransferEvent::Completed { easy_key, result });
         });
         if let Some(record) = wrapper
@@ -748,6 +761,7 @@ fn start_pending_transfers(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> CURL
             .records
             .get_mut(&(easy_handle as usize))
         {
+            record.poll_reader = Some(poll_reader);
             record.worker = Some(join);
         }
     }
@@ -836,7 +850,7 @@ fn drain_events(wrapper: &MultiHandle) -> c_int {
 fn process_event(wrapper: &MultiHandle, event: TransferEvent) -> c_int {
     match event {
         TransferEvent::Completed { easy_key, result } => {
-            let (easy_handle, join, multi_ptr) = {
+            let (easy_handle, join, multi_ptr, socket_fd, connection_id, host) = {
                 let mut guard = wrapper.inner.lock().expect("multi mutex poisoned");
                 let Some(record) = guard.records.get_mut(&easy_key) else {
                     return 0;
@@ -849,21 +863,44 @@ fn process_event(wrapper: &MultiHandle, event: TransferEvent) -> c_int {
                 record.state = state::MultiState::Completed;
                 let easy_handle = record.easy;
                 let join = record.worker.take();
+                let socket_fd = record
+                    .poll_reader
+                    .as_ref()
+                    .map(|reader| reader.as_raw_fd() as curl_socket_t)
+                    .unwrap_or(CURL_SOCKET_BAD);
+                let _ = record.poll_reader.take();
+                let connection_id = record.connection_id;
+                let host = record.plan.cache_key.host.clone();
                 let multi_ptr = wrapper as *const MultiHandle as *mut CURLM;
                 let _ = record;
                 guard.messages.push_back(QueuedMessage {
                     easy_handle,
                     result,
                 });
-                (easy_handle, join, multi_ptr)
+                (easy_handle, join, multi_ptr, socket_fd, connection_id, host)
             };
 
             if let Some(join) = join {
                 let _ = join.join();
             }
+            if result == crate::abi::CURLE_OK
+                && easy::perform::snapshot_metadata(easy_handle).verbose
+            {
+                eprintln!(
+                    "* Connection #{} to host {} left intact",
+                    connection_id.saturating_sub(1),
+                    host
+                );
+            }
             easy::perform::on_transfer_progress(easy_handle, state::MultiState::Done);
             easy::perform::on_transfer_progress(easy_handle, state::MultiState::Completed);
-            let _ = invoke_socket_callback(wrapper, multi_ptr, easy_handle, CURL_POLL_REMOVE);
+            let _ = invoke_socket_callback(
+                wrapper,
+                multi_ptr,
+                easy_handle,
+                socket_fd,
+                CURL_POLL_REMOVE,
+            );
             let _ = update_timer(wrapper, multi_ptr);
             1
         }
@@ -926,13 +963,14 @@ fn invoke_socket_callback(
     wrapper: &MultiHandle,
     multi_ptr: *mut CURLM,
     easy_handle: *mut CURL,
+    socket: curl_socket_t,
     what: c_int,
 ) -> CURLMcode {
     let (callback, userp, socketp) = {
         let guard = wrapper.inner.lock().expect("multi mutex poisoned");
         let socketp = guard
             .assignments
-            .get(&CURL_SOCKET_BAD)
+            .get(&socket)
             .copied()
             .unwrap_or(ptr::null_mut());
         (
@@ -953,7 +991,7 @@ fn invoke_socket_callback(
         }
         guard.callbacks.in_callback = true;
     }
-    let rc = unsafe { callback(easy_handle, CURL_SOCKET_BAD, what, userp, socketp) };
+    let rc = unsafe { callback(easy_handle, socket, what, userp, socketp) };
     {
         let mut guard = wrapper.inner.lock().expect("multi mutex poisoned");
         guard.callbacks.in_callback = false;

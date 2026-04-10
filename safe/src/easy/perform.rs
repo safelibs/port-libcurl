@@ -1,5 +1,5 @@
 use crate::abi::{
-    curl_off_t, curl_socket_t, CURLcode, CURLoption, CURL, CURLE_BAD_FUNCTION_ARGUMENT,
+    curl_off_t, curl_slist, curl_socket_t, CURLcode, CURLoption, CURL, CURLE_BAD_FUNCTION_ARGUMENT,
     CURLE_FAILED_INIT, CURLINFO, CURLM,
 };
 use crate::dns::{self, ConnectOverride, ResolveOverride};
@@ -14,6 +14,8 @@ pub(crate) type CurlWriteCallback =
     Option<unsafe extern "C" fn(*mut c_char, usize, usize, *mut c_void) -> usize>;
 pub(crate) type CurlReadCallback =
     Option<unsafe extern "C" fn(*mut c_char, usize, usize, *mut c_void) -> usize>;
+pub(crate) type CurlTrailerCallback =
+    Option<unsafe extern "C" fn(*mut *mut curl_slist, *mut c_void) -> c_int>;
 pub(crate) type CurlXferInfoCallback = Option<
     unsafe extern "C" fn(*mut c_void, curl_off_t, curl_off_t, curl_off_t, curl_off_t) -> c_int,
 >;
@@ -27,6 +29,7 @@ const CURLOPT_RANGE: CURLoption = 10007;
 const CURLOPT_ERRORBUFFER: CURLoption = 10010;
 const CURLOPT_WRITEFUNCTION: CURLoption = 20011;
 const CURLOPT_READFUNCTION: CURLoption = 20012;
+const CURLOPT_HTTPHEADER: CURLoption = 10023;
 const CURLOPT_CUSTOMREQUEST: CURLoption = 10036;
 const CURLOPT_INFILESIZE: CURLoption = 14;
 const CURLOPT_LOW_SPEED_LIMIT: CURLoption = 19;
@@ -62,6 +65,8 @@ const CURLOPT_XOAUTH2_BEARER: CURLoption = 10220;
 const CURLOPT_PINNEDPUBLICKEY: CURLoption = 10230;
 const CURLOPT_CONNECT_TO: CURLoption = 10243;
 const CURLOPT_PRE_PROXY: CURLoption = 10262;
+const CURLOPT_TRAILERFUNCTION: CURLoption = 20283;
+const CURLOPT_TRAILERDATA: CURLoption = 10284;
 
 const CURLINFO_RESPONSE_CODE: u32 = 0x200000 + 2;
 const CURLINFO_SCHEME: u32 = 0x100000 + 49;
@@ -72,6 +77,7 @@ const CURL_ERROR_SIZE: usize = 256;
 pub(crate) struct EasyMetadata {
     pub url: Option<String>,
     pub custom_request: Option<String>,
+    pub http_headers: Vec<String>,
     pub range: Option<String>,
     pub resolve_overrides: Vec<ResolveOverride>,
     pub connect_overrides: Vec<ConnectOverride>,
@@ -137,6 +143,7 @@ impl Default for EasyMetadata {
         Self {
             url: None,
             custom_request: None,
+            http_headers: Vec::new(),
             range: None,
             resolve_overrides: Vec::new(),
             connect_overrides: Vec::new(),
@@ -175,6 +182,8 @@ impl Default for EasyMetadata {
 pub(crate) struct EasyCallbacks {
     pub read_function: CurlReadCallback,
     pub read_data: usize,
+    pub trailer_function: CurlTrailerCallback,
+    pub trailer_data: usize,
     pub write_function: CurlWriteCallback,
     pub write_data: usize,
     pub header_function: CurlWriteCallback,
@@ -334,9 +343,11 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
         CURLOPT_PROXY => shadow.metadata.proxy = copy_c_string(value.cast()),
         CURLOPT_USERPWD => shadow.metadata.userpwd = copy_c_string(value.cast()),
         CURLOPT_RANGE => shadow.metadata.range = copy_c_string(value.cast()),
+        CURLOPT_HTTPHEADER => shadow.metadata.http_headers = collect_slist_strings(value.cast()),
         CURLOPT_ERRORBUFFER => shadow.callbacks.error_buffer = value as usize,
         CURLOPT_HEADERDATA => shadow.callbacks.header_data = value as usize,
         CURLOPT_CUSTOMREQUEST => shadow.metadata.custom_request = copy_c_string(value.cast()),
+        CURLOPT_TRAILERDATA => shadow.callbacks.trailer_data = value as usize,
         CURLOPT_XFERINFODATA => shadow.callbacks.xferinfo_data = value as usize,
         CURLOPT_SHARE => {
             shadow.metadata.share_handle = (!value.is_null()).then_some(value as usize)
@@ -372,6 +383,9 @@ pub(crate) fn observe_easy_setopt_function(
     match option {
         CURLOPT_READFUNCTION => {
             shadow.callbacks.read_function = unsafe { core::mem::transmute(value) }
+        }
+        CURLOPT_TRAILERFUNCTION => {
+            shadow.callbacks.trailer_function = unsafe { core::mem::transmute(value) }
         }
         CURLOPT_WRITEFUNCTION => {
             shadow.callbacks.write_function = unsafe { core::mem::transmute(value) }
@@ -764,6 +778,22 @@ fn copy_c_string(value: *const c_char) -> Option<String> {
                 .into_owned(),
         )
     }
+}
+
+fn collect_slist_strings(mut list: *mut curl_slist) -> Vec<String> {
+    let mut values = Vec::new();
+    while !list.is_null() {
+        let data = unsafe { (*list).data };
+        if !data.is_null() {
+            values.push(
+                unsafe { CStr::from_ptr(data) }
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        }
+        list = unsafe { (*list).next };
+    }
+    values
 }
 
 fn push_auth_part(parts: &mut Vec<String>, label: &str, value: Option<&str>) {

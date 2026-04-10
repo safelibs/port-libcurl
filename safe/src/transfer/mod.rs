@@ -1,5 +1,6 @@
 use crate::abi::{
-    curl_off_t, curl_socket_t, CURLMcode, CURLcode, CURL, CURLE_BAD_FUNCTION_ARGUMENT, CURLINFO,
+    curl_off_t, curl_slist, curl_socket_t, CURLMcode, CURLcode, CURL, CURLE_BAD_FUNCTION_ARGUMENT,
+    CURLINFO,
 };
 use crate::conn::cache::{parse_proxy_authority, parse_url_authority, ConnectionCacheKey};
 use crate::conn::filter::{ConnectionFilterChain, ConnectionFilterStep};
@@ -93,6 +94,8 @@ struct RequestContext {
     proxy: Option<(String, u16)>,
     request_target: String,
     method: String,
+    request_headers: Vec<String>,
+    use_chunked_upload: bool,
     range_header: Option<String>,
     body_length: Option<usize>,
 }
@@ -437,6 +440,7 @@ fn perform_transfer(handle_key: usize, plan: TransferPlan) -> CURLcode {
     };
 
     let mut current_url = initial_url;
+    crate::share::touch_connect_callbacks(handle, metadata.share_handle, 6);
     let redirect_limit = if metadata.follow_location {
         REDIRECT_LIMIT
     } else {
@@ -517,7 +521,7 @@ fn execute_http_transfer(
         .map_err(|_| CURLE_COULDNT_CONNECT)?;
     write_request(&mut stream, request)?;
     if metadata.upload {
-        write_request_body(&mut stream, handle, callbacks, request.body_length)?;
+        write_request_body(&mut stream, handle, callbacks, request)?;
     }
 
     let response = read_response_meta(&mut stream, handle, callbacks, metadata)?;
@@ -643,10 +647,19 @@ fn write_request(stream: &mut TcpStream, request: &RequestContext) -> Result<(),
     encoded.push_str(&request.host_header);
     encoded.push_str("\r\n");
     encoded.push_str("Accept: */*\r\n");
-    if let Some(body_length) = request.body_length {
+    if request.use_chunked_upload {
+        encoded.push_str("Transfer-Encoding: chunked\r\n");
+    } else if let Some(body_length) = request.body_length {
         encoded.push_str("Content-Length: ");
         encoded.push_str(&body_length.to_string());
         encoded.push_str("\r\n");
+    }
+    for header in &request.request_headers {
+        encoded.push_str(header);
+        encoded.push_str("\r\n");
+    }
+    if request.use_chunked_upload && !has_header(&request.request_headers, "Expect") {
+        encoded.push_str("Expect: 100-continue\r\n");
     }
     if let Some(range) = request.range_header.as_ref() {
         encoded.push_str("Range: ");
@@ -664,9 +677,13 @@ fn write_request_body(
     stream: &mut TcpStream,
     handle: *mut CURL,
     callbacks: EasyCallbacks,
-    body_length: Option<usize>,
+    request: &RequestContext,
 ) -> Result<(), CURLcode> {
-    let mut remaining = body_length.unwrap_or(0);
+    if request.use_chunked_upload {
+        return write_chunked_request_body(stream, handle, callbacks);
+    }
+
+    let mut remaining = request.body_length.unwrap_or(0);
     let mut buf = vec![0u8; 16 * 1024];
     while remaining > 0 {
         let chunk_len = remaining.min(buf.len());
@@ -681,6 +698,57 @@ fn write_request_body(
         remaining -= read;
     }
     stream.flush().map_err(|_| CURLE_SEND_ERROR)
+}
+
+fn write_chunked_request_body(
+    stream: &mut TcpStream,
+    handle: *mut CURL,
+    callbacks: EasyCallbacks,
+) -> Result<(), CURLcode> {
+    let mut buf = vec![0u8; 16 * 1024];
+    loop {
+        let read = read_request_body_chunk(handle, callbacks, &mut buf)?;
+        if read == 0 {
+            break;
+        }
+        let chunk_header = format!("{read:x}\r\n");
+        stream
+            .write_all(chunk_header.as_bytes())
+            .map_err(|_| CURLE_SEND_ERROR)?;
+        stream
+            .write_all(&buf[..read])
+            .map_err(|_| CURLE_SEND_ERROR)?;
+        stream.write_all(b"\r\n").map_err(|_| CURLE_SEND_ERROR)?;
+    }
+    stream.write_all(b"0\r\n").map_err(|_| CURLE_SEND_ERROR)?;
+    write_request_trailers(stream, callbacks)?;
+    stream.write_all(b"\r\n").map_err(|_| CURLE_SEND_ERROR)?;
+    stream.flush().map_err(|_| CURLE_SEND_ERROR)
+}
+
+fn write_request_trailers(
+    stream: &mut TcpStream,
+    callbacks: EasyCallbacks,
+) -> Result<(), CURLcode> {
+    let Some(callback) = callbacks.trailer_function else {
+        return Ok(());
+    };
+
+    let mut list: *mut curl_slist = core::ptr::null_mut();
+    let rc = unsafe { callback(&mut list, callbacks.trailer_data as *mut c_void) };
+    let trailers = collect_slist_strings(list);
+    unsafe { crate::slist::curl_slist_free_all(list) };
+    if rc != 0 {
+        return Err(CURLE_ABORTED_BY_CALLBACK);
+    }
+
+    for trailer in trailers {
+        stream
+            .write_all(trailer.as_bytes())
+            .map_err(|_| CURLE_SEND_ERROR)?;
+        stream.write_all(b"\r\n").map_err(|_| CURLE_SEND_ERROR)?;
+    }
+    Ok(())
 }
 
 fn read_response_meta(
@@ -701,7 +769,8 @@ fn read_response_meta(
 
         let mut buf = [0u8; 1024];
         match stream.read(&mut buf) {
-            Ok(0) => return Err(CURLE_READ_ERROR),
+            Ok(0) if bytes.is_empty() => return Err(CURLE_READ_ERROR),
+            Ok(0) => break bytes.len(),
             Ok(read) => bytes.extend_from_slice(&buf[..read]),
             Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
             Err(_) => return Err(CURLE_READ_ERROR),
@@ -949,10 +1018,19 @@ impl RequestContext {
                 parsed.path_and_query
             },
             method: effective_method(metadata),
+            request_headers: metadata.http_headers.clone(),
+            use_chunked_upload: metadata.upload && metadata.upload_size.is_none(),
             range_header: effective_range_header(metadata),
             body_length: metadata
                 .upload
-                .then(|| metadata.upload_size.unwrap_or(0).max(0) as usize),
+                .then(|| {
+                    if metadata.upload_size.is_none() {
+                        0
+                    } else {
+                        metadata.upload_size.unwrap_or(0).max(0) as usize
+                    }
+                })
+                .filter(|_| !metadata.upload_size.is_none()),
         })
     }
 }
@@ -1090,6 +1168,30 @@ fn parse_retry_after(value: &str) -> Option<curl_off_t> {
     let timestamp = parse_http_date(value)?;
     let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs() as i64;
     Some((timestamp - now) as curl_off_t)
+}
+
+fn has_header(headers: &[String], name: &str) -> bool {
+    headers.iter().any(|header| {
+        header
+            .split_once(':')
+            .is_some_and(|(candidate, _)| candidate.trim().eq_ignore_ascii_case(name))
+    })
+}
+
+fn collect_slist_strings(mut list: *mut curl_slist) -> Vec<String> {
+    let mut values = Vec::new();
+    while !list.is_null() {
+        let data = unsafe { (*list).data };
+        if !data.is_null() {
+            values.push(
+                unsafe { std::ffi::CStr::from_ptr(data) }
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        }
+        list = unsafe { (*list).next };
+    }
+    values
 }
 
 fn parse_http_date(value: &str) -> Option<i64> {
