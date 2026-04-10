@@ -443,6 +443,16 @@ def sync_worktree(flavor: FlavorConfig) -> None:
     shutil.copy2(reference_curl_config, flavor.worktree_dir / "curl-config")
     os.chmod(flavor.worktree_dir / "curl-config", 0o755)
 
+    curl_config_path = flavor.worktree_dir / "lib" / "curl_config.h"
+    curl_config_text = curl_config_path.read_text(encoding="utf-8")
+    if "/* #undef USE_WEBSOCKETS */" in curl_config_text:
+        curl_config_text = curl_config_text.replace(
+            "/* #undef USE_WEBSOCKETS */",
+            "#define USE_WEBSOCKETS 1",
+            1,
+        )
+        curl_config_path.write_text(curl_config_text, encoding="utf-8")
+
     generated_lib1521 = flavor.worktree_dir / "tests" / "libtest" / "lib1521.c"
     curl_header = flavor.worktree_dir / "include" / "curl" / "curl.h"
     completed = subprocess.run(

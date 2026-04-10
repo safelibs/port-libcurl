@@ -1,0 +1,5 @@
+{
+  "id": "websocket_mask_entropy",
+  "kind": "runtime",
+  "title": "Each outgoing WebSocket frame receives a fresh OS-backed mask"
+}

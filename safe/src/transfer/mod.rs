@@ -1,11 +1,16 @@
 use crate::abi::{
-    curl_off_t, curl_slist, curl_socket_t, CURLMcode, CURLcode, CURL, CURLE_BAD_FUNCTION_ARGUMENT,
-    CURLINFO,
+    curl_hstsentry, curl_index, curl_off_t, curl_slist, curl_socket_t, CURLMcode, CURLSTScode,
+    CURLcode, CURL, CURLE_BAD_FUNCTION_ARGUMENT, CURLINFO,
 };
 use crate::conn::cache::{parse_proxy_authority, parse_url_authority, ConnectionCacheKey};
 use crate::conn::filter::{ConnectionFilterChain, ConnectionFilterStep};
 use crate::dns::{ConnectOverride, ResolveOverride, ResolverLease, ResolverOwner};
 use crate::easy::perform::{self, EasyCallbacks, EasyMetadata, RecordedTransferInfo};
+use crate::http::auth;
+use crate::http::cookies;
+use crate::http::hsts;
+use crate::http::request::{self, Origin};
+use crate::http::response::{self, HEADER_ORIGIN_1XX, HEADER_ORIGIN_HEADER};
 use core::ffi::{c_int, c_long, c_void};
 use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
@@ -32,6 +37,10 @@ const CURLE_ABORTED_BY_CALLBACK: CURLcode = 42;
 const CURLE_SEND_ERROR: CURLcode = 55;
 const CURLE_RECV_ERROR: CURLcode = 56;
 const CURLE_AGAIN: CURLcode = 81;
+const CURLSTS_OK: CURLSTScode = 0;
+const CURLSTS_DONE: CURLSTScode = 1;
+const CURLSTS_FAIL: CURLSTScode = 2;
+const CURLHEADER_SEPARATE: c_long = 1 << 0;
 
 const CURLPAUSE_RECV: c_int = 1 << 0;
 const CURLPAUSE_SEND: c_int = 1 << 2;
@@ -73,9 +82,10 @@ pub(crate) struct TransferPlan {
     pub reference_backend: bool,
 }
 
-struct ConnectOnlySession {
-    stream: TcpStream,
-    paused: c_int,
+pub(crate) struct ConnectOnlySession {
+    pub(crate) stream: TcpStream,
+    pub(crate) paused: c_int,
+    pub(crate) websocket: Option<crate::ws::WebSocketSession>,
 }
 
 struct ConnectedStream {
@@ -101,6 +111,9 @@ struct RequestContext {
     request_target: String,
     method: String,
     request_headers: Vec<String>,
+    proxy_headers: Vec<String>,
+    tunnel_proxy: bool,
+    websocket_style: bool,
     use_chunked_upload: bool,
     range_header: Option<String>,
     body_length: Option<usize>,
@@ -112,6 +125,7 @@ struct ResponseMeta {
     has_content_range: bool,
     retry_after: Option<curl_off_t>,
     location: Option<String>,
+    headers: Vec<(String, String)>,
     body_prefix: Vec<u8>,
 }
 
@@ -176,6 +190,20 @@ impl LowSpeedGuard {
 fn connect_only_registry() -> &'static Mutex<HashMap<usize, ConnectOnlySession>> {
     static REGISTRY: OnceLock<Mutex<HashMap<usize, ConnectOnlySession>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub(crate) fn with_connect_only_session_mut<R>(
+    handle: *mut CURL,
+    f: impl FnOnce(&mut ConnectOnlySession) -> R,
+) -> Option<R> {
+    if handle.is_null() {
+        return None;
+    }
+    let mut guard = connect_only_registry()
+        .lock()
+        .expect("connect-only registry mutex poisoned");
+    let session = guard.get_mut(&(handle as usize))?;
+    Some(f(session))
 }
 
 pub(crate) const fn map_multi_code(code: CURLMcode) -> CURLcode {
@@ -447,29 +475,57 @@ fn perform_transfer(handle_key: usize, plan: TransferPlan) -> CURLcode {
         return CURLE_URL_MALFORMAT;
     };
 
+    let _ = perform::with_http_state_mut(handle, |state| state.clear_transient());
+    if let Err(code) = preload_hsts(handle, &metadata, callbacks, metadata.hsts_ctrl != 0) {
+        return code;
+    }
     let mut current_url = initial_url;
+    let initial_origin = Origin::from_url(&current_url);
+    let mut referer_value = metadata.referer.clone();
+    let mut allow_cross_origin_auth = false;
     crate::share::touch_connect_callbacks(handle, metadata.share_handle, 6);
     let redirect_limit = if metadata.follow_location {
-        REDIRECT_LIMIT
+        metadata
+            .max_redirs
+            .unwrap_or(REDIRECT_LIMIT as c_long)
+            .max(0) as usize
     } else {
         0
     };
 
     for redirect_count in 0..=redirect_limit {
-        let request = match RequestContext::new(&current_url, &metadata) {
+        let mut request = match RequestContext::new(&current_url, &metadata) {
             Ok(request) => request,
             Err(code) => return code,
         };
+        prepare_request_headers(
+            handle,
+            &metadata,
+            &current_url,
+            initial_origin.as_ref(),
+            allow_cross_origin_auth,
+            referer_value.as_deref(),
+            &mut request,
+        );
 
         let outcome = if plan.connect_only {
             connect_only_transfer(handle, &request)
         } else {
-            execute_http_transfer(handle, &request, &plan, &metadata, callbacks)
+            execute_http_transfer(
+                handle,
+                &request,
+                &plan,
+                &metadata,
+                callbacks,
+                redirect_count,
+            )
         };
 
         let outcome = match outcome {
             Ok(outcome) => outcome,
-            Err(code) => return code,
+            Err(code) => {
+                return finalize_hsts(handle, &metadata, callbacks, metadata.hsts_ctrl != 0, code)
+            }
         };
 
         let mut recorded_info = outcome.info.clone();
@@ -477,29 +533,147 @@ fn perform_transfer(handle_key: usize, plan: TransferPlan) -> CURLcode {
         recorded_info.retry_after = outcome.retry_after;
         perform::record_transfer_info(handle, recorded_info);
 
-        if let Some(next_url) = redirected_url(
+        let decision = request::decide_redirect(
             &current_url,
-            metadata.follow_location,
-            redirect_count,
             outcome.response_code,
             outcome.location.as_deref(),
-        ) {
-            current_url = next_url;
+            redirect_count,
+            request::RedirectPolicy {
+                enabled: metadata.follow_location,
+                max_redirs: redirect_limit,
+                unrestricted_auth: metadata.unrestricted_auth,
+                auto_referer: metadata.auto_referer,
+            },
+            initial_origin.as_ref(),
+        );
+        if let Some(decision) = decision {
+            current_url = decision.next_url;
+            allow_cross_origin_auth = decision.allow_cross_origin_auth;
+            if let Some(referer) = decision.referer {
+                referer_value = Some(referer);
+            }
             continue;
         }
 
-        return outcome.result;
+        return finalize_hsts(handle, &metadata, callbacks, metadata.hsts_ctrl != 0, outcome.result);
     }
 
     perform::set_error_buffer(handle, "Maximum redirects followed");
-    CURLE_BAD_FUNCTION_ARGUMENT
+    finalize_hsts(
+        handle,
+        &metadata,
+        callbacks,
+        metadata.hsts_ctrl != 0,
+        CURLE_BAD_FUNCTION_ARGUMENT,
+    )
+}
+
+fn preload_hsts(
+    handle: *mut CURL,
+    metadata: &EasyMetadata,
+    callbacks: EasyCallbacks,
+    enabled: bool,
+) -> Result<(), CURLcode> {
+    if !enabled {
+        return Ok(());
+    }
+    let Some(callback) = callbacks.hsts_read_function else {
+        return Ok(());
+    };
+
+    loop {
+        let mut name = [0i8; 256];
+        let mut entry = curl_hstsentry {
+            name: name.as_mut_ptr(),
+            namelen: name.len(),
+            includeSubDomains: 0,
+            expire: [0; 18],
+        };
+        let rc = unsafe { callback(handle, &mut entry, callbacks.hsts_read_data as *mut c_void) };
+        match rc {
+            CURLSTS_OK => {
+                let host = unsafe { std::ffi::CStr::from_ptr(entry.name) }
+                    .to_string_lossy()
+                    .into_owned();
+                let expire = hsts_expire_from_abi(&entry);
+                let _ = with_hsts_store_mut(handle, metadata, |store| {
+                    store.remember_callback_entry(
+                        &host,
+                        entry.includeSubDomains != 0,
+                        expire.as_deref().unwrap_or_default(),
+                    );
+                });
+            }
+            CURLSTS_DONE => return Ok(()),
+            CURLSTS_FAIL => return Err(CURLE_ABORTED_BY_CALLBACK),
+            _ => return Err(CURLE_ABORTED_BY_CALLBACK),
+        }
+    }
+}
+
+fn finalize_hsts(
+    handle: *mut CURL,
+    metadata: &EasyMetadata,
+    callbacks: EasyCallbacks,
+    enabled: bool,
+    result: CURLcode,
+) -> CURLcode {
+    if !enabled {
+        return result;
+    }
+    let Some(callback) = callbacks.hsts_write_function else {
+        return result;
+    };
+
+    let Some(entries) = with_hsts_store_mut(handle, metadata, |store| store.entries().to_vec()) else {
+        return result;
+    };
+    let total = entries.len();
+    for (index, stored) in entries.iter().enumerate() {
+        let name = std::ffi::CString::new(stored.host.clone())
+            .expect("stored HSTS host contains no interior NUL");
+        let mut entry = curl_hstsentry {
+            name: name.as_ptr().cast_mut(),
+            namelen: stored.host.len() + 1,
+            includeSubDomains: stored.include_subdomains as u8,
+            expire: [0; 18],
+        };
+        fill_hsts_expire(&mut entry, stored.expire_text.as_deref());
+        let mut position = curl_index { index, total };
+        let rc = unsafe {
+            callback(
+                handle,
+                &mut entry,
+                &mut position,
+                callbacks.hsts_write_data as *mut c_void,
+            )
+        };
+        if rc == CURLSTS_FAIL {
+            return CURLE_ABORTED_BY_CALLBACK;
+        }
+    }
+    result
 }
 
 fn connect_only_transfer(
     handle: *mut CURL,
     request: &RequestContext,
 ) -> Result<TransferOutcome, CURLcode> {
-    let ConnectedStream { stream, mut info } = connect_stream(request, &[])?;
+    let ConnectedStream {
+        mut stream,
+        mut info,
+    } = connect_stream(request, &[])?;
+    let websocket = if request.websocket_style {
+        Some(crate::ws::WebSocketSession::handshake(
+            &mut stream,
+            &request.host_header,
+            &request.request_target,
+            &request.request_headers,
+            crate::ws::raw_mode_enabled(perform::snapshot_metadata(handle).ws_options),
+        )?)
+    } else {
+        None
+    };
     stream
         .set_nonblocking(true)
         .map_err(|_| CURLE_COULDNT_CONNECT)?;
@@ -509,7 +683,14 @@ fn connect_only_transfer(
     connect_only_registry()
         .lock()
         .expect("connect-only registry mutex poisoned")
-        .insert(handle as usize, ConnectOnlySession { stream, paused: 0 });
+        .insert(
+            handle as usize,
+            ConnectOnlySession {
+                stream,
+                paused: 0,
+                websocket,
+            },
+        );
 
     Ok(TransferOutcome {
         result: crate::abi::CURLE_OK,
@@ -526,6 +707,7 @@ fn execute_http_transfer(
     plan: &TransferPlan,
     metadata: &EasyMetadata,
     callbacks: EasyCallbacks,
+    request_index: usize,
 ) -> Result<TransferOutcome, CURLcode> {
     let request_started = Instant::now();
     let ConnectedStream {
@@ -538,12 +720,26 @@ fn execute_http_transfer(
     stream
         .set_write_timeout(Some(CONNECT_TIMEOUT))
         .map_err(|_| CURLE_COULDNT_CONNECT)?;
+    let response_prefix = if request.tunnel_proxy {
+        establish_proxy_tunnel(&mut stream, handle, callbacks, metadata, request)?
+    } else {
+        Vec::new()
+    };
     write_request(&mut stream, request)?;
     if metadata.upload {
         write_request_body(&mut stream, handle, callbacks, request)?;
     }
 
-    let response = read_response_meta(&mut stream, handle, callbacks, metadata)?;
+    let response = read_response_meta_with_prefix(
+        &mut stream,
+        handle,
+        callbacks,
+        metadata,
+        request,
+        request_index,
+        response_prefix,
+    )?;
+    flush_cookie_jar(handle, metadata);
     info.pretransfer_time_us = info.connect_time_us;
     info.starttransfer_time_us = elapsed_us(request_started.elapsed());
     let mut outcome = TransferOutcome {
@@ -592,6 +788,13 @@ fn execute_http_transfer(
     )?;
     outcome.info.total_time_us = elapsed_us(request_started.elapsed());
     Ok(outcome)
+}
+
+fn flush_cookie_jar(handle: *mut CURL, metadata: &EasyMetadata) {
+    let Some(path) = metadata.cookie_jar.as_deref() else {
+        return;
+    };
+    let _ = with_cookie_store_mut(handle, metadata, |store| store.flush_to_path(path));
 }
 
 fn transfer_body(
@@ -669,6 +872,45 @@ fn connect_stream(
     Err(CURLE_COULDNT_CONNECT)
 }
 
+fn establish_proxy_tunnel(
+    stream: &mut TcpStream,
+    handle: *mut CURL,
+    callbacks: EasyCallbacks,
+    metadata: &EasyMetadata,
+    request: &RequestContext,
+) -> Result<Vec<u8>, CURLcode> {
+    write_proxy_connect_request(stream, request)?;
+    let (status_code, body_prefix) = read_proxy_connect_response(stream, handle, callbacks, metadata)?;
+    if (200..300).contains(&status_code) {
+        Ok(body_prefix)
+    } else {
+        perform::set_error_buffer(handle, "HTTP proxy CONNECT failed");
+        Err(CURLE_COULDNT_CONNECT)
+    }
+}
+
+fn write_proxy_connect_request(
+    stream: &mut TcpStream,
+    request: &RequestContext,
+) -> Result<(), CURLcode> {
+    let mut encoded = String::new();
+    encoded.push_str("CONNECT ");
+    encoded.push_str(&request.host_header);
+    encoded.push_str(" HTTP/1.1\r\n");
+    encoded.push_str("Host: ");
+    encoded.push_str(&request.host_header);
+    encoded.push_str("\r\n");
+    if !has_header(&request.proxy_headers, "Proxy-Connection") {
+        encoded.push_str("Proxy-Connection: Keep-Alive\r\n");
+    }
+    append_headers(&mut encoded, &request.proxy_headers);
+    encoded.push_str("\r\n");
+
+    stream
+        .write_all(encoded.as_bytes())
+        .map_err(|_| CURLE_SEND_ERROR)
+}
+
 fn write_request(stream: &mut TcpStream, request: &RequestContext) -> Result<(), CURLcode> {
     let mut encoded = String::new();
     encoded.push_str(&request.method);
@@ -679,15 +921,15 @@ fn write_request(stream: &mut TcpStream, request: &RequestContext) -> Result<(),
     encoded.push_str(&request.host_header);
     encoded.push_str("\r\n");
     encoded.push_str("Accept: */*\r\n");
+    if request.proxy.is_some() && !request.tunnel_proxy && !has_header(&request.request_headers, "Proxy-Connection") {
+        encoded.push_str("Proxy-Connection: Keep-Alive\r\n");
+    }
+    append_headers(&mut encoded, &request.request_headers);
     if request.use_chunked_upload {
         encoded.push_str("Transfer-Encoding: chunked\r\n");
     } else if let Some(body_length) = request.body_length {
         encoded.push_str("Content-Length: ");
         encoded.push_str(&body_length.to_string());
-        encoded.push_str("\r\n");
-    }
-    for header in &request.request_headers {
-        encoded.push_str(header);
         encoded.push_str("\r\n");
     }
     if request.use_chunked_upload && !has_header(&request.request_headers, "Expect") {
@@ -703,6 +945,18 @@ fn write_request(stream: &mut TcpStream, request: &RequestContext) -> Result<(),
     stream
         .write_all(encoded.as_bytes())
         .map_err(|_| CURLE_SEND_ERROR)
+}
+
+fn append_headers(encoded: &mut String, headers: &[String]) {
+    for header in headers {
+        if let Some((_, value)) = header.split_once(':') {
+            if value.trim().is_empty() {
+                continue;
+            }
+        }
+        encoded.push_str(header);
+        encoded.push_str("\r\n");
+    }
 }
 
 fn write_request_body(
@@ -783,17 +1037,68 @@ fn write_request_trailers(
     Ok(())
 }
 
-fn read_response_meta(
+fn read_proxy_connect_response(
     stream: &mut TcpStream,
     handle: *mut CURL,
     callbacks: EasyCallbacks,
     metadata: &EasyMetadata,
-) -> Result<ResponseMeta, CURLcode> {
+) -> Result<(u16, Vec<u8>), CURLcode> {
     let mut bytes = Vec::new();
     let started = Instant::now();
     let header_end = loop {
         if let Some(header_end) = find_header_end(&bytes) {
             break header_end;
+        }
+        if bytes.len() > response::MAX_RESPONSE_HEADERS_BYTES {
+            perform::set_error_buffer(handle, "Too large response headers");
+            return Err(CURLE_RECV_ERROR);
+        }
+        if started.elapsed() >= HEADER_WAIT_TIMEOUT {
+            return Err(CURLE_OPERATION_TIMEDOUT);
+        }
+
+        let mut buf = [0u8; 1024];
+        match stream.read(&mut buf) {
+            Ok(0) if bytes.is_empty() => return Err(CURLE_READ_ERROR),
+            Ok(0) => break bytes.len(),
+            Ok(read) => bytes.extend_from_slice(&buf[..read]),
+            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
+            Err(_) => return Err(CURLE_READ_ERROR),
+        }
+    };
+
+    let header_block = &bytes[..header_end];
+    let body_prefix = bytes[header_end..].to_vec();
+    let mut status_code = 0u16;
+    for (index, raw_line) in split_header_lines(header_block).into_iter().enumerate() {
+        deliver_header(handle, callbacks, metadata, raw_line)?;
+        let text = String::from_utf8_lossy(raw_line);
+        let trimmed = text.trim_end_matches(['\r', '\n']);
+        if index == 0 {
+            status_code = parse_status_code(trimmed).ok_or(CURLE_READ_ERROR)?;
+        }
+    }
+
+    Ok((status_code, body_prefix))
+}
+
+fn read_response_meta_with_prefix(
+    stream: &mut TcpStream,
+    handle: *mut CURL,
+    callbacks: EasyCallbacks,
+    metadata: &EasyMetadata,
+    request: &RequestContext,
+    request_index: usize,
+    mut bytes: Vec<u8>,
+) -> Result<ResponseMeta, CURLcode> {
+    let started = Instant::now();
+    let header_end = loop {
+        if let Some(header_end) = find_header_end(&bytes) {
+            break header_end;
+        }
+        if bytes.len() > response::MAX_RESPONSE_HEADERS_BYTES {
+            perform::set_error_buffer(handle, "Too large response headers");
+            return Err(CURLE_RECV_ERROR);
         }
         if started.elapsed() >= HEADER_WAIT_TIMEOUT {
             return Err(CURLE_OPERATION_TIMEDOUT);
@@ -816,6 +1121,11 @@ fn read_response_meta(
     let mut has_content_range = false;
     let mut retry_after = None;
     let mut location = None;
+    let mut headers = Vec::new();
+    let mut origin_flag = HEADER_ORIGIN_HEADER;
+    let _ = perform::with_http_state_mut(handle, |state| {
+        state.headers.set_latest_request(request_index)
+    });
 
     for (index, raw_line) in split_header_lines(header_block).into_iter().enumerate() {
         deliver_header(handle, callbacks, metadata, raw_line)?;
@@ -823,6 +1133,9 @@ fn read_response_meta(
         let trimmed = text.trim_end_matches(['\r', '\n']);
         if index == 0 {
             status_code = parse_status_code(trimmed).ok_or(CURLE_READ_ERROR)?;
+            if status_code < 200 {
+                origin_flag = HEADER_ORIGIN_1XX;
+            }
             continue;
         }
         if trimmed.is_empty() {
@@ -833,6 +1146,17 @@ fn read_response_meta(
         };
         let lower = name.trim().to_ascii_lowercase();
         let value = value.trim();
+        headers.push((name.trim().to_string(), value.to_string()));
+        let _ = perform::with_http_state_mut(handle, |state| {
+            state.headers.record(request_index, origin_flag, name.trim(), value);
+            cookies::record_from_header(&mut state.cookies, &request.url, trimmed);
+        });
+        let _ = crate::share::with_shared_cookies_mut(metadata.share_handle, |store| {
+            cookies::record_from_header(store, &request.url, trimmed);
+        });
+        let _ = with_hsts_store_mut(handle, metadata, |store| {
+            hsts::record_from_header(store, &request.target_host, trimmed);
+        });
         match lower.as_str() {
             "content-length" => content_length = value.parse::<usize>().ok(),
             "content-range" => has_content_range = true,
@@ -848,6 +1172,7 @@ fn read_response_meta(
         has_content_range,
         retry_after,
         location,
+        headers,
         body_prefix,
     })
 }
@@ -895,12 +1220,17 @@ fn deliver_write(
     buffer: &mut [u8],
 ) -> Result<(), CURLcode> {
     let wrote = if let Some(callback) = callbacks.write_function {
+        let write_data = if callbacks.write_data == 0 {
+            unsafe { stdout }
+        } else {
+            callbacks.write_data as *mut c_void
+        };
         unsafe {
             callback(
                 buffer.as_mut_ptr().cast(),
                 1,
                 buffer.len(),
-                callbacks.write_data as *mut c_void,
+                write_data,
             )
         }
     } else {
@@ -949,7 +1279,9 @@ fn requires_reference_backend(metadata: &EasyMetadata) -> bool {
         return false;
     };
 
-    authority.scheme != "http" || metadata.http_version >= 3
+    (authority.scheme != "http"
+        && !(authority.scheme == "ws" && crate::ws::websocket_mode_enabled(metadata.connect_mode)))
+        || metadata.http_version >= 3
 }
 
 fn read_request_body_chunk(
@@ -991,12 +1323,17 @@ fn deliver_header(
 ) -> Result<(), CURLcode> {
     if let Some(callback) = callbacks.header_function {
         let mut line = raw_line.to_vec();
+        let header_data = if callbacks.header_data == 0 {
+            unsafe { stdout }
+        } else {
+            callbacks.header_data as *mut c_void
+        };
         let wrote = unsafe {
             callback(
                 line.as_mut_ptr().cast(),
                 1,
                 line.len(),
-                callbacks.header_data as *mut c_void,
+                header_data,
             )
         };
         if wrote == line.len() {
@@ -1041,13 +1378,128 @@ fn invoke_progress_callback(
     }
 }
 
+fn with_cookie_store_mut<R>(
+    handle: *mut CURL,
+    metadata: &EasyMetadata,
+    f: impl FnOnce(&mut cookies::CookieStore) -> R,
+) -> Option<R> {
+    let mut f = Some(f);
+    if let Some(result) = crate::share::with_shared_cookies_mut(metadata.share_handle, |store| {
+        (f.take().expect("cookie closure already consumed"))(store)
+    }) {
+        Some(result)
+    } else {
+        perform::with_http_state_mut(handle, |state| {
+            (f.take().expect("cookie closure already consumed"))(&mut state.cookies)
+        })
+    }
+}
+
+fn with_hsts_store_mut<R>(
+    handle: *mut CURL,
+    metadata: &EasyMetadata,
+    f: impl FnOnce(&mut hsts::HstsStore) -> R,
+) -> Option<R> {
+    let mut f = Some(f);
+    if let Some(result) = crate::share::with_shared_hsts_mut(metadata.share_handle, |store| {
+        (f.take().expect("HSTS closure already consumed"))(store)
+    }) {
+        Some(result)
+    } else {
+        perform::with_http_state_mut(handle, |state| {
+            (f.take().expect("HSTS closure already consumed"))(&mut state.hsts)
+        })
+    }
+}
+
+fn prepare_request_headers(
+    handle: *mut CURL,
+    metadata: &EasyMetadata,
+    current_url: &str,
+    initial_origin: Option<&Origin>,
+    allow_cross_origin_auth: bool,
+    referer_value: Option<&str>,
+    request: &mut RequestContext,
+) {
+    if let Some(user_agent) = metadata.user_agent.as_deref() {
+        if !has_header(&request.request_headers, "User-Agent") {
+            request
+                .request_headers
+                .push(format!("User-Agent: {user_agent}"));
+        }
+    }
+
+    let auth_headers = auth::request_auth_headers(
+        metadata,
+        current_url,
+        initial_origin,
+        allow_cross_origin_auth,
+        referer_value,
+    );
+    if let Some(header) = auth_headers.authorization {
+        if !has_header(&request.request_headers, "Authorization") {
+            request.request_headers.push(header);
+        }
+    }
+    if let Some(header) = auth_headers.proxy_authorization {
+        let target_headers = if request.tunnel_proxy {
+            &mut request.proxy_headers
+        } else {
+            &mut request.request_headers
+        };
+        if !has_header(target_headers, "Proxy-Authorization") {
+            target_headers.push(header);
+        }
+    }
+    if let Some(header) = auth_headers.referer {
+        if !has_header(&request.request_headers, "Referer") {
+            request.request_headers.push(header);
+        }
+    }
+
+    for item in metadata
+        .cookie_list
+        .iter()
+        .filter(|item| item.as_str() != "SESS")
+    {
+        if let Some(value) = item.strip_prefix("Set-Cookie:") {
+            let value = value.trim();
+            let _ = perform::with_http_state_mut(handle, |state| {
+                state.cookies.store_set_cookie(current_url, value);
+            });
+            let _ = crate::share::with_shared_cookies_mut(metadata.share_handle, |store| {
+                store.store_set_cookie(current_url, value);
+            });
+        }
+    }
+    let cookie_header = crate::share::with_shared_cookies_mut(metadata.share_handle, |store| {
+        store.apply_request(current_url, metadata.cookie.as_deref())
+    })
+    .flatten()
+    .or_else(|| {
+        perform::with_http_state_mut(handle, |state| {
+            state
+                .cookies
+                .apply_request(current_url, metadata.cookie.as_deref())
+        })
+        .flatten()
+    });
+    if let Some(cookies) = cookie_header {
+        if !has_header(&request.request_headers, "Cookie") {
+            request.request_headers.push(format!("Cookie: {cookies}"));
+        }
+    }
+}
+
 impl RequestContext {
     fn new(url: &str, metadata: &EasyMetadata) -> Result<Self, CURLcode> {
         let parsed = ParsedUrl::parse(url).ok_or(CURLE_URL_MALFORMAT)?;
-        if parsed.scheme != "http" {
+        let websocket_style =
+            crate::ws::websocket_mode_enabled(metadata.connect_mode) && parsed.scheme == "ws";
+        if parsed.scheme != "http" && !websocket_style {
             return Err(CURLE_UNSUPPORTED_PROTOCOL);
         }
-        if metadata.tunnel_proxy {
+        if websocket_style && metadata.proxy.is_some() {
             return Err(CURLE_UNSUPPORTED_PROTOCOL);
         }
 
@@ -1069,33 +1521,48 @@ impl RequestContext {
             .as_deref()
             .and_then(|proxy| parse_proxy_authority(proxy, &parsed.scheme));
         let has_proxy = proxy.is_some();
+        let separate_proxy_headers = (metadata.headeropt & CURLHEADER_SEPARATE) != 0;
+        let scheme = parsed.scheme.clone();
+        let host_header = parsed.host_header.clone();
+        let path_and_query = parsed.path_and_query.clone();
 
         Ok(Self {
             url: url.to_string(),
-            scheme: parsed.scheme,
-            host_header: parsed.host_header,
+            scheme,
+            host_header: host_header.clone(),
             target_host,
             target_port,
             proxy,
-            request_target: if has_proxy {
-                url.to_string()
+            request_target: if has_proxy && !metadata.tunnel_proxy {
+                format!(
+                    "{}://{}{}",
+                    parsed.scheme, host_header, path_and_query
+                )
             } else {
                 parsed.path_and_query
             },
-            method: effective_method(metadata),
+            method: effective_method(metadata, websocket_style),
             request_headers: metadata.http_headers.clone(),
+            proxy_headers: if has_proxy {
+                if separate_proxy_headers {
+                    metadata.proxy_headers.clone()
+                } else {
+                    let mut headers = metadata.http_headers.clone();
+                    headers.extend(metadata.proxy_headers.iter().cloned());
+                    headers
+                }
+            } else {
+                Vec::new()
+            },
+            tunnel_proxy: metadata.tunnel_proxy,
+            websocket_style,
             use_chunked_upload: metadata.upload && metadata.upload_size.is_none(),
             range_header: effective_range_header(metadata),
-            body_length: metadata
-                .upload
-                .then(|| {
-                    if metadata.upload_size.is_none() {
-                        0
-                    } else {
-                        metadata.upload_size.unwrap_or(0).max(0) as usize
-                    }
-                })
-                .filter(|_| !metadata.upload_size.is_none()),
+            body_length: if websocket_style || !metadata.upload {
+                None
+            } else {
+                metadata.upload_size.map(|size| size.max(0) as usize)
+            },
         })
     }
 }
@@ -1106,12 +1573,8 @@ impl ParsedUrl {
         let (scheme, rest) = url.split_once("://")?;
         let trimmed = rest.split('#').next().unwrap_or(rest);
         let path_start = trimmed.find(['/', '?']).unwrap_or(trimmed.len());
-        let authority_text = &trimmed[..path_start];
-        let host_header = authority_text
-            .rsplit_once('@')
-            .map(|(_, host)| host)
-            .unwrap_or(authority_text)
-            .to_string();
+        let scheme_lower = scheme.to_ascii_lowercase();
+        let host_header = format_host_header(&authority.host, authority.port, &scheme_lower);
         let suffix = &trimmed[path_start..];
         let path_and_query = if suffix.is_empty() {
             "/".to_string()
@@ -1122,7 +1585,7 @@ impl ParsedUrl {
         };
 
         Some(Self {
-            scheme: scheme.to_ascii_lowercase(),
+            scheme: scheme_lower,
             host: authority.host,
             port: authority.port,
             host_header,
@@ -1131,7 +1594,52 @@ impl ParsedUrl {
     }
 }
 
-fn effective_method(metadata: &EasyMetadata) -> String {
+fn format_host_header(host: &str, port: u16, scheme: &str) -> String {
+    let host = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    };
+    let default_port = match scheme {
+        "http" | "ws" => 80,
+        "https" | "wss" => 443,
+        _ => 0,
+    };
+    if port == 0 || port == default_port {
+        host
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
+fn hsts_expire_from_abi(entry: &curl_hstsentry) -> Option<String> {
+    let end = entry
+        .expire
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(entry.expire.len());
+    let bytes = entry.expire[..end]
+        .iter()
+        .map(|byte| *byte as u8)
+        .collect::<Vec<_>>();
+    let text = String::from_utf8_lossy(&bytes).trim().to_string();
+    (!text.is_empty()).then_some(text)
+}
+
+fn fill_hsts_expire(entry: &mut curl_hstsentry, value: Option<&str>) {
+    let text = value.unwrap_or("unlimited");
+    for slot in &mut entry.expire {
+        *slot = 0;
+    }
+    for (index, byte) in text.as_bytes().iter().copied().take(entry.expire.len() - 1).enumerate() {
+        entry.expire[index] = byte as i8;
+    }
+}
+
+fn effective_method(metadata: &EasyMetadata, websocket_style: bool) -> String {
+    if websocket_style {
+        return "GET".to_string();
+    }
     if let Some(custom) = metadata.custom_request.as_ref() {
         return custom.clone();
     }

@@ -1,0 +1,5 @@
+{
+  "id": "hsts_domain_scope",
+  "kind": "documented",
+  "title": "HSTS keeps exact-host replacement and longest-tail subdomain matching"
+}

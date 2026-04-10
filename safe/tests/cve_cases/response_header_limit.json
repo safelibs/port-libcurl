@@ -1,0 +1,5 @@
+{
+  "id": "response_header_limit",
+  "kind": "runtime",
+  "title": "Oversized HTTP response headers fail fast instead of growing without bound"
+}

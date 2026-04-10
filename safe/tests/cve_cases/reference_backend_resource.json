@@ -1,0 +1,5 @@
+{
+  "id": "reference_backend_resource",
+  "kind": "documented",
+  "title": "Resource-exhaustion cases outside the native HTTP path remain reference-backed"
+}

@@ -16,6 +16,8 @@ const CURLSHE_NOT_BUILT_IN: CURLSHcode = 5;
 #[repr(C)]
 struct ShareHandle {
     state: ShareState,
+    cookies: crate::http::cookies::CookieStore,
+    hsts: crate::http::hsts::HstsStore,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -75,6 +77,8 @@ fn is_supported_shared_data(data: curl_lock_data) -> bool {
 pub(crate) unsafe fn share_init() -> *mut CURLSH {
     Box::into_raw(Box::new(ShareHandle {
         state: ShareState::default(),
+        cookies: crate::http::cookies::CookieStore::default(),
+        hsts: crate::http::hsts::HstsStore::default(),
     }))
     .cast()
 }
@@ -121,6 +125,11 @@ pub(crate) fn share_setopt_int(
                 return CURLSHE_BAD_OPTION;
             }
             handle.state.unshare(data);
+            match data {
+                CURL_LOCK_DATA_COOKIE => handle.cookies = crate::http::cookies::CookieStore::default(),
+                CURL_LOCK_DATA_HSTS => handle.hsts = crate::http::hsts::HstsStore::default(),
+                _ => {}
+            }
             CURLSHE_OK
         }
         _ => CURLSHE_BAD_OPTION,
@@ -187,6 +196,28 @@ pub(crate) fn touch_connect_callbacks(
         CURL_LOCK_ACCESS_SINGLE,
         times + 2,
     );
+}
+
+pub(crate) fn with_shared_cookies_mut<R>(
+    share_handle: Option<usize>,
+    f: impl FnOnce(&mut crate::http::cookies::CookieStore) -> R,
+) -> Option<R> {
+    let share = unsafe { handle_mut(share_handle? as *mut CURLSH) }?;
+    if !share.state.is_shared(CURL_LOCK_DATA_COOKIE) {
+        return None;
+    }
+    Some(f(&mut share.cookies))
+}
+
+pub(crate) fn with_shared_hsts_mut<R>(
+    share_handle: Option<usize>,
+    f: impl FnOnce(&mut crate::http::hsts::HstsStore) -> R,
+) -> Option<R> {
+    let share = unsafe { handle_mut(share_handle? as *mut CURLSH) }?;
+    if !share.state.is_shared(CURL_LOCK_DATA_HSTS) {
+        return None;
+    }
+    Some(f(&mut share.hsts))
 }
 
 fn touch_state(

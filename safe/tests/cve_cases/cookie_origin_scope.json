@@ -1,0 +1,5 @@
+{
+  "id": "cookie_origin_scope",
+  "kind": "runtime",
+  "title": "Cookies stay host and path scoped and reject dangerous domain forms"
+}

@@ -1,0 +1,5 @@
+{
+  "id": "headers_api_semantics",
+  "kind": "runtime",
+  "title": "curl_easy_header and curl_easy_nextheader preserve amount, index, origin, and anchors"
+}

@@ -1,0 +1,5 @@
+{
+  "id": "reference_backend_transport",
+  "kind": "documented",
+  "title": "TLS, QUIC, and non-HTTP transport validation remains delegated to the reference backend"
+}

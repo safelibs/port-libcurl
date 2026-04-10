@@ -19,13 +19,16 @@ mod dns;
 mod easy;
 mod form;
 mod global;
+mod http;
 mod mime;
 mod multi;
+mod rand;
 mod share;
 mod slist;
 mod transfer;
 mod urlapi;
 mod version;
+mod ws;
 
 #[path = "abi/connect_only.rs"]
 mod abi_connect_only;

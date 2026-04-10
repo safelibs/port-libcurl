@@ -1,11 +1,13 @@
 use crate::abi::{
-    curl_off_t, curl_slist, curl_socket_t, CURLcode, CURLoption, CURL, CURLE_BAD_FUNCTION_ARGUMENT,
-    CURLE_FAILED_INIT, CURLINFO, CURLM,
+    curl_hstsread_callback, curl_hstswrite_callback, curl_off_t, curl_slist, curl_socket_t,
+    CURLoption, CURLU, CURLUPART_URL, CURL, CURLINFO, CURLM, CURLcode,
+    CURLE_BAD_FUNCTION_ARGUMENT, CURLE_FAILED_INIT,
 };
 use crate::dns::{self, ConnectOverride, ResolveOverride};
 use crate::multi::state::MultiState;
 use crate::transfer::{map_multi_code, LowSpeedWindow, EASY_PERFORM_WAIT_TIMEOUT_MS};
 use core::ffi::{c_char, c_int, c_long, c_void};
+use core::ptr;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::sync::{Mutex, OnceLock};
@@ -25,12 +27,18 @@ const CURLOPT_WRITEDATA: CURLoption = 10001;
 const CURLOPT_URL: CURLoption = 10002;
 const CURLOPT_PROXY: CURLoption = 10004;
 const CURLOPT_USERPWD: CURLoption = 10005;
+const CURLOPT_PROXYUSERPWD: CURLoption = 10006;
 const CURLOPT_RANGE: CURLoption = 10007;
 const CURLOPT_ERRORBUFFER: CURLoption = 10010;
+const CURLOPT_REFERER: CURLoption = 10016;
+const CURLOPT_USERAGENT: CURLoption = 10018;
 const CURLOPT_WRITEFUNCTION: CURLoption = 20011;
 const CURLOPT_READFUNCTION: CURLoption = 20012;
+const CURLOPT_COOKIE: CURLoption = 10022;
 const CURLOPT_HTTPHEADER: CURLoption = 10023;
+const CURLOPT_COOKIEFILE: CURLoption = 10031;
 const CURLOPT_CUSTOMREQUEST: CURLoption = 10036;
+const CURLOPT_PROXYHEADER: CURLoption = 10228;
 const CURLOPT_INFILESIZE: CURLoption = 14;
 const CURLOPT_LOW_SPEED_LIMIT: CURLoption = 19;
 const CURLOPT_LOW_SPEED_TIME: CURLoption = 20;
@@ -42,17 +50,27 @@ const CURLOPT_NOPROGRESS: CURLoption = 43;
 const CURLOPT_NOBODY: CURLoption = 44;
 const CURLOPT_FAILONERROR: CURLoption = 45;
 const CURLOPT_UPLOAD: CURLoption = 46;
+const CURLOPT_NETRC: CURLoption = 51;
 const CURLOPT_FOLLOWLOCATION: CURLoption = 52;
+const CURLOPT_AUTOREFERER: CURLoption = 58;
 const CURLOPT_XFERINFODATA: CURLoption = 10057;
 const CURLOPT_PROXYPORT: CURLoption = 59;
 const CURLOPT_HTTPPROXYTUNNEL: CURLoption = 61;
 const CURLOPT_HTTP_VERSION: CURLoption = 84;
 const CURLOPT_SSL_VERIFYPEER: CURLoption = 64;
+const CURLOPT_MAXREDIRS: CURLoption = 68;
 const CURLOPT_MAXCONNECTS: CURLoption = 71;
 const CURLOPT_HEADERFUNCTION: CURLoption = 20079;
 const CURLOPT_HTTPGET: CURLoption = 80;
+const CURLOPT_COOKIEJAR: CURLoption = 10082;
 const CURLOPT_SSL_VERIFYHOST: CURLoption = 81;
+const CURLOPT_COOKIESESSION: CURLoption = 96;
 const CURLOPT_SHARE: CURLoption = 10100;
+const CURLOPT_UNRESTRICTED_AUTH: CURLoption = 105;
+const CURLOPT_HTTPAUTH: CURLoption = 107;
+const CURLOPT_PROXYAUTH: CURLoption = 111;
+const CURLOPT_NETRC_FILE: CURLoption = 10118;
+const CURLOPT_COOKIELIST: CURLoption = 10135;
 const CURLOPT_INFILESIZE_LARGE: CURLoption = 30115;
 const CURLOPT_RESUME_FROM_LARGE: CURLoption = 30116;
 const CURLOPT_CONNECT_ONLY: CURLoption = 141;
@@ -66,6 +84,17 @@ const CURLOPT_XOAUTH2_BEARER: CURLoption = 10220;
 const CURLOPT_PINNEDPUBLICKEY: CURLoption = 10230;
 const CURLOPT_CONNECT_TO: CURLoption = 10243;
 const CURLOPT_PRE_PROXY: CURLoption = 10262;
+const CURLOPT_HEADEROPT: CURLoption = 229;
+const CURLOPT_ALTSVC_CTRL: CURLoption = 286;
+const CURLOPT_ALTSVC: CURLoption = 10287;
+const CURLOPT_HSTS_CTRL: CURLoption = 299;
+const CURLOPT_HSTS: CURLoption = 10300;
+const CURLOPT_HSTSREADFUNCTION: CURLoption = 20301;
+const CURLOPT_HSTSREADDATA: CURLoption = 10302;
+const CURLOPT_HSTSWRITEFUNCTION: CURLoption = 20303;
+const CURLOPT_HSTSWRITEDATA: CURLoption = 10304;
+const CURLOPT_CURLU: CURLoption = 10282;
+const CURLOPT_WS_OPTIONS: CURLoption = 320;
 const CURLOPT_TRAILERFUNCTION: CURLoption = 20283;
 const CURLOPT_TRAILERDATA: CURLoption = 10284;
 
@@ -74,6 +103,7 @@ const CURLINFO_PRIMARY_IP: u32 = 0x100000 + 32;
 const CURLINFO_PRIMARY_PORT: u32 = 0x200000 + 40;
 const CURLINFO_LOCAL_IP: u32 = 0x100000 + 41;
 const CURLINFO_LOCAL_PORT: u32 = 0x200000 + 42;
+const CURLINFO_COOKIELIST: u32 = 0x400000 + 28;
 const CURLINFO_SCHEME: u32 = 0x100000 + 49;
 const CURLINFO_TOTAL_TIME_T: u32 = 0x600000 + 50;
 const CURLINFO_NAMELOOKUP_TIME_T: u32 = 0x600000 + 51;
@@ -83,11 +113,22 @@ const CURLINFO_STARTTRANSFER_TIME_T: u32 = 0x600000 + 54;
 const CURLINFO_RETRY_AFTER: u32 = 0x600000 + 57;
 const CURL_ERROR_SIZE: usize = 256;
 
+unsafe extern "C" {
+    fn curl_safe_reference_easy_getinfo_slist(
+        handle: *mut CURL,
+        info: u32,
+        value: *mut *mut curl_slist,
+    ) -> CURLcode;
+}
+
 #[derive(Clone)]
 pub(crate) struct EasyMetadata {
     pub url: Option<String>,
     pub custom_request: Option<String>,
     pub http_headers: Vec<String>,
+    pub proxy_headers: Vec<String>,
+    pub user_agent: Option<String>,
+    pub referer: Option<String>,
     pub range: Option<String>,
     pub resolve_overrides: Vec<ResolveOverride>,
     pub connect_overrides: Vec<ConnectOverride>,
@@ -103,6 +144,26 @@ pub(crate) struct EasyMetadata {
     pub proxy_username: Option<String>,
     pub proxy_password: Option<String>,
     pub xoauth2_bearer: Option<String>,
+    pub cookie: Option<String>,
+    pub cookie_file: Option<String>,
+    pub cookie_jar: Option<String>,
+    pub cookie_session: bool,
+    pub cookie_list: Vec<String>,
+    pub netrc_mode: c_long,
+    pub netrc_file: Option<String>,
+    pub unrestricted_auth: bool,
+    pub auto_referer: bool,
+    pub max_redirs: Option<c_long>,
+    pub httpauth: c_long,
+    pub proxyauth: c_long,
+    pub headeropt: c_long,
+    pub connect_mode: c_long,
+    pub ws_options: c_long,
+    pub curlu_handle: Option<usize>,
+    pub hsts_file: Option<String>,
+    pub hsts_ctrl: c_long,
+    pub altsvc_file: Option<String>,
+    pub altsvc_ctrl: c_long,
     pub pinned_public_key: Option<String>,
     pub ssl_verify_peer: bool,
     pub ssl_verify_host: c_long,
@@ -133,19 +194,7 @@ impl EasyMetadata {
     }
 
     pub(crate) fn auth_context(&self) -> Option<String> {
-        let mut parts = Vec::new();
-        push_auth_part(&mut parts, "userpwd", self.userpwd.as_deref());
-        push_auth_part(&mut parts, "proxy_userpwd", self.proxy_userpwd.as_deref());
-        push_auth_part(&mut parts, "username", self.username.as_deref());
-        push_auth_part(&mut parts, "password", self.password.as_deref());
-        push_auth_part(&mut parts, "proxy_username", self.proxy_username.as_deref());
-        push_auth_part(&mut parts, "proxy_password", self.proxy_password.as_deref());
-        push_auth_part(&mut parts, "bearer", self.xoauth2_bearer.as_deref());
-        if parts.is_empty() {
-            None
-        } else {
-            Some(parts.join(";"))
-        }
+        crate::http::auth::build_auth_context(self)
     }
 }
 
@@ -155,6 +204,9 @@ impl Default for EasyMetadata {
             url: None,
             custom_request: None,
             http_headers: Vec::new(),
+            proxy_headers: Vec::new(),
+            user_agent: None,
+            referer: None,
             range: None,
             resolve_overrides: Vec::new(),
             connect_overrides: Vec::new(),
@@ -170,6 +222,26 @@ impl Default for EasyMetadata {
             proxy_username: None,
             proxy_password: None,
             xoauth2_bearer: None,
+            cookie: None,
+            cookie_file: None,
+            cookie_jar: None,
+            cookie_session: false,
+            cookie_list: Vec::new(),
+            netrc_mode: 0,
+            netrc_file: None,
+            unrestricted_auth: false,
+            auto_referer: false,
+            max_redirs: None,
+            httpauth: 0,
+            proxyauth: 0,
+            headeropt: 0,
+            connect_mode: 0,
+            ws_options: 0,
+            curlu_handle: None,
+            hsts_file: None,
+            hsts_ctrl: 0,
+            altsvc_file: None,
+            altsvc_ctrl: 0,
             pinned_public_key: None,
             ssl_verify_peer: true,
             ssl_verify_host: 2,
@@ -203,6 +275,10 @@ pub(crate) struct EasyCallbacks {
     pub xferinfo_function: CurlXferInfoCallback,
     pub xferinfo_data: usize,
     pub error_buffer: usize,
+    pub hsts_read_function: curl_hstsread_callback,
+    pub hsts_read_data: usize,
+    pub hsts_write_function: curl_hstswrite_callback,
+    pub hsts_write_data: usize,
     pub no_progress: bool,
 }
 
@@ -244,6 +320,7 @@ struct EasyShadow {
     metadata: EasyMetadata,
     callbacks: EasyCallbacks,
     info: EasyInfo,
+    http_state: crate::http::HandleHttpState,
     state: MultiState,
 }
 
@@ -255,6 +332,7 @@ impl Default for EasyShadow {
             metadata: EasyMetadata::default(),
             callbacks: EasyCallbacks::default(),
             info: EasyInfo::default(),
+            http_state: crate::http::HandleHttpState::default(),
             state: MultiState::Init,
         }
     }
@@ -304,6 +382,7 @@ pub(crate) fn register_duplicate(source: *mut CURL, duplicate: *mut CURL) {
                 metadata: shadow.metadata,
                 callbacks: shadow.callbacks,
                 info: EasyInfo::default(),
+                http_state: shadow.http_state,
                 state: MultiState::Init,
             },
         );
@@ -321,6 +400,7 @@ pub(crate) fn reset_handle(handle: *mut CURL) {
         shadow.metadata = EasyMetadata::default();
         shadow.callbacks = EasyCallbacks::default();
         shadow.info = EasyInfo::default();
+        shadow.http_state = crate::http::HandleHttpState::default();
         shadow.state = MultiState::Init;
     }
 }
@@ -350,7 +430,10 @@ pub(crate) fn observe_easy_setopt_long(handle: *mut CURL, option: CURLoption, va
     match option {
         CURLOPT_INFILESIZE => shadow.metadata.upload_size = (value >= 0).then_some(value as i64),
         CURLOPT_MAXCONNECTS => shadow.metadata.maxconnects = Some(value),
-        CURLOPT_CONNECT_ONLY => shadow.metadata.connect_only = value != 0,
+        CURLOPT_CONNECT_ONLY => {
+            shadow.metadata.connect_only = value != 0;
+            shadow.metadata.connect_mode = value;
+        }
         CURLOPT_LOW_SPEED_LIMIT => shadow.metadata.low_speed.limit_bytes_per_second = value,
         CURLOPT_LOW_SPEED_TIME => shadow.metadata.low_speed.time_window_secs = value,
         CURLOPT_RESUME_FROM => shadow.metadata.resume_from = value as i64,
@@ -360,13 +443,28 @@ pub(crate) fn observe_easy_setopt_long(handle: *mut CURL, option: CURLoption, va
         CURLOPT_NOBODY => shadow.metadata.nobody = value != 0,
         CURLOPT_FAILONERROR => shadow.metadata.fail_on_error = value != 0,
         CURLOPT_UPLOAD => shadow.metadata.upload = value != 0,
+        CURLOPT_NETRC => shadow.metadata.netrc_mode = value,
         CURLOPT_FOLLOWLOCATION => shadow.metadata.follow_location = value != 0,
+        CURLOPT_AUTOREFERER => shadow.metadata.auto_referer = value != 0,
         CURLOPT_HTTPGET => shadow.metadata.http_get = value != 0,
         CURLOPT_HTTP_VERSION => shadow.metadata.http_version = value,
         CURLOPT_PROXYPORT => shadow.metadata.proxy_port = u16::try_from(value).ok(),
         CURLOPT_HTTPPROXYTUNNEL => shadow.metadata.tunnel_proxy = value != 0,
+        CURLOPT_MAXREDIRS => shadow.metadata.max_redirs = Some(value),
+        CURLOPT_COOKIESESSION => shadow.metadata.cookie_session = value != 0,
         CURLOPT_SSL_VERIFYPEER => shadow.metadata.ssl_verify_peer = value != 0,
         CURLOPT_SSL_VERIFYHOST => shadow.metadata.ssl_verify_host = value,
+        CURLOPT_UNRESTRICTED_AUTH => shadow.metadata.unrestricted_auth = value != 0,
+        CURLOPT_HTTPAUTH => shadow.metadata.httpauth = value,
+        CURLOPT_PROXYAUTH => shadow.metadata.proxyauth = value,
+        CURLOPT_HEADEROPT => shadow.metadata.headeropt = value,
+        CURLOPT_ALTSVC_CTRL => {
+            shadow.metadata.altsvc_ctrl = value;
+            shadow.http_state.altsvc.ctrl_bits = value;
+            shadow.http_state.altsvc.enabled = value != 0;
+        }
+        CURLOPT_HSTS_CTRL => shadow.metadata.hsts_ctrl = value,
+        CURLOPT_WS_OPTIONS => shadow.metadata.ws_options = value,
         _ => {}
     }
 }
@@ -384,8 +482,14 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
         CURLOPT_URL => shadow.metadata.url = copy_c_string(value.cast()),
         CURLOPT_PROXY => shadow.metadata.proxy = copy_c_string(value.cast()),
         CURLOPT_USERPWD => shadow.metadata.userpwd = copy_c_string(value.cast()),
+        CURLOPT_PROXYUSERPWD => shadow.metadata.proxy_userpwd = copy_c_string(value.cast()),
         CURLOPT_RANGE => shadow.metadata.range = copy_c_string(value.cast()),
+        CURLOPT_REFERER => shadow.metadata.referer = copy_c_string(value.cast()),
+        CURLOPT_USERAGENT => shadow.metadata.user_agent = copy_c_string(value.cast()),
+        CURLOPT_COOKIE => shadow.metadata.cookie = copy_c_string(value.cast()),
         CURLOPT_HTTPHEADER => shadow.metadata.http_headers = collect_slist_strings(value.cast()),
+        CURLOPT_PROXYHEADER => shadow.metadata.proxy_headers = collect_slist_strings(value.cast()),
+        CURLOPT_COOKIEFILE => shadow.metadata.cookie_file = copy_c_string(value.cast()),
         CURLOPT_ERRORBUFFER => shadow.callbacks.error_buffer = value as usize,
         CURLOPT_HEADERDATA => shadow.callbacks.header_data = value as usize,
         CURLOPT_CUSTOMREQUEST => shadow.metadata.custom_request = copy_c_string(value.cast()),
@@ -398,6 +502,52 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
         CURLOPT_PASSWORD => shadow.metadata.password = copy_c_string(value.cast()),
         CURLOPT_PROXYUSERNAME => shadow.metadata.proxy_username = copy_c_string(value.cast()),
         CURLOPT_PROXYPASSWORD => shadow.metadata.proxy_password = copy_c_string(value.cast()),
+        CURLOPT_COOKIEJAR => shadow.metadata.cookie_jar = copy_c_string(value.cast()),
+        CURLOPT_NETRC_FILE => shadow.metadata.netrc_file = copy_c_string(value.cast()),
+        CURLOPT_COOKIELIST => {
+            if let Some(value) = copy_c_string(value.cast()) {
+                if value.eq_ignore_ascii_case("FLUSH") {
+                    let path = shadow
+                        .metadata
+                        .cookie_jar
+                        .clone()
+                        .or_else(|| shadow.metadata.cookie_file.clone());
+                    if let Some(path) = path {
+                        let reference_lines = reference_cookie_lines(handle);
+                        if !reference_lines.is_empty() {
+                            let rendered = crate::http::cookies::render_netscape_lines(&reference_lines);
+                            let _ = std::fs::write(&path, rendered);
+                        } else {
+                            let mut wrote_fallback = false;
+                            if let Some(url) = shadow.metadata.url.clone() {
+                                let latest_headers =
+                                    shadow.http_state.headers.latest_values("set-cookie");
+                                if !latest_headers.is_empty() {
+                                    let mut fallback_store =
+                                        crate::http::cookies::CookieStore::default();
+                                    for header in latest_headers {
+                                        fallback_store.store_set_cookie(&url, &header);
+                                    }
+                                    let _ = fallback_store.flush_to_path(&path);
+                                    wrote_fallback = true;
+                                }
+                            }
+                            if !wrote_fallback
+                                && crate::share::with_shared_cookies_mut(
+                                    shadow.metadata.share_handle,
+                                    |store| store.flush_to_path(&path),
+                                )
+                                .is_none()
+                            {
+                                let _ = shadow.http_state.cookies.flush_to_path(&path);
+                            }
+                        }
+                    }
+                } else {
+                    shadow.metadata.cookie_list.push(value);
+                }
+            }
+        }
         CURLOPT_RESOLVE => {
             shadow.metadata.resolve_overrides = dns::collect_resolve_overrides(value.cast())
         }
@@ -407,6 +557,17 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
             shadow.metadata.connect_overrides = dns::collect_connect_overrides(value.cast())
         }
         CURLOPT_PRE_PROXY => shadow.metadata.pre_proxy = copy_c_string(value.cast()),
+        CURLOPT_ALTSVC => {
+            shadow.metadata.altsvc_file = copy_c_string(value.cast());
+            shadow.http_state.altsvc.path = shadow.metadata.altsvc_file.clone();
+        }
+        CURLOPT_CURLU => {
+            shadow.metadata.curlu_handle = (!value.is_null()).then_some(value as usize);
+            shadow.metadata.url = copy_url_from_curlu(value.cast::<CURLU>());
+        }
+        CURLOPT_HSTS => shadow.metadata.hsts_file = copy_c_string(value.cast()),
+        CURLOPT_HSTSREADDATA => shadow.callbacks.hsts_read_data = value as usize,
+        CURLOPT_HSTSWRITEDATA => shadow.callbacks.hsts_write_data = value as usize,
         _ => {}
     }
 }
@@ -437,6 +598,12 @@ pub(crate) fn observe_easy_setopt_function(
         }
         CURLOPT_XFERINFOFUNCTION => {
             shadow.callbacks.xferinfo_function = unsafe { core::mem::transmute(value) }
+        }
+        CURLOPT_HSTSREADFUNCTION => {
+            shadow.callbacks.hsts_read_function = unsafe { core::mem::transmute(value) }
+        }
+        CURLOPT_HSTSWRITEFUNCTION => {
+            shadow.callbacks.hsts_write_function = unsafe { core::mem::transmute(value) }
         }
         _ => {}
     }
@@ -496,12 +663,18 @@ pub(crate) fn mark_message_sent(handle: *mut CURL) {
 }
 
 pub(crate) fn snapshot_metadata(handle: *mut CURL) -> EasyMetadata {
-    registry()
+    let mut metadata = registry()
         .lock()
         .expect("easy registry mutex poisoned")
         .get(&(handle as usize))
         .map(|shadow| shadow.metadata.clone())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if let Some(curlu_handle) = metadata.curlu_handle {
+        if let Some(url) = copy_url_from_curlu(curlu_handle as *mut CURLU) {
+            metadata.url = Some(url);
+        }
+    }
+    metadata
 }
 
 pub(crate) fn snapshot_callbacks(handle: *mut CURL) -> EasyCallbacks {
@@ -523,7 +696,20 @@ pub(crate) fn clear_transfer_info(handle: *mut CURL) {
         .get_mut(&(handle as usize))
     {
         shadow.info = EasyInfo::default();
+        shadow.http_state.clear_transient();
     }
+}
+
+pub(crate) fn with_http_state_mut<R>(
+    handle: *mut CURL,
+    f: impl FnOnce(&mut crate::http::HandleHttpState) -> R,
+) -> Option<R> {
+    if handle.is_null() {
+        return None;
+    }
+    let mut guard = registry().lock().expect("easy registry mutex poisoned");
+    let shadow = guard.get_mut(&(handle as usize))?;
+    Some(f(&mut shadow.http_state))
 }
 
 pub(crate) fn record_transfer_info(handle: *mut CURL, info: RecordedTransferInfo) {
@@ -593,6 +779,8 @@ pub(crate) fn easy_getinfo_string(
                     .to_ascii_lowercase();
                 match scheme.as_str() {
                     "https" => c"https".as_ptr().cast_mut(),
+                    "wss" => c"wss".as_ptr().cast_mut(),
+                    "ws" => c"ws".as_ptr().cast_mut(),
                     _ => c"http".as_ptr().cast_mut(),
                 }
             }
@@ -845,6 +1033,22 @@ fn copy_c_string(value: *const c_char) -> Option<String> {
     }
 }
 
+fn copy_url_from_curlu(value: *mut CURLU) -> Option<String> {
+    if value.is_null() {
+        return None;
+    }
+
+    let mut part = ptr::null_mut();
+    let code = unsafe { crate::urlapi::url_get(value, CURLUPART_URL, &mut part, 0) };
+    if code != 0 || part.is_null() {
+        return None;
+    }
+
+    let copied = unsafe { CStr::from_ptr(part) }.to_string_lossy().into_owned();
+    unsafe { crate::alloc::free_ptr(part.cast()) };
+    Some(copied)
+}
+
 fn collect_slist_strings(mut list: *mut curl_slist) -> Vec<String> {
     let mut values = Vec::new();
     while !list.is_null() {
@@ -858,6 +1062,23 @@ fn collect_slist_strings(mut list: *mut curl_slist) -> Vec<String> {
         }
         list = unsafe { (*list).next };
     }
+    values
+}
+
+fn reference_cookie_lines(handle: *mut CURL) -> Vec<String> {
+    if handle.is_null() {
+        return Vec::new();
+    }
+
+    let mut list = ptr::null_mut();
+    let code =
+        unsafe { curl_safe_reference_easy_getinfo_slist(handle, CURLINFO_COOKIELIST, &mut list) };
+    if code != crate::abi::CURLE_OK || list.is_null() {
+        return Vec::new();
+    }
+
+    let values = collect_slist_strings(list);
+    unsafe { crate::slist::curl_slist_free_all(list) };
     values
 }
 

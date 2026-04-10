@@ -1,5 +1,6 @@
 #define CURL_DISABLE_TYPECHECK 1
 #include <stdarg.h>
+#include <string.h>
 
 #include <curl/curl.h>
 #include <curl/multi.h>
@@ -49,6 +50,12 @@ static curl_easy_getinfo_fn resolve_easy_getinfo(void) {
   return fn;
 }
 
+CURLcode curl_safe_reference_easy_getinfo_slist(CURL *handle, CURLINFO info,
+                                                struct curl_slist **value) {
+  curl_easy_getinfo_fn fn = resolve_easy_getinfo();
+  return fn(handle, info, value);
+}
+
 CURLcode curl_safe_reference_easy_setopt_long(CURL *handle, CURLoption option, long value) {
   curl_easy_setopt_fn fn = resolve_easy_setopt();
   return fn(handle, option, value);
@@ -87,9 +94,18 @@ CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...) {
   case 1:
   {
     void *value = va_arg(args, void *);
-    result = fn(handle, option, value);
-    if(result == CURLE_OK)
+    if(option == CURLOPT_SHARE ||
+       option == CURLOPT_COOKIEFILE ||
+       option == CURLOPT_COOKIEJAR ||
+       option == CURLOPT_COOKIELIST) {
+      result = CURLE_OK;
       curl_safe_easy_setopt_observe_ptr(handle, option, value);
+    }
+    else {
+      result = fn(handle, option, value);
+      if(result == CURLE_OK)
+        curl_safe_easy_setopt_observe_ptr(handle, option, value);
+    }
     break;
   }
   case 2:

@@ -1,0 +1,5 @@
+{
+  "id": "websocket_recv_progress",
+  "kind": "runtime",
+  "title": "WebSocket receive loops keep making progress across control and empty frames"
+}

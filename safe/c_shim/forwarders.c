@@ -17,7 +17,6 @@
 #include <curl/easy.h>
 #include <curl/multi.h>
 #include <curl/header.h>
-#include <curl/websockets.h>
 
 #ifdef curl_multi_socket
 #undef curl_multi_socket
@@ -83,18 +82,6 @@ void *curl_safe_resolve_reference_symbol(const char *name) {
   return bridge_resolve_symbol(name);
 }
 
-typedef CURLHcode (*curl_easy_header_fn)(CURL *easy,
-                                         const char *name,
-                                         size_t index,
-                                         unsigned int origin,
-                                         int request,
-                                         struct curl_header **hout);
-
-typedef struct curl_header *(*curl_easy_nextheader_fn)(CURL *easy,
-                                                       unsigned int origin,
-                                                       int request,
-                                                       struct curl_header *prev);
-
 typedef const char *(*curl_easy_strerror_fn)(CURLcode code);
 typedef const char *(*curl_multi_strerror_fn)(CURLMcode code);
 
@@ -103,34 +90,7 @@ typedef char *(*curl_pushheader_byname_fn)(struct curl_pushheaders *h,
 typedef char *(*curl_pushheader_bynum_fn)(struct curl_pushheaders *h,
                                           size_t num);
 
-typedef const struct curl_ws_frame *(*curl_ws_meta_fn)(CURL *curl);
-typedef CURLcode (*curl_ws_recv_fn)(CURL *curl, void *buffer, size_t buflen,
-                                    size_t *recv,
-                                    const struct curl_ws_frame **metap);
-typedef CURLcode (*curl_ws_send_fn)(CURL *curl, const void *buffer,
-                                    size_t buflen, size_t *sent,
-                                    curl_off_t fragsize,
-                                    unsigned int flags);
-
 #define RESOLVE_TYPED(name, type) ((type)bridge_resolve_symbol(name))
-
-CURLHcode curl_easy_header(CURL *easy,
-                           const char *name,
-                           size_t index,
-                           unsigned int origin,
-                           int request,
-                           struct curl_header **hout) {
-  return RESOLVE_TYPED("curl_easy_header", curl_easy_header_fn)(
-      easy, name, index, origin, request, hout);
-}
-
-struct curl_header *curl_easy_nextheader(CURL *easy,
-                                         unsigned int origin,
-                                         int request,
-                                         struct curl_header *prev) {
-  return RESOLVE_TYPED("curl_easy_nextheader", curl_easy_nextheader_fn)(
-      easy, origin, request, prev);
-}
 
 const char *curl_easy_strerror(CURLcode code) {
   return RESOLVE_TYPED("curl_easy_strerror", curl_easy_strerror_fn)(code);
@@ -144,27 +104,4 @@ char *curl_pushheader_byname(struct curl_pushheaders *h, const char *name) {
 char *curl_pushheader_bynum(struct curl_pushheaders *h, size_t num) {
   return RESOLVE_TYPED("curl_pushheader_bynum", curl_pushheader_bynum_fn)(
       h, num);
-}
-
-const struct curl_ws_frame *curl_ws_meta(CURL *curl) {
-  return RESOLVE_TYPED("curl_ws_meta", curl_ws_meta_fn)(curl);
-}
-
-CURLcode curl_ws_recv(CURL *curl,
-                      void *buffer,
-                      size_t buflen,
-                      size_t *recv,
-                      const struct curl_ws_frame **metap) {
-  return RESOLVE_TYPED("curl_ws_recv", curl_ws_recv_fn)(curl, buffer, buflen,
-                                                        recv, metap);
-}
-
-CURLcode curl_ws_send(CURL *curl,
-                      const void *buffer,
-                      size_t buflen,
-                      size_t *sent,
-                      curl_off_t fragsize,
-                      unsigned int flags) {
-  return RESOLVE_TYPED("curl_ws_send", curl_ws_send_fn)(curl, buffer, buflen,
-                                                        sent, fragsize, flags);
 }
