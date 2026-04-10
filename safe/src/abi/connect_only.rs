@@ -44,3 +44,12 @@ pub unsafe extern "C" fn curl_safe_easy_setopt_observe_long(
 ) {
     crate::easy::perform::observe_easy_setopt_long(handle, option, value);
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn curl_safe_easy_setopt_observe_ptr(
+    handle: *mut CURL,
+    option: crate::abi::CURLoption,
+    value: *mut c_void,
+) {
+    crate::easy::perform::observe_easy_setopt_ptr(handle, option, value);
+}

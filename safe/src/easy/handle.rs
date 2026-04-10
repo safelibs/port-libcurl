@@ -53,6 +53,11 @@ pub(crate) unsafe fn easy_init() -> *mut CURL {
 }
 
 pub(crate) unsafe fn easy_cleanup(handle: *mut CURL) {
+    if let Some(attached_multi) = crate::easy::perform::attached_multi_for(handle) {
+        let _ = unsafe {
+            crate::multi::remove_handle(attached_multi as *mut crate::abi::CURLM, handle)
+        };
+    }
     let private_multi = crate::easy::perform::unregister_handle(handle);
     if let Some(multi) = private_multi {
         unsafe { crate::multi::cleanup_owned_multi(multi as *mut crate::abi::CURLM) };

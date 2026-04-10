@@ -14,6 +14,7 @@ typedef CURLFORMcode (*curl_formadd_fn)(struct curl_httppost **httppost,
                                         ...);
 
 void curl_safe_easy_setopt_observe_long(CURL *handle, CURLoption option, long value);
+void curl_safe_easy_setopt_observe_ptr(CURL *handle, CURLoption option, void *value);
 CURLMcode curl_safe_multi_setopt_long(CURLM *multi_handle, CURLMoption option, long value);
 CURLMcode curl_safe_multi_setopt_ptr(CURLM *multi_handle, CURLMoption option, void *value);
 CURLMcode curl_safe_multi_setopt_function(CURLM *multi_handle, CURLMoption option, void (*value)(void));
@@ -64,8 +65,13 @@ CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...) {
     break;
   }
   case 1:
-    result = fn(handle, option, va_arg(args, void *));
+  {
+    void *value = va_arg(args, void *);
+    result = fn(handle, option, value);
+    if(result == CURLE_OK)
+      curl_safe_easy_setopt_observe_ptr(handle, option, value);
     break;
+  }
   case 2:
     result = fn(handle, option, va_arg(args, void (*)(void)));
     break;
