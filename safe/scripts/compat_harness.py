@@ -171,35 +171,6 @@ def all_build_targets(manifest: dict) -> list[dict]:
                 "test.h",
             ]
         targets.append(copied)
-    targets.append(
-        {
-            "target_id": "debian:ldap-bindata",
-            "component": "debian",
-            "name": "ldap-bindata",
-            "role": "libcurl-consumer",
-            "common": {
-                "AM_CPPFLAGS": {
-                    "raw": "-I$(top_srcdir)/include",
-                    "resolved": "-I$(top_srcdir)/include",
-                }
-            },
-            "fields": {
-                "sources": {
-                    "raw": "LDAP-bindata.c",
-                    "resolved": "LDAP-bindata.c",
-                },
-                "cflags": {
-                    "raw": "",
-                    "resolved": "",
-                },
-                "ldadd": {
-                    "raw": "pkg-config:ldap",
-                    "resolved": "pkg-config:ldap",
-                },
-            },
-            "sources": ["LDAP-bindata.c"],
-        }
-    )
     return targets
 
 
@@ -594,10 +565,7 @@ def expand_flags(
 
 def target_preprocessor_flags(flavor: FlavorConfig, target: dict) -> list[str]:
     expr = target_field_value(target, "cppflags") or manifest_common_value(target, "AM_CPPFLAGS")
-    tokens = expand_flags(flavor, target, expr, mode="cflags", inject_safe_lib=False)
-    if target["target_id"] == "debian:ldap-bindata":
-        tokens.extend(pkg_config_tokens("ldap", mode="cflags"))
-    return tokens
+    return expand_flags(flavor, target, expr, mode="cflags", inject_safe_lib=False)
 
 
 def target_cflags(flavor: FlavorConfig, target: dict) -> list[str]:
@@ -647,7 +615,7 @@ def runnable_metadata(target: dict) -> dict | None:
         return {"adapter": "curl-tool", "name": target["name"]}
     if target["component"] == "http-client":
         return {"adapter": "http-client", "program": target["name"]}
-    if target["target_id"] == "debian:ldap-bindata":
+    if target["component"] == "debian":
         return {"adapter": "ldap-devpkg", "name": target["name"]}
     return None
 
@@ -663,27 +631,6 @@ def build_targets(flavor: FlavorConfig, targets: list[dict], jobs: int) -> dict:
     target_records: list[dict] = []
 
     for target in targets:
-        if target["target_id"] == "debian:ldap-bindata" and not pkg_config_exists("ldap"):
-            target_records.append(
-                {
-                    "target_id": target["target_id"],
-                    "component": target["component"],
-                    "name": target["name"],
-                    "role": target["role"],
-                    "source_dir": component_root(target["component"], flavor.worktree_dir).as_posix(),
-                    "generated_outputs": [],
-                    "sources": list(target["sources"]),
-                    "compile_args": [],
-                    "link_args": [],
-                    "object_paths": [],
-                    "object_path": None,
-                    "executable_path": None,
-                    "runnable": None,
-                    "skipped_reason": "pkg-config package ldap is unavailable",
-                }
-            )
-            continue
-
         srcdir = component_root(target["component"], flavor.worktree_dir)
         cppflags = target_preprocessor_flags(flavor, target)
         cflags = target_cflags(flavor, target)
@@ -702,9 +649,7 @@ def build_targets(flavor: FlavorConfig, targets: list[dict], jobs: int) -> dict:
         ]
 
         generated_outputs: list[str] = []
-        if target["target_id"] == "debian:ldap-bindata":
-            generated_outputs = []
-        elif target["name"] == "lib1521":
+        if target["name"] == "lib1521":
             generated_outputs = [(flavor.worktree_dir / "tests" / "libtest" / "lib1521.c").as_posix()]
 
         object_paths: list[Path] = []
