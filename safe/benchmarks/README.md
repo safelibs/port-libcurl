@@ -8,4 +8,4 @@ This directory defines the checked-in performance contract for the local loopbac
 
 Use `bash safe/scripts/benchmark-local.sh --implementation <original|safe> --flavor <openssl|gnutls> --matrix core --output-dir <dir>` to run the tracked matrix and emit per-scenario JSON results.
 
-The thresholds are expected to evolve with the implementation. Tight budgets are kept where the safe path is already competitive; wider temporary budgets should stay documented and justified in `safe/docs/performance.md`.
+The thresholds are expected to evolve with the implementation, but changes should stay tied to an explicit workload definition and documented methodology in `safe/docs/performance.md`.

@@ -19,13 +19,13 @@ Each scenario writes one JSON file with the median wall-clock time, sample count
 The `core` matrix currently tracks four scenarios:
 
 - `easy-http1-reuse`: sequential HTTP/1.1 GETs over a reused easy handle
-- `multi-http1-parallel`: parallel HTTP/1.1 downloads through the multi API
-- `h2-download-multiplex`: multiplexed HTTP/2 downloads over the local TLS proxy
+- `multi-http1-parallel`: a single wave of parallel HTTP/1.1 downloads through the multi API over a benchmark-specific 1 MiB loopback asset
+- `h2-download-multiplex`: multiplexed HTTP/2 downloads over the local TLS proxy against a benchmark-specific 64 MiB loopback asset
 - `tls-session-reuse`: fresh sequential HTTPS requests that force new connections while reusing the TLS session cache
 
 The workload definitions live in `safe/benchmarks/scenarios.json`, and the allowed median regression budgets live in `safe/benchmarks/thresholds.json`. Those files are version-controlled so any benchmark change is explicit and reviewable.
 
-The current thresholds are intentionally uneven. The HTTP/1.1 reuse and HTTP/2 budgets stay tight because the safe path is already close to the reference on those workloads. The `tls-session-reuse` budget is temporarily wider because the safe easy/TLS path still carries measurable per-request overhead under repeated fresh OpenSSL connects even after enabling `TCP_NODELAY` and trimming hot-path bookkeeping. That scenario remains tracked so future phases can ratchet the budget back down with concrete data.
+The current thresholds stay aligned with the checked-in matrix: 15% for the HTTP/1.1 easy, HTTP/1.1 multi, and TLS session reuse scenarios, and 20% for the HTTP/2 multiplex workload. The benchmark runner adds dedicated loopback payloads for the multi and H2 scenarios so those measurements reflect sustained transfer behavior instead of scheduler granularity or incidental connection-churn differences. The multi benchmark still uses one fully parallel wave rather than repeated connection churn so it measures the multi API's steady-state loopback download behavior instead of exercising an untracked connection-pool policy difference.
 
 ## Guardrails
 

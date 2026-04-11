@@ -216,11 +216,14 @@ static void openssl_global_init(void)
   OPENSSL_init_ssl(0, NULL);
 
   openssl_noverify_ctx = SSL_CTX_new(TLS_client_method());
-  if(openssl_noverify_ctx)
+  if(openssl_noverify_ctx) {
+    SSL_CTX_set_session_cache_mode(openssl_noverify_ctx, SSL_SESS_CACHE_CLIENT);
     SSL_CTX_set_verify(openssl_noverify_ctx, SSL_VERIFY_NONE, NULL);
+  }
 
   openssl_verify_ctx = SSL_CTX_new(TLS_client_method());
   if(openssl_verify_ctx) {
+    SSL_CTX_set_session_cache_mode(openssl_verify_ctx, SSL_SESS_CACHE_CLIENT);
     SSL_CTX_set_verify(openssl_verify_ctx, SSL_VERIFY_PEER, NULL);
     SSL_CTX_set_default_verify_paths(openssl_verify_ctx);
   }
@@ -230,6 +233,40 @@ static SSL_CTX *openssl_shared_ctx(int verify_peer)
 {
   pthread_once(&openssl_once, openssl_global_init);
   return verify_peer ? openssl_verify_ctx : openssl_noverify_ctx;
+}
+
+static int openssl_export_session(SSL *ssl,
+                                  unsigned char **out_session_data,
+                                  size_t *out_session_len)
+{
+  SSL_SESSION *session = NULL;
+  unsigned char *encoded = NULL;
+  int encoded_len;
+
+  *out_session_data = NULL;
+  *out_session_len = 0;
+  if(!ssl)
+    return -1;
+
+  session = SSL_get1_session(ssl);
+  if(!session)
+    return -1;
+
+  encoded_len = i2d_SSL_SESSION(session, NULL);
+  if(encoded_len > 0) {
+    encoded = malloc((size_t)encoded_len);
+    if(encoded) {
+      unsigned char *cursor = encoded;
+      if(i2d_SSL_SESSION(session, &cursor) == encoded_len) {
+        *out_session_data = encoded;
+        *out_session_len = (size_t)encoded_len;
+      }
+      else
+        free(encoded);
+    }
+  }
+  SSL_SESSION_free(session);
+  return (*out_session_data && *out_session_len) ? 0 : -1;
 }
 
 static int openssl_export_pubkey_der(X509 *cert, unsigned char **out, int *out_len)
@@ -523,8 +560,6 @@ int curl_safe_tls_connect(int fd,
   struct safe_tls_connection *conn = NULL;
   SSL_SESSION *session = NULL;
   const unsigned char *session_cursor = session_data;
-  unsigned char *encoded = NULL;
-  int encoded_len;
 
   *out = NULL;
   *out_session_data = NULL;
@@ -590,23 +625,7 @@ int curl_safe_tls_connect(int fd,
     return -1;
   }
 
-  session = SSL_get1_session(conn->ssl);
-  if(session) {
-    encoded_len = i2d_SSL_SESSION(session, NULL);
-    if(encoded_len > 0) {
-      encoded = malloc((size_t)encoded_len);
-      if(encoded) {
-        unsigned char *cursor = encoded;
-        if(i2d_SSL_SESSION(session, &cursor) == encoded_len) {
-          *out_session_data = encoded;
-          *out_session_len = (size_t)encoded_len;
-        }
-        else
-          free(encoded);
-      }
-    }
-    SSL_SESSION_free(session);
-  }
+  openssl_export_session(conn->ssl, out_session_data, out_session_len);
 
   *out = conn;
   return 0;
@@ -652,6 +671,17 @@ ssize_t curl_safe_tls_write(struct safe_tls_connection *conn, const void *buf, s
   return -1;
 }
 
+int curl_safe_tls_export_session(struct safe_tls_connection *conn,
+                                 unsigned char **out_session_data,
+                                 size_t *out_session_len)
+{
+  if(!out_session_data || !out_session_len)
+    return -1;
+  return openssl_export_session(conn ? conn->ssl : NULL,
+                                out_session_data,
+                                out_session_len);
+}
+
 void curl_safe_tls_close(struct safe_tls_connection *conn)
 {
   if(!conn)
@@ -671,6 +701,31 @@ struct safe_tls_connection {
   gnutls_certificate_credentials_t creds;
   gnutls_session_t session;
 };
+
+static int gnutls_export_session(struct safe_tls_connection *conn,
+                                 unsigned char **out_session_data,
+                                 size_t *out_session_len)
+{
+  gnutls_datum_t encoded = { 0 };
+  int rc;
+
+  *out_session_data = NULL;
+  *out_session_len = 0;
+  if(!conn)
+    return -1;
+
+  rc = gnutls_session_get_data2(conn->session, &encoded);
+  if(rc < 0 || !encoded.data || !encoded.size)
+    return -1;
+
+  *out_session_data = malloc(encoded.size);
+  if(*out_session_data) {
+    memcpy(*out_session_data, encoded.data, encoded.size);
+    *out_session_len = encoded.size;
+  }
+  gnutls_free(encoded.data);
+  return (*out_session_data && *out_session_len) ? 0 : -1;
+}
 
 static void gnutls_init_once(void)
 {
@@ -956,7 +1011,6 @@ int curl_safe_tls_connect(int fd,
                           size_t errlen)
 {
   struct safe_tls_connection *conn = NULL;
-  gnutls_datum_t encoded = { 0 };
   int rc;
 
   *out = NULL;
@@ -1051,15 +1105,7 @@ int curl_safe_tls_connect(int fd,
     return -1;
   }
 
-  rc = gnutls_session_get_data2(conn->session, &encoded);
-  if(rc >= 0 && encoded.data && encoded.size) {
-    *out_session_data = malloc(encoded.size);
-    if(*out_session_data) {
-      memcpy(*out_session_data, encoded.data, encoded.size);
-      *out_session_len = encoded.size;
-    }
-    gnutls_free(encoded.data);
-  }
+  gnutls_export_session(conn, out_session_data, out_session_len);
 
   *out = conn;
   return 0;
@@ -1099,6 +1145,15 @@ ssize_t curl_safe_tls_write(struct safe_tls_connection *conn, const void *buf, s
   }
   errno = EIO;
   return -1;
+}
+
+int curl_safe_tls_export_session(struct safe_tls_connection *conn,
+                                 unsigned char **out_session_data,
+                                 size_t *out_session_len)
+{
+  if(!out_session_data || !out_session_len)
+    return -1;
+  return gnutls_export_session(conn, out_session_data, out_session_len);
 }
 
 void curl_safe_tls_close(struct safe_tls_connection *conn)

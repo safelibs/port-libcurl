@@ -3,7 +3,7 @@
   "metric": "median_wall_time_ms",
   "scenarios": {
     "easy-http1-reuse": {
-      "max_median_regression_pct": 25.0
+      "max_median_regression_pct": 15.0
     },
     "h2-download-multiplex": {
       "max_median_regression_pct": 20.0
@@ -12,7 +12,7 @@
       "max_median_regression_pct": 15.0
     },
     "tls-session-reuse": {
-      "max_median_regression_pct": 250.0
+      "max_median_regression_pct": 15.0
     }
   }
 }

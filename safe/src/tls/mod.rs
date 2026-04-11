@@ -60,6 +60,11 @@ unsafe extern "C" {
         buf: *const core::ffi::c_void,
         len: usize,
     ) -> isize;
+    fn curl_safe_tls_export_session(
+        conn: *mut SafeTlsConnection,
+        out_session_data: *mut *mut u8,
+        out_session_len: *mut usize,
+    ) -> c_int;
     fn curl_safe_tls_close(conn: *mut SafeTlsConnection);
     fn curl_safe_tls_free_bytes(ptr: *mut u8);
 }
@@ -74,6 +79,8 @@ trait TlsBackendAdapter {
 pub(crate) struct TlsConnection {
     raw: *mut SafeTlsConnection,
     stream: TcpStream,
+    session_cache_key: Option<String>,
+    share_handle: Option<usize>,
 }
 
 unsafe impl Send for TlsConnection {}
@@ -93,8 +100,30 @@ impl TlsConnection {
         self.stream.set_write_timeout(timeout)
     }
 
+    fn cache_live_session(&self) {
+        let Some(session_key) = self.session_cache_key.as_ref() else {
+            return;
+        };
+        if self.raw.is_null() {
+            return;
+        }
+
+        let mut session_bytes = core::ptr::null_mut();
+        let mut session_len = 0usize;
+        let rc = unsafe {
+            curl_safe_tls_export_session(self.raw, &mut session_bytes, &mut session_len)
+        };
+        if rc == 0 && !session_bytes.is_null() && session_len != 0 {
+            let bytes =
+                unsafe { std::slice::from_raw_parts(session_bytes, session_len) }.to_vec();
+            store_cached_session(self.share_handle, session_key.clone(), bytes);
+            unsafe { curl_safe_tls_free_bytes(session_bytes) };
+        }
+    }
+
     pub(crate) fn into_plain_stream(mut self) -> TcpStream {
         if !self.raw.is_null() {
+            self.cache_live_session();
             unsafe { curl_safe_tls_close(self.raw) };
             self.raw = core::ptr::null_mut();
         }
@@ -107,6 +136,7 @@ impl TlsConnection {
 impl Drop for TlsConnection {
     fn drop(&mut self) {
         if !self.raw.is_null() {
+            self.cache_live_session();
             unsafe { curl_safe_tls_close(self.raw) };
             self.raw = core::ptr::null_mut();
         }
@@ -269,11 +299,16 @@ pub(crate) fn connect(
 
     if !new_session.is_null() && new_session_len != 0 {
         let bytes = unsafe { std::slice::from_raw_parts(new_session, new_session_len) }.to_vec();
-        store_cached_session(metadata.share_handle, session_key, bytes);
+        store_cached_session(metadata.share_handle, session_key.clone(), bytes);
         unsafe { curl_safe_tls_free_bytes(new_session) };
     }
 
-    Ok(TlsConnection { raw, stream })
+    Ok(TlsConnection {
+        raw,
+        stream,
+        session_cache_key: Some(session_key),
+        share_handle: metadata.share_handle,
+    })
 }
 
 fn shared_session_cache() -> &'static Mutex<HashMap<String, Vec<u8>>> {

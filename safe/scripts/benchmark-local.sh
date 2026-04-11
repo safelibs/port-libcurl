@@ -123,6 +123,8 @@ PY
 
 start_http_fixture() {
   "${script_dir}/http-fixtures.sh" prepare --root "${http_root}"
+  dd if=/dev/zero of="${http_root}/bench-http1.bin" bs=1M count=1 status=none
+  dd if=/dev/zero of="${http_root}/bench-h2.bin" bs=1M count=64 status=none
   "${script_dir}/http-fixtures.sh" start \
     --root "${http_root}" \
     --pid-file "${http_pid_file}" \
