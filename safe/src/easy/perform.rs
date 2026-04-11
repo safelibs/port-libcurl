@@ -3,7 +3,7 @@ use crate::abi::{
     curl_socket_t, CURLcode, CURLoption, CURL, CURLE_BAD_FUNCTION_ARGUMENT, CURLE_FAILED_INIT,
     CURLINFO, CURLM, CURLU, CURLUPART_URL,
 };
-use crate::dns::{self, ConnectOverride, ResolveOverride};
+use crate::dns::{self, ConnectOverride, ResolveOverride, ResolverOwner};
 use crate::multi::state::MultiState;
 use crate::transfer::{map_multi_code, LowSpeedWindow, EASY_PERFORM_WAIT_TIMEOUT_MS};
 use core::ffi::{c_char, c_int, c_long, c_void};
@@ -81,6 +81,7 @@ const CURLOPT_INFILESIZE_LARGE: CURLoption = 30115;
 const CURLOPT_RESUME_FROM_LARGE: CURLoption = 30116;
 const CURLOPT_CONNECT_ONLY: CURLoption = 141;
 const CURLOPT_OPENSOCKETDATA: CURLoption = 10164;
+const CURLOPT_TCP_NODELAY: CURLoption = 121;
 const CURLOPT_USERNAME: CURLoption = 10173;
 const CURLOPT_PASSWORD: CURLoption = 10174;
 const CURLOPT_PROXYUSERNAME: CURLoption = 10175;
@@ -201,6 +202,7 @@ pub(crate) struct EasyMetadata {
     pub ssl_enable_alpn: bool,
     pub certinfo: bool,
     pub connect_only: bool,
+    pub tcp_nodelay: bool,
     pub follow_location: bool,
     pub header: bool,
     pub nobody: bool,
@@ -281,6 +283,7 @@ impl Default for EasyMetadata {
             ssl_enable_alpn: true,
             certinfo: false,
             connect_only: false,
+            tcp_nodelay: true,
             follow_location: false,
             header: false,
             nobody: false,
@@ -358,6 +361,7 @@ struct EasyShadow {
     private_multi: Option<usize>,
     attached_multi: Option<usize>,
     metadata: EasyMetadata,
+    cached_multi_plan: Option<crate::transfer::TransferPlan>,
     callbacks: EasyCallbacks,
     info: EasyInfo,
     http_state: crate::http::HandleHttpState,
@@ -370,6 +374,7 @@ impl Default for EasyShadow {
             private_multi: None,
             attached_multi: None,
             metadata: EasyMetadata::default(),
+            cached_multi_plan: None,
             callbacks: EasyCallbacks::default(),
             info: EasyInfo::default(),
             http_state: crate::http::HandleHttpState::default(),
@@ -421,6 +426,7 @@ pub(crate) fn register_duplicate(source: *mut CURL, duplicate: *mut CURL) {
                 private_multi: None,
                 attached_multi: None,
                 metadata: shadow.metadata,
+                cached_multi_plan: None,
                 callbacks: shadow.callbacks,
                 info: EasyInfo::default(),
                 http_state: shadow.http_state,
@@ -471,6 +477,7 @@ pub(crate) fn observe_easy_setopt_long(handle: *mut CURL, option: CURLoption, va
 
     let mut guard = registry().lock().expect("easy registry mutex poisoned");
     let shadow = guard.entry(handle as usize).or_default();
+    shadow.cached_multi_plan = None;
     match option {
         CURLOPT_INFILESIZE => shadow.metadata.upload_size = (value >= 0).then_some(value as i64),
         CURLOPT_MAXCONNECTS => shadow.metadata.maxconnects = Some(value),
@@ -478,6 +485,7 @@ pub(crate) fn observe_easy_setopt_long(handle: *mut CURL, option: CURLoption, va
             shadow.metadata.connect_only = value != 0;
             shadow.metadata.connect_mode = value;
         }
+        CURLOPT_TCP_NODELAY => shadow.metadata.tcp_nodelay = value != 0,
         CURLOPT_LOW_SPEED_LIMIT => shadow.metadata.low_speed.limit_bytes_per_second = value,
         CURLOPT_LOW_SPEED_TIME => shadow.metadata.low_speed.time_window_secs = value,
         CURLOPT_RESUME_FROM => shadow.metadata.resume_from = value as i64,
@@ -524,6 +532,7 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
 
     let mut guard = registry().lock().expect("easy registry mutex poisoned");
     let shadow = guard.entry(handle as usize).or_default();
+    shadow.cached_multi_plan = None;
     match option {
         CURLOPT_READDATA => shadow.callbacks.read_data = value as usize,
         CURLOPT_WRITEDATA => shadow.callbacks.write_data = value as usize,
@@ -638,6 +647,7 @@ pub(crate) fn observe_easy_setopt_function(
 
     let mut guard = registry().lock().expect("easy registry mutex poisoned");
     let shadow = guard.entry(handle as usize).or_default();
+    shadow.cached_multi_plan = None;
     match option {
         CURLOPT_READFUNCTION => {
             shadow.callbacks.read_function = unsafe { core::mem::transmute(value) }
@@ -675,7 +685,9 @@ pub(crate) fn observe_easy_setopt_off_t(handle: *mut CURL, option: CURLoption, v
         return;
     }
     let mut guard = registry().lock().expect("easy registry mutex poisoned");
-    let metadata = &mut guard.entry(handle as usize).or_default().metadata;
+    let shadow = guard.entry(handle as usize).or_default();
+    shadow.cached_multi_plan = None;
+    let metadata = &mut shadow.metadata;
     if option == CURLOPT_RESUME_FROM_LARGE {
         metadata.resume_from = value as i64;
     } else if option == CURLOPT_INFILESIZE_LARGE {
@@ -745,6 +757,34 @@ pub(crate) fn snapshot_callbacks(handle: *mut CURL) -> EasyCallbacks {
         .get(&(handle as usize))
         .map(|shadow| shadow.callbacks)
         .unwrap_or_default()
+}
+
+pub(crate) fn plan_for_multi(
+    handle: *mut CURL,
+    metadata: &EasyMetadata,
+) -> crate::transfer::TransferPlan {
+    if metadata.curlu_handle.is_none() {
+        if let Some(plan) = registry()
+            .lock()
+            .expect("easy registry mutex poisoned")
+            .get(&(handle as usize))
+            .and_then(|shadow| shadow.cached_multi_plan.clone())
+        {
+            return plan;
+        }
+    }
+
+    let plan = crate::transfer::build_plan(metadata, ResolverOwner::Multi);
+    if metadata.curlu_handle.is_none() {
+        if let Some(shadow) = registry()
+            .lock()
+            .expect("easy registry mutex poisoned")
+            .get_mut(&(handle as usize))
+        {
+            shadow.cached_multi_plan = Some(plan.clone());
+        }
+    }
+    plan
 }
 
 pub(crate) fn clear_transfer_info(handle: *mut CURL) {
@@ -1051,6 +1091,16 @@ pub(crate) unsafe fn easy_perform(handle: *mut CURL) -> CURLcode {
         return CURLE_FAILED_INIT;
     }
 
+    let metadata = snapshot_metadata(handle);
+    let plan = plan_for_multi(handle, &metadata);
+    if !plan.reference_backend {
+        let callbacks = snapshot_callbacks(handle);
+        on_transfer_progress(handle, MultiState::Performing);
+        let result = crate::transfer::perform_transfer_sync_with(handle, plan, metadata, callbacks);
+        on_transfer_progress(handle, MultiState::Done);
+        return result;
+    }
+
     let mut created_multi = false;
     let multi = if let Some(existing) = private_multi_for(handle) {
         existing as *mut CURLM
@@ -1089,20 +1139,6 @@ pub(crate) unsafe fn easy_perform(handle: *mut CURL) -> CURLcode {
 
     let mut result = crate::abi::CURLE_OK;
     loop {
-        let poll_code = unsafe {
-            crate::multi::poll_handle(
-                multi,
-                core::ptr::null_mut(),
-                0,
-                EASY_PERFORM_WAIT_TIMEOUT_MS,
-                core::ptr::null_mut(),
-            )
-        };
-        if poll_code != crate::abi::CURLM_OK {
-            result = map_multi_code(poll_code);
-            break;
-        }
-
         let mut still_running = 0;
         let perform_code = unsafe { crate::multi::perform_handle(multi, &mut still_running) };
         if perform_code != crate::abi::CURLM_OK {
@@ -1116,6 +1152,20 @@ pub(crate) unsafe fn easy_perform(handle: *mut CURL) -> CURLcode {
             if !msg.is_null() && unsafe { (*msg).msg == crate::multi::CURLMSG_DONE } {
                 result = unsafe { (*msg).data.result };
             }
+            break;
+        }
+
+        let poll_code = unsafe {
+            crate::multi::poll_handle(
+                multi,
+                core::ptr::null_mut(),
+                0,
+                EASY_PERFORM_WAIT_TIMEOUT_MS,
+                core::ptr::null_mut(),
+            )
+        };
+        if poll_code != crate::abi::CURLM_OK {
+            result = map_multi_code(poll_code);
             break;
         }
     }

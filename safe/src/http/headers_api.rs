@@ -24,8 +24,6 @@ const VALID_HEADER_MASK: u32 = HEADER_ORIGIN_HEADER
 
 #[derive(Clone, Debug)]
 pub(crate) struct HeaderEntry {
-    pub name_text: String,
-    pub value_text: String,
     pub name_c: CString,
     pub value_c: CString,
     pub origin: u32,
@@ -60,6 +58,14 @@ impl Clone for HeaderStore {
 
 unsafe impl Send for HeaderStore {}
 
+fn bytes_eq_ignore_ascii_case(lhs: &[u8], rhs: &[u8]) -> bool {
+    lhs.len() == rhs.len()
+        && lhs
+            .iter()
+            .zip(rhs.iter())
+            .all(|(left, right)| left.eq_ignore_ascii_case(right))
+}
+
 impl HeaderStore {
     pub(crate) fn clear(&mut self) {
         self.entries.clear();
@@ -80,8 +86,6 @@ impl HeaderStore {
         };
         self.latest_request = request;
         self.entries.push(HeaderEntry {
-            name_text: name.to_string(),
-            value_text: value.to_string(),
             name_c,
             value_c,
             origin,
@@ -93,9 +97,10 @@ impl HeaderStore {
         self.entries
             .iter()
             .filter(|entry| {
-                entry.request == self.latest_request && entry.name_text.eq_ignore_ascii_case(name)
+                entry.request == self.latest_request
+                    && bytes_eq_ignore_ascii_case(entry.name_c.as_bytes(), name.as_bytes())
             })
-            .map(|entry| entry.value_text.clone())
+            .map(|entry| entry.value_c.to_string_lossy().into_owned())
             .collect()
     }
 
@@ -154,7 +159,7 @@ impl HeaderStore {
             .filter(|(_, entry)| {
                 entry.request == request
                     && (entry.origin & origin) != 0
-                    && entry.name_text.eq_ignore_ascii_case(name)
+                    && bytes_eq_ignore_ascii_case(entry.name_c.as_bytes(), name.as_bytes())
             })
             .collect::<Vec<_>>();
         if matches.is_empty() {
@@ -192,8 +197,9 @@ impl HeaderStore {
                 entry.request == request
                     && (entry.origin & origin) != 0
                     && entry
-                        .name_text
-                        .eq_ignore_ascii_case(&self.entries[entry_index].name_text)
+                        .name_c
+                        .as_bytes()
+                        == self.entries[entry_index].name_c.as_bytes()
             })
             .count();
         let index = self
@@ -204,8 +210,9 @@ impl HeaderStore {
                 entry.request == request
                     && (entry.origin & origin) != 0
                     && entry
-                        .name_text
-                        .eq_ignore_ascii_case(&self.entries[entry_index].name_text)
+                        .name_c
+                        .as_bytes()
+                        == self.entries[entry_index].name_c.as_bytes()
             })
             .count()
             - 1;

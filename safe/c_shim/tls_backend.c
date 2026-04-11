@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -203,17 +204,32 @@ static int append_certinfo_time(struct certinfo_builder *builder,
 #ifdef SAFE_TLS_OPENSSL
 
 struct safe_tls_connection {
-  SSL_CTX *ctx;
   SSL *ssl;
 };
 
-static void openssl_init_once(void)
+static pthread_once_t openssl_once = PTHREAD_ONCE_INIT;
+static SSL_CTX *openssl_verify_ctx = NULL;
+static SSL_CTX *openssl_noverify_ctx = NULL;
+
+static void openssl_global_init(void)
 {
-  static int initialized = 0;
-  if(!initialized) {
-    OPENSSL_init_ssl(0, NULL);
-    initialized = 1;
+  OPENSSL_init_ssl(0, NULL);
+
+  openssl_noverify_ctx = SSL_CTX_new(TLS_client_method());
+  if(openssl_noverify_ctx)
+    SSL_CTX_set_verify(openssl_noverify_ctx, SSL_VERIFY_NONE, NULL);
+
+  openssl_verify_ctx = SSL_CTX_new(TLS_client_method());
+  if(openssl_verify_ctx) {
+    SSL_CTX_set_verify(openssl_verify_ctx, SSL_VERIFY_PEER, NULL);
+    SSL_CTX_set_default_verify_paths(openssl_verify_ctx);
   }
+}
+
+static SSL_CTX *openssl_shared_ctx(int verify_peer)
+{
+  pthread_once(&openssl_once, openssl_global_init);
+  return verify_peer ? openssl_verify_ctx : openssl_noverify_ctx;
 }
 
 static int openssl_export_pubkey_der(X509 *cert, unsigned char **out, int *out_len)
@@ -513,27 +529,23 @@ int curl_safe_tls_connect(int fd,
   *out = NULL;
   *out_session_data = NULL;
   *out_session_len = 0;
-  openssl_init_once();
+  {
+    SSL_CTX *ctx = openssl_shared_ctx(verify_peer);
+    if(!ctx) {
+      set_error(errbuf, errlen, "SSL_CTX_new failed");
+      return -1;
+    }
 
-  conn = calloc(1, sizeof(*conn));
-  if(!conn) {
-    set_error(errbuf, errlen, "out of memory");
-    return -1;
-  }
-  conn->ctx = SSL_CTX_new(TLS_client_method());
-  if(!conn->ctx) {
-    set_error(errbuf, errlen, "SSL_CTX_new failed");
-    free(conn);
-    return -1;
-  }
-  SSL_CTX_set_verify(conn->ctx, verify_peer ? SSL_VERIFY_PEER : SSL_VERIFY_NONE, NULL);
-  if(verify_peer)
-    SSL_CTX_set_default_verify_paths(conn->ctx);
+    conn = calloc(1, sizeof(*conn));
+    if(!conn) {
+      set_error(errbuf, errlen, "out of memory");
+      return -1;
+    }
 
-  conn->ssl = SSL_new(conn->ctx);
+    conn->ssl = SSL_new(ctx);
+  }
   if(!conn->ssl) {
     set_error(errbuf, errlen, "SSL_new failed");
-    SSL_CTX_free(conn->ctx);
     free(conn);
     return -1;
   }
@@ -560,7 +572,6 @@ int curl_safe_tls_connect(int fd,
   if(SSL_set_fd(conn->ssl, fd) != 1) {
     set_error(errbuf, errlen, "SSL_set_fd failed");
     SSL_free(conn->ssl);
-    SSL_CTX_free(conn->ctx);
     free(conn);
     return -1;
   }
@@ -569,14 +580,12 @@ int curl_safe_tls_connect(int fd,
     ERR_error_string_n(ERR_get_error(), error_text, sizeof(error_text));
     set_error(errbuf, errlen, error_text);
     SSL_free(conn->ssl);
-    SSL_CTX_free(conn->ctx);
     free(conn);
     return -1;
   }
   if(openssl_check_pinned_key(conn->ssl, pinned_public_key)) {
     set_error(errbuf, errlen, "SSL public key does not match pinned public key");
     SSL_free(conn->ssl);
-    SSL_CTX_free(conn->ctx);
     free(conn);
     return -1;
   }
@@ -651,8 +660,6 @@ void curl_safe_tls_close(struct safe_tls_connection *conn)
     SSL_shutdown(conn->ssl);
     SSL_free(conn->ssl);
   }
-  if(conn->ctx)
-    SSL_CTX_free(conn->ctx);
   free(conn);
 }
 
@@ -1098,7 +1105,7 @@ void curl_safe_tls_close(struct safe_tls_connection *conn)
 {
   if(!conn)
     return;
-  gnutls_bye(conn->session, GNUTLS_SHUT_RDWR);
+  (void)gnutls_bye(conn->session, GNUTLS_SHUT_WR);
   gnutls_deinit(conn->session);
   gnutls_certificate_free_credentials(conn->creds);
   free(conn);

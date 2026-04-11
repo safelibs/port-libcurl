@@ -657,7 +657,7 @@ pub(crate) unsafe fn add_handle(multi: *mut CURLM, easy_handle: *mut CURL) -> CU
 
     drain_events(wrapper);
     let metadata = easy::perform::snapshot_metadata(easy_handle);
-    let plan = transfer::build_plan(&metadata, ResolverOwner::Multi);
+    let plan = easy::perform::plan_for_multi(easy_handle, &metadata);
     let connection_id = {
         let mut guard = wrapper.inner.lock().expect("multi mutex poisoned");
         if guard.records.contains_key(&(easy_handle as usize)) {

@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "matrices": {
+    "core": [
+      "easy-http1-reuse",
+      "multi-http1-parallel",
+      "h2-download-multiplex",
+      "tls-session-reuse"
+    ]
+  },
+  "scenarios": {
+    "easy-http1-reuse": {
+      "description": "Sequential HTTP/1.1 GETs over a reused easy handle against the loopback fixture's large payload.",
+      "harness": "easy_loop",
+      "host": "127.0.0.1",
+      "http_version": "1.1",
+      "insecure": false,
+      "path": "/large.bin",
+      "requests": 80,
+      "samples": 5,
+      "scheme": "http",
+      "warmups": 1
+    },
+    "h2-download-multiplex": {
+      "description": "HTTP/2 multiplexed large downloads through the shared local TLS proxy.",
+      "fresh_connect": false,
+      "harness": "multi_parallel",
+      "host": "localhost",
+      "http_version": "2",
+      "insecure": true,
+      "max_host_connections": 1,
+      "parallel": 8,
+      "path": "/large.bin",
+      "pipewait": true,
+      "resolve_loopback": true,
+      "samples": 5,
+      "scheme": "https",
+      "share_ssl_session": false,
+      "transfers": 48,
+      "warmups": 1
+    },
+    "multi-http1-parallel": {
+      "description": "Parallel HTTP/1.1 large downloads over the multi API against the loopback fixture.",
+      "fresh_connect": false,
+      "harness": "multi_parallel",
+      "host": "127.0.0.1",
+      "http_version": "1.1",
+      "insecure": false,
+      "max_host_connections": 8,
+      "parallel": 8,
+      "path": "/large.bin",
+      "samples": 5,
+      "scheme": "http",
+      "share_ssl_session": false,
+      "transfers": 48,
+      "warmups": 1
+    },
+    "tls-session-reuse": {
+      "description": "Fresh sequential HTTPS requests that reuse the shared TLS session cache against the local proxy.",
+      "forbid_reuse": true,
+      "fresh_connect": true,
+      "harness": "easy_loop",
+      "host": "localhost",
+      "http_version": "1.1",
+      "insecure": true,
+      "path": "/plain.txt",
+      "requests": 64,
+      "resolve_loopback": true,
+      "samples": 5,
+      "scheme": "https",
+      "share_ssl_session": true,
+      "warmups": 1
+    }
+  }
+}
