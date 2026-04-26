@@ -1,24 +1,17 @@
 use crate::abi::{
     curl_calloc_callback, curl_free_callback, curl_malloc_callback, curl_realloc_callback,
     curl_ssl_backend, curl_sslbackend, curl_strdup_callback, CURLcode, CURLsslset, CURL,
-    CURLE_FAILED_INIT, CURLE_OK, CURLM, CURL_GLOBAL_DEFAULT,
+    CURLE_FAILED_INIT, CURLE_OK, CURLM, CURLSSLBACKEND_GNUTLS, CURLSSLBACKEND_OPENSSL,
+    CURLSSLSET_OK, CURLSSLSET_TOO_LATE, CURLSSLSET_UNKNOWN_BACKEND, CURL_GLOBAL_DEFAULT,
 };
-use crate::{alloc, version};
+use crate::{alloc, version, BUILD_FLAVOR};
 use core::ffi::{c_char, c_long, c_void};
 use std::mem;
-use std::process;
 use std::sync::{Mutex, OnceLock};
 
 unsafe extern "C" {
     fn curl_safe_resolve_reference_symbol(name: *const c_char) -> *mut c_void;
 }
-
-#[derive(Clone, Copy)]
-struct GlobalState {
-    init_depth: usize,
-}
-
-static GLOBAL_STATE: Mutex<GlobalState> = Mutex::new(GlobalState { init_depth: 0 });
 
 type CurlGlobalInitFn = unsafe extern "C" fn(c_long) -> CURLcode;
 type CurlGlobalInitMemFn = unsafe extern "C" fn(
@@ -30,17 +23,28 @@ type CurlGlobalInitMemFn = unsafe extern "C" fn(
     curl_calloc_callback,
 ) -> CURLcode;
 type CurlGlobalCleanupFn = unsafe extern "C" fn();
-type CurlGlobalTraceFn = unsafe extern "C" fn(*const c_char) -> CURLcode;
-type CurlGlobalSslSetFn = unsafe extern "C" fn(
-    curl_sslbackend,
-    *const c_char,
-    *mut *const *const curl_ssl_backend,
-) -> CURLsslset;
-type CurlFreeFn = unsafe extern "C" fn(*mut c_void);
+
+#[derive(Clone, Copy)]
+struct GlobalState {
+    init_depth: usize,
+    ssl_backend_locked: bool,
+}
+
+static GLOBAL_STATE: Mutex<GlobalState> = Mutex::new(GlobalState {
+    init_depth: 0,
+    ssl_backend_locked: false,
+});
+
+struct SyncBackends([curl_ssl_backend; 1]);
+unsafe impl Sync for SyncBackends {}
+
+struct SyncBackendList([*const curl_ssl_backend; 2]);
+unsafe impl Sync for SyncBackendList {}
+
 pub(crate) unsafe fn load_reference<T: Copy>(symbol: &'static [u8]) -> T {
     let ptr = unsafe { curl_safe_resolve_reference_symbol(symbol.as_ptr().cast()) };
     if ptr.is_null() {
-        process::abort();
+        std::process::abort();
     }
     unsafe { mem::transmute_copy(&ptr) }
 }
@@ -60,19 +64,53 @@ fn ref_global_cleanup() -> CurlGlobalCleanupFn {
     *FN.get_or_init(|| unsafe { load_reference(b"curl_global_cleanup\0") })
 }
 
-fn ref_global_trace() -> CurlGlobalTraceFn {
-    static FN: OnceLock<CurlGlobalTraceFn> = OnceLock::new();
-    *FN.get_or_init(|| unsafe { load_reference(b"curl_global_trace\0") })
+fn compiled_ssl_backend_id() -> curl_sslbackend {
+    if BUILD_FLAVOR == "openssl" {
+        CURLSSLBACKEND_OPENSSL
+    } else {
+        CURLSSLBACKEND_GNUTLS
+    }
 }
 
-fn ref_global_sslset() -> CurlGlobalSslSetFn {
-    static FN: OnceLock<CurlGlobalSslSetFn> = OnceLock::new();
-    *FN.get_or_init(|| unsafe { load_reference(b"curl_global_sslset\0") })
+fn compiled_ssl_backend_name() -> *const c_char {
+    if BUILD_FLAVOR == "openssl" {
+        c"openssl".as_ptr()
+    } else {
+        c"gnutls".as_ptr()
+    }
 }
 
-fn ref_curl_free() -> CurlFreeFn {
-    static FN: OnceLock<CurlFreeFn> = OnceLock::new();
-    *FN.get_or_init(|| unsafe { load_reference(b"curl_free\0") })
+static SSL_BACKENDS: SyncBackends = SyncBackends([curl_ssl_backend {
+    id: if cfg!(feature = "openssl-flavor") {
+        CURLSSLBACKEND_OPENSSL
+    } else {
+        CURLSSLBACKEND_GNUTLS
+    },
+    name: if cfg!(feature = "openssl-flavor") {
+        c"openssl".as_ptr()
+    } else {
+        c"gnutls".as_ptr()
+    },
+}]);
+
+static SSL_BACKEND_LIST: SyncBackendList =
+    SyncBackendList([SSL_BACKENDS.0.as_ptr(), core::ptr::null()]);
+
+fn set_backend_list(avail: *mut *const *const curl_ssl_backend) {
+    if !avail.is_null() {
+        unsafe {
+            *avail = SSL_BACKEND_LIST.0.as_ptr();
+        }
+    }
+}
+
+fn matches_backend_name(name: *const c_char) -> bool {
+    if name.is_null() {
+        return false;
+    }
+    let expected = unsafe { std::ffi::CStr::from_ptr(compiled_ssl_backend_name()) };
+    let actual = unsafe { std::ffi::CStr::from_ptr(name) };
+    expected.to_bytes().eq_ignore_ascii_case(actual.to_bytes())
 }
 
 pub(crate) fn ensure_global_init_for_easy() -> Result<(), CURLcode> {
@@ -93,31 +131,20 @@ pub(crate) fn ensure_global_init_for_easy() -> Result<(), CURLcode> {
     }
 }
 
-pub(crate) unsafe fn free_reference_allocation(ptr: *mut c_void) {
-    if ptr.is_null() {
-        return;
-    }
-    unsafe { ref_curl_free()(ptr) };
-}
-
 #[no_mangle]
 pub unsafe extern "C" fn curl_global_init(flags: c_long) -> CURLcode {
-    let first_init = GLOBAL_STATE
-        .lock()
-        .expect("global mutex poisoned")
-        .init_depth
-        == 0;
-    if first_init {
+    let mut state = GLOBAL_STATE.lock().expect("global mutex poisoned");
+    if state.init_depth == 0 {
+        let code = unsafe { ref_global_init()(flags) };
+        if code != CURLE_OK {
+            return code;
+        }
         version::clear_cached_version();
         alloc::reset_to_default();
     }
-
-    let code = unsafe { ref_global_init()(flags) };
-    if code == CURLE_OK {
-        let mut state = GLOBAL_STATE.lock().expect("global mutex poisoned");
-        state.init_depth += 1;
-    }
-    code
+    state.init_depth += 1;
+    state.ssl_backend_locked = true;
+    CURLE_OK
 }
 
 #[no_mangle]
@@ -138,47 +165,46 @@ pub unsafe extern "C" fn curl_global_init_mem(
         return CURLE_FAILED_INIT;
     }
 
-    let first_init = GLOBAL_STATE
-        .lock()
-        .expect("global mutex poisoned")
-        .init_depth
-        == 0;
-    if first_init {
-        version::clear_cached_version();
-    }
-
-    let code = unsafe { ref_global_init_mem()(flags, malloc, free, realloc, strdup, calloc) };
-    if code == CURLE_OK {
-        if first_init {
-            alloc::set_custom(malloc, free, realloc, strdup, calloc);
+    let mut state = GLOBAL_STATE.lock().expect("global mutex poisoned");
+    if state.init_depth == 0 {
+        let code = unsafe { ref_global_init_mem()(flags, malloc, free, realloc, strdup, calloc) };
+        if code != CURLE_OK {
+            return code;
         }
-        let mut state = GLOBAL_STATE.lock().expect("global mutex poisoned");
-        state.init_depth += 1;
+        version::clear_cached_version();
+        alloc::set_custom(malloc, free, realloc, strdup, calloc);
     }
-    code
+    state.init_depth += 1;
+    state.ssl_backend_locked = true;
+    CURLE_OK
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn curl_global_cleanup() {
-    unsafe { ref_global_cleanup()() };
-
     let should_clear = {
         let mut state = GLOBAL_STATE.lock().expect("global mutex poisoned");
         if state.init_depth > 0 {
             state.init_depth -= 1;
         }
-        state.init_depth == 0
+        if state.init_depth == 0 {
+            state.ssl_backend_locked = false;
+            true
+        } else {
+            false
+        }
     };
 
     if should_clear {
         version::clear_cached_version();
+        unsafe { ref_global_cleanup()() };
+        alloc::reset_to_default();
         crate::easy::perform::clear_registry();
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_global_trace(config: *const c_char) -> CURLcode {
-    unsafe { ref_global_trace()(config) }
+pub unsafe extern "C" fn curl_global_trace(_config: *const c_char) -> CURLcode {
+    CURLE_OK
 }
 
 #[no_mangle]
@@ -187,7 +213,21 @@ pub unsafe extern "C" fn curl_global_sslset(
     name: *const c_char,
     avail: *mut *const *const curl_ssl_backend,
 ) -> CURLsslset {
-    unsafe { ref_global_sslset()(id, name, avail) }
+    set_backend_list(avail);
+
+    let mut state = GLOBAL_STATE.lock().expect("global mutex poisoned");
+    if state.init_depth != 0 || state.ssl_backend_locked {
+        return CURLSSLSET_TOO_LATE;
+    }
+
+    let id_matches = id == compiled_ssl_backend_id();
+    let name_matches = id == u32::MAX && matches_backend_name(name);
+    if id_matches || name_matches {
+        state.ssl_backend_locked = true;
+        CURLSSLSET_OK
+    } else {
+        CURLSSLSET_UNKNOWN_BACKEND
+    }
 }
 
 #[no_mangle]

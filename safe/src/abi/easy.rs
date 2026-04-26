@@ -12,6 +12,11 @@ pub unsafe extern "C" fn curl_easy_cleanup(handle: *mut CURL) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn curl_safe_reference_easy_handle(handle: *mut CURL) -> *mut CURL {
+    crate::easy::handle::reference_handle(handle)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn curl_easy_duphandle(handle: *mut CURL) -> *mut CURL {
     unsafe { crate::easy::handle::easy_duphandle(handle) }
 }

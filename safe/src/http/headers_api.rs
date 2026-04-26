@@ -196,10 +196,7 @@ impl HeaderStore {
             .filter(|entry| {
                 entry.request == request
                     && (entry.origin & origin) != 0
-                    && entry
-                        .name_c
-                        .as_bytes()
-                        == self.entries[entry_index].name_c.as_bytes()
+                    && entry.name_c.as_bytes() == self.entries[entry_index].name_c.as_bytes()
             })
             .count();
         let index = self
@@ -209,10 +206,7 @@ impl HeaderStore {
             .filter(|entry| {
                 entry.request == request
                     && (entry.origin & origin) != 0
-                    && entry
-                        .name_c
-                        .as_bytes()
-                        == self.entries[entry_index].name_c.as_bytes()
+                    && entry.name_c.as_bytes() == self.entries[entry_index].name_c.as_bytes()
             })
             .count()
             - 1;

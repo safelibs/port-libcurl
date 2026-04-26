@@ -1,15 +1,20 @@
 use port_libcurl_safe::abi::{
-    curl_calloc_callback, curl_easyoption, curl_free_callback, curl_malloc_callback,
-    curl_realloc_callback, curl_strdup_callback, curl_version_info_data, CURLMcode, CURLSHcode,
-    CURLSHoption, CURLUcode, CURLcode, CURLoption, CURLversion, CURL, CURLE_OK, CURLM, CURLM_OK,
-    CURLOT_STRING, CURLSH, CURLSHE_OK, CURLSHOPT_SHARE, CURLU, CURLUE_OK, CURLUPART_HOST,
-    CURLUPART_URL, CURLVERSION_NOW, CURL_GLOBAL_DEFAULT, CURL_LOCK_DATA_COOKIE,
+    curl_calloc_callback, curl_easyoption, curl_free_callback, curl_malloc_callback, curl_mime,
+    curl_mimepart, curl_realloc_callback, curl_slist, curl_ssl_backend, curl_sslbackend,
+    curl_strdup_callback, curl_version_info_data, CURLMcode, CURLSHcode, CURLSHoption, CURLUcode,
+    CURLcode, CURLoption, CURLsslset, CURLversion, CURL, CURLE_OK, CURLM, CURLM_OK, CURLOT_STRING,
+    CURLSH, CURLSHE_OK, CURLSHOPT_SHARE, CURLSSLBACKEND_GNUTLS, CURLSSLBACKEND_OPENSSL,
+    CURLSSLSET_OK, CURLSSLSET_TOO_LATE, CURLU, CURLUE_OK, CURLUPART_HOST, CURLUPART_URL,
+    CURLVERSION_NOW, CURL_GLOBAL_DEFAULT, CURL_LOCK_DATA_COOKIE,
 };
 use port_libcurl_safe::BUILD_FLAVOR;
 use std::collections::HashSet;
 use std::ffi::{c_char, c_int, c_long, c_void, CStr, CString};
 use std::ptr;
 use std::sync::{Mutex, OnceLock};
+
+const CURLOPT_MIMEPOST: CURLoption = 10269;
+const CURL_ZERO_TERMINATED: usize = usize::MAX;
 
 unsafe extern "C" {
     fn malloc(size: usize) -> *mut c_void;
@@ -25,6 +30,12 @@ unsafe extern "C" {
         strdup_cb: curl_strdup_callback,
         calloc_cb: curl_calloc_callback,
     ) -> CURLcode;
+    fn curl_global_trace(config: *const c_char) -> CURLcode;
+    fn curl_global_sslset(
+        id: curl_sslbackend,
+        name: *const c_char,
+        avail: *mut *const *const curl_ssl_backend,
+    ) -> CURLsslset;
     fn curl_global_cleanup();
 
     fn curl_getenv(name: *const c_char) -> *mut c_char;
@@ -39,6 +50,7 @@ unsafe extern "C" {
     fn curl_easy_cleanup(handle: *mut CURL);
     fn curl_easy_duphandle(handle: *mut CURL) -> *mut CURL;
     fn curl_easy_reset(handle: *mut CURL);
+    fn curl_easy_setopt(handle: *mut CURL, option: CURLoption, ...) -> CURLcode;
     fn curl_easy_escape(handle: *mut CURL, input: *const c_char, len: c_int) -> *mut c_char;
     fn curl_easy_unescape(
         handle: *mut CURL,
@@ -49,6 +61,21 @@ unsafe extern "C" {
     fn curl_easy_option_by_name(name: *const c_char) -> *const curl_easyoption;
     fn curl_easy_option_by_id(id: CURLoption) -> *const curl_easyoption;
     fn curl_easy_option_next(prev: *const curl_easyoption) -> *const curl_easyoption;
+    fn curl_mime_init(handle: *mut CURL) -> *mut curl_mime;
+    fn curl_mime_free(mime: *mut curl_mime);
+    fn curl_mime_addpart(mime: *mut curl_mime) -> *mut curl_mimepart;
+    fn curl_mime_name(part: *mut curl_mimepart, name: *const c_char) -> CURLcode;
+    fn curl_mime_filename(part: *mut curl_mimepart, filename: *const c_char) -> CURLcode;
+    fn curl_mime_type(part: *mut curl_mimepart, mime_type: *const c_char) -> CURLcode;
+    fn curl_mime_encoder(part: *mut curl_mimepart, encoding: *const c_char) -> CURLcode;
+    fn curl_mime_data(part: *mut curl_mimepart, data: *const c_char, datasize: usize) -> CURLcode;
+    fn curl_mime_headers(
+        part: *mut curl_mimepart,
+        headers: *mut curl_slist,
+        take_ownership: c_int,
+    ) -> CURLcode;
+    fn curl_slist_append(list: *mut curl_slist, string: *const c_char) -> *mut curl_slist;
+    fn curl_slist_free_all(list: *mut curl_slist);
 
     fn curl_multi_init() -> *mut CURLM;
     fn curl_multi_add_handle(multi: *mut CURLM, easy: *mut CURL) -> CURLMcode;
@@ -183,6 +210,28 @@ fn public_abi_smoke_and_allocator_contract() {
     std::env::set_var("PORT_LIBCURL_SAFE_ALLOC_TEST", "allocator-smoke");
 
     unsafe {
+        let expected_backend = if BUILD_FLAVOR == "openssl" {
+            CURLSSLBACKEND_OPENSSL
+        } else {
+            CURLSSLBACKEND_GNUTLS
+        };
+        let expected_backend_name = if BUILD_FLAVOR == "openssl" {
+            c"openssl"
+        } else {
+            c"gnutls"
+        };
+        let mut available_backends = ptr::null();
+        assert_eq!(
+            curl_global_sslset(expected_backend, ptr::null(), &mut available_backends),
+            CURLSSLSET_OK
+        );
+        assert!(!available_backends.is_null());
+        assert!(!(*available_backends).is_null());
+        assert_eq!(
+            CStr::from_ptr((**available_backends).name).to_bytes(),
+            expected_backend_name.to_bytes()
+        );
+
         assert_eq!(
             curl_global_init_mem(
                 CURL_GLOBAL_DEFAULT,
@@ -194,6 +243,11 @@ fn public_abi_smoke_and_allocator_contract() {
             ),
             CURLE_OK
         );
+        assert_eq!(
+            curl_global_sslset(expected_backend, ptr::null(), ptr::null_mut()),
+            CURLSSLSET_TOO_LATE
+        );
+        assert_eq!(curl_global_trace(ptr::null()), CURLE_OK);
 
         let getenv_name = CString::new("PORT_LIBCURL_SAFE_ALLOC_TEST").expect("cstring");
         let getenv_value = curl_getenv(getenv_name.as_ptr());
@@ -218,6 +272,27 @@ fn public_abi_smoke_and_allocator_contract() {
 
         let easy = curl_easy_init();
         assert!(!easy.is_null());
+        let header_text = CString::new("X-Test: native-mime").expect("cstring");
+        let mime_headers = curl_slist_append(ptr::null_mut(), header_text.as_ptr());
+        assert!(!mime_headers.is_null());
+        let mime = curl_mime_init(easy);
+        assert!(!mime.is_null());
+        let part = curl_mime_addpart(mime);
+        assert!(!part.is_null());
+        assert_eq!(curl_mime_name(part, c_ptr(b"field\0")), CURLE_OK);
+        assert_eq!(curl_mime_filename(part, c_ptr(b"value.txt\0")), CURLE_OK);
+        assert_eq!(curl_mime_type(part, c_ptr(b"text/plain\0")), CURLE_OK);
+        assert_eq!(curl_mime_encoder(part, c_ptr(b"binary\0")), CURLE_OK);
+        assert_eq!(
+            curl_mime_data(part, c_ptr(b"value\0"), CURL_ZERO_TERMINATED),
+            CURLE_OK
+        );
+        assert_eq!(curl_mime_headers(part, mime_headers, 0), CURLE_OK);
+        assert_eq!(curl_easy_setopt(easy, CURLOPT_MIMEPOST, mime), CURLE_OK);
+        assert_eq!(
+            curl_easy_setopt(easy, CURLOPT_MIMEPOST, ptr::null_mut::<curl_mime>()),
+            CURLE_OK
+        );
 
         let escaped = curl_easy_escape(easy, c_ptr(b"a/b?c=d\0"), 7);
         assert!(!escaped.is_null());
@@ -312,6 +387,8 @@ fn public_abi_smoke_and_allocator_contract() {
         assert_eq!(CStr::from_ptr(rendered).to_bytes(), b"hello world 7");
         curl_free(rendered.cast());
 
+        curl_mime_free(mime);
+        curl_slist_free_all(mime_headers);
         curl_url_cleanup(url_copy);
         curl_url_cleanup(url);
         assert_eq!(curl_share_cleanup(share), CURLSHE_OK);

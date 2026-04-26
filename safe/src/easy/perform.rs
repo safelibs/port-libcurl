@@ -39,6 +39,7 @@ const CURLOPT_USERAGENT: CURLoption = 10018;
 const CURLOPT_WRITEFUNCTION: CURLoption = 20011;
 const CURLOPT_READFUNCTION: CURLoption = 20012;
 const CURLOPT_COOKIE: CURLoption = 10022;
+const CURLOPT_HTTPPOST: CURLoption = 10024;
 const CURLOPT_HTTPHEADER: CURLoption = 10023;
 const CURLOPT_COOKIEFILE: CURLoption = 10031;
 const CURLOPT_CUSTOMREQUEST: CURLoption = 10036;
@@ -72,6 +73,7 @@ const CURLOPT_COOKIEJAR: CURLoption = 10082;
 const CURLOPT_SSL_VERIFYHOST: CURLoption = 81;
 const CURLOPT_COOKIESESSION: CURLoption = 96;
 const CURLOPT_SHARE: CURLoption = 10100;
+const CURLOPT_PRIVATE: CURLoption = 10103;
 const CURLOPT_UNRESTRICTED_AUTH: CURLoption = 105;
 const CURLOPT_HTTPAUTH: CURLoption = 107;
 const CURLOPT_PROXYAUTH: CURLoption = 111;
@@ -110,6 +112,7 @@ const CURLOPT_TRAILERFUNCTION: CURLoption = 20283;
 const CURLOPT_TRAILERDATA: CURLoption = 10284;
 const CURLOPT_SSL_ENABLE_ALPN: CURLoption = 226;
 const CURLOPT_DOH_URL: CURLoption = 10279;
+const CURLOPT_MIMEPOST: CURLoption = 10269;
 const CURLOPT_OPENSOCKETFUNCTION: CURLoption = 20163;
 const CURLOPT_RTSP_REQUEST: CURLoption = 189;
 const CURLOPT_CLOSESOCKETFUNCTION: CURLoption = 20208;
@@ -122,6 +125,7 @@ const CURLINFO_LOCAL_IP: u32 = 0x100000 + 41;
 const CURLINFO_LOCAL_PORT: u32 = 0x200000 + 42;
 const CURLINFO_COOKIELIST: u32 = 0x400000 + 28;
 const CURLINFO_CERTINFO: u32 = 0x400000 + 34;
+const CURLINFO_PRIVATE: u32 = 0x100000 + 21;
 const CURLINFO_SCHEME: u32 = 0x100000 + 49;
 const CURLINFO_RTSP_SESSION_ID: u32 = 0x100000 + 36;
 const CURLINFO_TOTAL_TIME_T: u32 = 0x600000 + 50;
@@ -165,6 +169,7 @@ pub(crate) struct EasyMetadata {
     pub share_handle: Option<usize>,
     pub userpwd: Option<String>,
     pub proxy_userpwd: Option<String>,
+    pub private_data: usize,
     pub username: Option<String>,
     pub password: Option<String>,
     pub proxy_username: Option<String>,
@@ -187,6 +192,8 @@ pub(crate) struct EasyMetadata {
     pub connect_mode: c_long,
     pub ws_options: c_long,
     pub curlu_handle: Option<usize>,
+    pub mimepost_handle: Option<usize>,
+    pub httppost_handle: Option<usize>,
     pub rtsp_request: c_long,
     pub rtsp_session_id: Option<String>,
     pub rtsp_stream_uri: Option<String>,
@@ -246,6 +253,7 @@ impl Default for EasyMetadata {
             share_handle: None,
             userpwd: None,
             proxy_userpwd: None,
+            private_data: 0,
             username: None,
             password: None,
             proxy_username: None,
@@ -268,6 +276,8 @@ impl Default for EasyMetadata {
             connect_mode: 0,
             ws_options: 0,
             curlu_handle: None,
+            mimepost_handle: None,
+            httppost_handle: None,
             rtsp_request: 0,
             rtsp_session_id: None,
             rtsp_stream_uri: None,
@@ -544,6 +554,9 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
         CURLOPT_REFERER => shadow.metadata.referer = copy_c_string(value.cast()),
         CURLOPT_USERAGENT => shadow.metadata.user_agent = copy_c_string(value.cast()),
         CURLOPT_COOKIE => shadow.metadata.cookie = copy_c_string(value.cast()),
+        CURLOPT_HTTPPOST => {
+            shadow.metadata.httppost_handle = (!value.is_null()).then_some(value as usize)
+        }
         CURLOPT_HTTPHEADER => shadow.metadata.http_headers = collect_slist_strings(value.cast()),
         CURLOPT_PROXYHEADER => shadow.metadata.proxy_headers = collect_slist_strings(value.cast()),
         CURLOPT_COOKIEFILE => shadow.metadata.cookie_file = copy_c_string(value.cast()),
@@ -555,6 +568,7 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
         CURLOPT_SHARE => {
             shadow.metadata.share_handle = (!value.is_null()).then_some(value as usize)
         }
+        CURLOPT_PRIVATE => shadow.metadata.private_data = value as usize,
         CURLOPT_OPENSOCKETDATA => shadow.callbacks.open_socket_data = value as usize,
         CURLOPT_USERNAME => shadow.metadata.username = copy_c_string(value.cast()),
         CURLOPT_PASSWORD => shadow.metadata.password = copy_c_string(value.cast()),
@@ -623,6 +637,9 @@ pub(crate) fn observe_easy_setopt_ptr(handle: *mut CURL, option: CURLoption, val
         CURLOPT_ALTSVC => {
             shadow.metadata.altsvc_file = copy_c_string(value.cast());
             shadow.http_state.altsvc.path = shadow.metadata.altsvc_file.clone();
+        }
+        CURLOPT_MIMEPOST => {
+            shadow.metadata.mimepost_handle = (!value.is_null()).then_some(value as usize)
         }
         CURLOPT_CURLU => {
             shadow.metadata.curlu_handle = (!value.is_null()).then_some(value as usize);
@@ -1012,6 +1029,17 @@ pub(crate) fn easy_getinfo_ptr(
     if handle.is_null() || value.is_null() {
         return Some(CURLE_BAD_FUNCTION_ARGUMENT);
     }
+    if info == CURLINFO_PRIVATE {
+        unsafe {
+            *value = registry()
+                .lock()
+                .expect("easy registry mutex poisoned")
+                .get(&(handle as usize))
+                .map(|shadow| shadow.metadata.private_data as *mut c_void)
+                .unwrap_or(ptr::null_mut());
+        }
+        return Some(crate::abi::CURLE_OK);
+    }
     if info != CURLINFO_CERTINFO {
         return None;
     }
@@ -1175,7 +1203,12 @@ pub(crate) unsafe fn easy_perform(handle: *mut CURL) -> CURLcode {
 }
 
 pub(crate) unsafe fn easy_pause(handle: *mut CURL, bitmask: c_int) -> CURLcode {
-    let ref_rc = unsafe { ref_easy_pause()(handle, bitmask) };
+    let ref_handle = crate::easy::handle::reference_handle(handle);
+    let ref_rc = if ref_handle.is_null() {
+        crate::abi::CURLE_FAILED_INIT
+    } else {
+        unsafe { ref_easy_pause()(ref_handle, bitmask) }
+    };
     let rc = crate::transfer::pause_handle(handle, bitmask);
     if rc != crate::abi::CURLE_OK {
         return rc;

@@ -60,9 +60,10 @@ unsafe extern "C" {
     fn retain_mprintf_c_shims();
 }
 
-// Keep the standalone C shim objects linked into the cdylib even when Rust
-// does not call them directly. The smoke harness links against these public
-// ABI entry points.
+// Keep the standalone public ABI shim objects linked into the cdylib even when
+// Rust does not call the exported entry points directly. The reduced
+// foundation-bridge still relies on the variadic surface and the permanent
+// mprintf interop boundary for smoke and ABI tests.
 #[used]
 static RETAIN_PUBLIC_C_SHIMS: [unsafe extern "C" fn(); 2] =
     [retain_variadic_c_shims, retain_mprintf_c_shims];

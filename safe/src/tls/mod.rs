@@ -110,12 +110,10 @@ impl TlsConnection {
 
         let mut session_bytes = core::ptr::null_mut();
         let mut session_len = 0usize;
-        let rc = unsafe {
-            curl_safe_tls_export_session(self.raw, &mut session_bytes, &mut session_len)
-        };
+        let rc =
+            unsafe { curl_safe_tls_export_session(self.raw, &mut session_bytes, &mut session_len) };
         if rc == 0 && !session_bytes.is_null() && session_len != 0 {
-            let bytes =
-                unsafe { std::slice::from_raw_parts(session_bytes, session_len) }.to_vec();
+            let bytes = unsafe { std::slice::from_raw_parts(session_bytes, session_len) }.to_vec();
             store_cached_session(self.share_handle, session_key.clone(), bytes);
             unsafe { curl_safe_tls_free_bytes(session_bytes) };
         }

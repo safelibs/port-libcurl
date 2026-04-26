@@ -1411,7 +1411,8 @@ fn connect_addr_stream(
     if let Some(stream) = open_socket_stream(callbacks, addr, tcp_nodelay)? {
         return Ok(stream);
     }
-    let stream = TcpStream::connect_timeout(addr, CONNECT_TIMEOUT).map_err(|_| CURLE_COULDNT_CONNECT)?;
+    let stream =
+        TcpStream::connect_timeout(addr, CONNECT_TIMEOUT).map_err(|_| CURLE_COULDNT_CONNECT)?;
     configure_tcp_stream(stream, tcp_nodelay)
 }
 
@@ -1711,7 +1712,9 @@ fn read_response_meta_with_prefix(
         let name = name.trim();
         let value = value.trim();
         let _ = perform::with_http_state_mut(handle, |state| {
-            state.headers.record(request_index, origin_flag, name, value);
+            state
+                .headers
+                .record(request_index, origin_flag, name, value);
             cookies::record_from_header(&mut state.cookies, &request.url, trimmed);
         });
         let _ = crate::share::with_shared_cookies_mut(metadata.share_handle, |store| {

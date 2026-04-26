@@ -1,6 +1,8 @@
 /*
- * Runtime sidecar resolver plus direct forwarders for transport-heavy symbols
- * that remain implemented by the reference library in impl-public-abi.
+ * Runtime sidecar resolver plus the small set of transport-heavy forwarders
+ * that remain reference-backed after the foundation bridge families moved into
+ * Rust. The sidecar is deep-bound so its internal libcurl self-calls do not
+ * resolve back into the public bridge exports.
  */
 #define _GNU_SOURCE 1
 #include <dlfcn.h>
@@ -49,7 +51,11 @@ static void bridge_open_reference(void) {
   Dl_info info;
   char self_path[PATH_MAX];
   char reference_path[PATH_MAX];
-  const int flags = RTLD_NOW | RTLD_LOCAL;
+  int flags = RTLD_NOW | RTLD_LOCAL;
+
+#ifdef RTLD_DEEPBIND
+  flags |= RTLD_DEEPBIND;
+#endif
 
   if(!dladdr((void *)&bridge_open_reference, &info) || !info.dli_fname)
     bridge_abort("dladdr", "could not resolve bridge location");
