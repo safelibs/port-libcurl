@@ -82,12 +82,18 @@ static curl_easy_getinfo_fn resolve_easy_getinfo(void) {
 CURLcode curl_safe_reference_easy_getinfo_slist(CURL *handle, CURLINFO info,
                                                 struct curl_slist **value) {
   curl_easy_getinfo_fn fn = resolve_easy_getinfo();
-  return fn(curl_safe_reference_easy_handle(handle), info, value);
+  CURL *ref_handle = curl_safe_reference_easy_handle(handle);
+  if(!ref_handle)
+    return CURLE_BAD_FUNCTION_ARGUMENT;
+  return fn(ref_handle, info, value);
 }
 
 CURLcode curl_safe_reference_easy_setopt_long(CURL *handle, CURLoption option, long value) {
   curl_easy_setopt_fn fn = resolve_easy_setopt();
-  return fn(curl_safe_reference_easy_handle(handle), option, value);
+  CURL *ref_handle = curl_safe_reference_easy_handle(handle);
+  if(!ref_handle)
+    return CURLE_BAD_FUNCTION_ARGUMENT;
+  return fn(ref_handle, option, value);
 }
 
 static curl_multi_setopt_fn resolve_reference_multi_setopt(void) {
@@ -109,7 +115,7 @@ CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...) {
   case 0:
   {
     long value = va_arg(args, long);
-    result = ref_handle ? fn(ref_handle, option, value) : CURLE_BAD_FUNCTION_ARGUMENT;
+    result = ref_handle ? fn(ref_handle, option, value) : CURLE_OK;
     if(result == CURLE_OK)
       curl_safe_easy_setopt_observe_long(handle, option, value);
     break;
@@ -127,18 +133,22 @@ CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...) {
       curl_safe_easy_setopt_observe_ptr(handle, option, value);
     }
     else if(option == CURLOPT_CURLU) {
-      char *url_text = value ? curl_safe_url_to_string((const CURLU *)value) : NULL;
-      if(value && !url_text)
-        result = CURLE_BAD_FUNCTION_ARGUMENT;
+      if(ref_handle) {
+        char *url_text = value ? curl_safe_url_to_string((const CURLU *)value) : NULL;
+        if(value && !url_text)
+          result = CURLE_BAD_FUNCTION_ARGUMENT;
+        else
+          result = fn(ref_handle, CURLOPT_URL, url_text);
+        if(url_text)
+          curl_free(url_text);
+      }
       else
-        result = ref_handle ? fn(ref_handle, CURLOPT_URL, url_text) : CURLE_BAD_FUNCTION_ARGUMENT;
-      if(url_text)
-        curl_free(url_text);
+        result = CURLE_OK;
       if(result == CURLE_OK)
         curl_safe_easy_setopt_observe_ptr(handle, option, value);
     }
     else {
-      result = ref_handle ? fn(ref_handle, option, value) : CURLE_BAD_FUNCTION_ARGUMENT;
+      result = ref_handle ? fn(ref_handle, option, value) : CURLE_OK;
       if(result == CURLE_OK)
         curl_safe_easy_setopt_observe_ptr(handle, option, value);
     }
@@ -147,7 +157,7 @@ CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...) {
   case 2:
   {
     void (*value)(void) = va_arg(args, void (*)(void));
-    result = ref_handle ? fn(ref_handle, option, value) : CURLE_BAD_FUNCTION_ARGUMENT;
+    result = ref_handle ? fn(ref_handle, option, value) : CURLE_OK;
     if(result == CURLE_OK)
       curl_safe_easy_setopt_observe_function(handle, option, value);
     break;
@@ -155,14 +165,14 @@ CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...) {
   case 3:
   {
     curl_off_t value = va_arg(args, curl_off_t);
-    result = ref_handle ? fn(ref_handle, option, value) : CURLE_BAD_FUNCTION_ARGUMENT;
+    result = ref_handle ? fn(ref_handle, option, value) : CURLE_OK;
     if(result == CURLE_OK)
       curl_safe_easy_setopt_observe_off_t(handle, option, value);
     break;
   }
   case 4:
     result = ref_handle ? fn(ref_handle, option, va_arg(args, struct curl_blob *))
-                        : CURLE_BAD_FUNCTION_ARGUMENT;
+                        : CURLE_OK;
     break;
   default:
     result = CURLE_UNKNOWN_OPTION;
@@ -186,39 +196,39 @@ CURLcode curl_easy_getinfo(CURL *handle, CURLINFO info, ...) {
   {
     char **value = va_arg(args, char **);
     if(!curl_safe_easy_getinfo_string(handle, info, value, &result))
-      result = ref_handle ? fn(ref_handle, info, value) : CURLE_BAD_FUNCTION_ARGUMENT;
+      result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
     break;
   }
   case CURLINFO_SLIST:
   {
     void **value = va_arg(args, void **);
     if(!curl_safe_easy_getinfo_ptr(handle, info, value, &result))
-      result = ref_handle ? fn(ref_handle, info, value) : CURLE_BAD_FUNCTION_ARGUMENT;
+      result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
     break;
   }
   case CURLINFO_LONG:
   {
     long *value = va_arg(args, long *);
     if(!curl_safe_easy_getinfo_long(handle, info, value, &result))
-      result = ref_handle ? fn(ref_handle, info, value) : CURLE_BAD_FUNCTION_ARGUMENT;
+      result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
     break;
   }
   case CURLINFO_DOUBLE:
     result = ref_handle ? fn(ref_handle, info, va_arg(args, double *))
-                        : CURLE_BAD_FUNCTION_ARGUMENT;
+                        : CURLE_UNKNOWN_OPTION;
     break;
   case CURLINFO_SOCKET:
   {
     curl_socket_t *value = va_arg(args, curl_socket_t *);
     if(!curl_safe_easy_getinfo_socket(handle, info, value, &result))
-      result = ref_handle ? fn(ref_handle, info, value) : CURLE_BAD_FUNCTION_ARGUMENT;
+      result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
     break;
   }
   case CURLINFO_OFF_T:
   {
     curl_off_t *value = va_arg(args, curl_off_t *);
     if(!curl_safe_easy_getinfo_off_t(handle, info, value, &result))
-      result = ref_handle ? fn(ref_handle, info, value) : CURLE_BAD_FUNCTION_ARGUMENT;
+      result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
     break;
   }
   default:

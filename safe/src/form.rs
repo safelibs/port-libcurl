@@ -51,7 +51,11 @@ struct FormNode {
 }
 
 fn form_node_mut(node: *mut curl_httppost) -> Option<&'static mut FormNode> {
-    (!node.is_null()).then_some(unsafe { &mut *(node as *mut FormNode) })
+    if node.is_null() {
+        None
+    } else {
+        Some(unsafe { &mut *(node as *mut FormNode) })
+    }
 }
 
 fn copy_c_string(value: *const c_char) -> Result<Option<CString>, CURLFORMcode> {

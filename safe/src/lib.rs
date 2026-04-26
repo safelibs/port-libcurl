@@ -55,9 +55,13 @@ pub const BUILD_FLAVOR: &str = if cfg!(feature = "openssl-flavor") {
 
 unsafe extern "C" {
     #[link_name = "curl_easy_setopt"]
-    fn retain_variadic_c_shims();
+    fn retain_variadic_c_shims(
+        handle: *mut crate::abi::CURL,
+        option: crate::abi::CURLoption,
+        ...
+    ) -> crate::abi::CURLcode;
     #[link_name = "curl_maprintf"]
-    fn retain_mprintf_c_shims();
+    fn retain_mprintf_c_shims(format: *const core::ffi::c_char, ...) -> *mut core::ffi::c_char;
 }
 
 // Keep the standalone public ABI shim objects linked into the cdylib even when
@@ -65,5 +69,14 @@ unsafe extern "C" {
 // foundation-bridge still relies on the variadic surface and the permanent
 // mprintf interop boundary for smoke and ABI tests.
 #[used]
-static RETAIN_PUBLIC_C_SHIMS: [unsafe extern "C" fn(); 2] =
-    [retain_variadic_c_shims, retain_mprintf_c_shims];
+static RETAIN_VARIADIC_C_SHIM: unsafe extern "C" fn(
+    *mut crate::abi::CURL,
+    crate::abi::CURLoption,
+    ...
+) -> crate::abi::CURLcode = retain_variadic_c_shims;
+
+#[used]
+static RETAIN_MPRINTF_C_SHIM: unsafe extern "C" fn(
+    *const core::ffi::c_char,
+    ...
+) -> *mut core::ffi::c_char = retain_mprintf_c_shims;

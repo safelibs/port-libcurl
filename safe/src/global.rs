@@ -7,22 +7,11 @@ use crate::abi::{
 use crate::{alloc, version, BUILD_FLAVOR};
 use core::ffi::{c_char, c_long, c_void};
 use std::mem;
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 
 unsafe extern "C" {
     fn curl_safe_resolve_reference_symbol(name: *const c_char) -> *mut c_void;
 }
-
-type CurlGlobalInitFn = unsafe extern "C" fn(c_long) -> CURLcode;
-type CurlGlobalInitMemFn = unsafe extern "C" fn(
-    c_long,
-    curl_malloc_callback,
-    curl_free_callback,
-    curl_realloc_callback,
-    curl_strdup_callback,
-    curl_calloc_callback,
-) -> CURLcode;
-type CurlGlobalCleanupFn = unsafe extern "C" fn();
 
 #[derive(Clone, Copy)]
 struct GlobalState {
@@ -47,21 +36,6 @@ pub(crate) unsafe fn load_reference<T: Copy>(symbol: &'static [u8]) -> T {
         std::process::abort();
     }
     unsafe { mem::transmute_copy(&ptr) }
-}
-
-fn ref_global_init() -> CurlGlobalInitFn {
-    static FN: OnceLock<CurlGlobalInitFn> = OnceLock::new();
-    *FN.get_or_init(|| unsafe { load_reference(b"curl_global_init\0") })
-}
-
-fn ref_global_init_mem() -> CurlGlobalInitMemFn {
-    static FN: OnceLock<CurlGlobalInitMemFn> = OnceLock::new();
-    *FN.get_or_init(|| unsafe { load_reference(b"curl_global_init_mem\0") })
-}
-
-fn ref_global_cleanup() -> CurlGlobalCleanupFn {
-    static FN: OnceLock<CurlGlobalCleanupFn> = OnceLock::new();
-    *FN.get_or_init(|| unsafe { load_reference(b"curl_global_cleanup\0") })
 }
 
 fn compiled_ssl_backend_id() -> curl_sslbackend {
@@ -133,12 +107,9 @@ pub(crate) fn ensure_global_init_for_easy() -> Result<(), CURLcode> {
 
 #[no_mangle]
 pub unsafe extern "C" fn curl_global_init(flags: c_long) -> CURLcode {
+    let _ = flags;
     let mut state = GLOBAL_STATE.lock().expect("global mutex poisoned");
     if state.init_depth == 0 {
-        let code = unsafe { ref_global_init()(flags) };
-        if code != CURLE_OK {
-            return code;
-        }
         version::clear_cached_version();
         alloc::reset_to_default();
     }
@@ -156,6 +127,7 @@ pub unsafe extern "C" fn curl_global_init_mem(
     strdup: curl_strdup_callback,
     calloc: curl_calloc_callback,
 ) -> CURLcode {
+    let _ = flags;
     if malloc.is_none()
         || free.is_none()
         || realloc.is_none()
@@ -167,10 +139,6 @@ pub unsafe extern "C" fn curl_global_init_mem(
 
     let mut state = GLOBAL_STATE.lock().expect("global mutex poisoned");
     if state.init_depth == 0 {
-        let code = unsafe { ref_global_init_mem()(flags, malloc, free, realloc, strdup, calloc) };
-        if code != CURLE_OK {
-            return code;
-        }
         version::clear_cached_version();
         alloc::set_custom(malloc, free, realloc, strdup, calloc);
     }
@@ -195,8 +163,8 @@ pub unsafe extern "C" fn curl_global_cleanup() {
     };
 
     if should_clear {
+        unsafe { crate::easy::reference::clear_all() };
         version::clear_cached_version();
-        unsafe { ref_global_cleanup()() };
         alloc::reset_to_default();
         crate::easy::perform::clear_registry();
     }

@@ -55,11 +55,19 @@ struct MimePartHandle {
 }
 
 fn mime_mut(mime: *mut curl_mime) -> Option<&'static mut MimeHandle> {
-    (!mime.is_null()).then_some(unsafe { &mut *(mime as *mut MimeHandle) })
+    if mime.is_null() {
+        None
+    } else {
+        Some(unsafe { &mut *(mime as *mut MimeHandle) })
+    }
 }
 
 fn part_mut(part: *mut curl_mimepart) -> Option<&'static mut MimePartHandle> {
-    (!part.is_null()).then_some(unsafe { &mut *(part as *mut MimePartHandle) })
+    if part.is_null() {
+        None
+    } else {
+        Some(unsafe { &mut *(part as *mut MimePartHandle) })
+    }
 }
 
 fn c_string(value: *const c_char) -> Result<Option<String>, CURLcode> {

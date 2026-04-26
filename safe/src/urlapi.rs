@@ -52,11 +52,19 @@ struct UrlHandle {
 }
 
 fn handle_ref(handle: *const CURLU) -> Option<&'static UrlHandle> {
-    (!handle.is_null()).then_some(unsafe { &*(handle as *const UrlHandle) })
+    if handle.is_null() {
+        None
+    } else {
+        Some(unsafe { &*(handle as *const UrlHandle) })
+    }
 }
 
 fn handle_mut(handle: *mut CURLU) -> Option<&'static mut UrlHandle> {
-    (!handle.is_null()).then_some(unsafe { &mut *(handle as *mut UrlHandle) })
+    if handle.is_null() {
+        None
+    } else {
+        Some(unsafe { &mut *(handle as *mut UrlHandle) })
+    }
 }
 
 fn read_part(part: *const c_char) -> Result<Option<String>, CURLUcode> {

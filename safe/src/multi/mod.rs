@@ -342,7 +342,7 @@ unsafe extern "C" fn reference_socket_callback(
         return -1;
     };
     let multi_ptr: *mut CURLM = userp.cast();
-    let public_easy = crate::easy::handle::public_from_reference(easy_handle);
+    let public_easy = crate::easy::reference::public_from_reference(easy_handle);
     match invoke_socket_callback(wrapper, multi_ptr, public_easy, socket, what) {
         crate::abi::CURLM_OK => 0,
         _ => -1,
@@ -378,8 +378,8 @@ unsafe extern "C" fn reference_push_callback(
         return CURL_PUSH_ERROROUT;
     };
     let multi_ptr: *mut CURLM = userp.cast();
-    let parent_public = crate::easy::handle::public_from_reference(parent);
-    let pushed_public = crate::easy::handle::public_from_reference(easy_handle);
+    let parent_public = crate::easy::reference::public_from_reference(parent);
+    let pushed_public = crate::easy::reference::public_from_reference(easy_handle);
     let (push_cb, push_userp, parent_plan, parent_connection_id) = {
         let guard = wrapper.inner.lock().expect("multi mutex poisoned");
         let parent_record = guard.records.get(&(parent_public as usize));
@@ -465,7 +465,10 @@ pub(crate) fn run_reference_http2_session(parent_easy: *mut CURL) -> CURLcode {
     let multi_ptr = easy::perform::attached_multi_for(parent_easy)
         .map(|value| value as *mut CURLM)
         .unwrap_or(ptr::null_mut());
-    let parent_reference = crate::easy::handle::reference_handle(parent_easy);
+    let parent_reference = unsafe { crate::easy::reference::ensure_handle(parent_easy) };
+    if parent_reference.is_null() {
+        return crate::abi::CURLE_FAILED_INIT;
+    }
     let reference_multi = unsafe { ref_multi_init()() };
     if reference_multi.is_null() {
         return crate::abi::CURLE_OUT_OF_MEMORY;
@@ -543,7 +546,7 @@ pub(crate) fn run_reference_http2_session(parent_easy: *mut CURL) -> CURLcode {
             }
 
             let easy_reference = unsafe { (*msg).easy_handle };
-            let easy_handle = crate::easy::handle::public_from_reference(easy_reference);
+            let easy_handle = crate::easy::reference::public_from_reference(easy_reference);
             let result = unsafe { (*msg).data.result };
             let _ = unsafe { ref_multi_remove_handle()(reference_multi, easy_reference) };
             if easy_handle == parent_easy || easy_reference == parent_reference {
@@ -552,7 +555,7 @@ pub(crate) fn run_reference_http2_session(parent_easy: *mut CURL) -> CURLcode {
             } else if !multi_ptr.is_null() {
                 enqueue_completed_event(multi_ptr, easy_handle, result);
             } else {
-                unsafe { crate::easy::handle::easy_cleanup(easy_handle) };
+                unsafe { crate::easy::reference::cleanup_raw_reference(easy_reference) };
             }
         }
 
@@ -581,6 +584,7 @@ pub(crate) fn run_reference_http2_session(parent_easy: *mut CURL) -> CURLcode {
 
     let _ = unsafe { ref_multi_remove_handle()(reference_multi, parent_reference) };
     let _ = unsafe { ref_multi_cleanup()(reference_multi) };
+    unsafe { crate::easy::reference::release_handle(parent_easy) };
     parent_result
 }
 
@@ -644,9 +648,10 @@ pub(crate) unsafe fn cleanup_handle(multi: *mut CURLM) -> CURLMcode {
             let _ = unsafe {
                 ref_multi_remove_handle()(
                     reference_multi,
-                    crate::easy::handle::reference_handle(easy),
+                    crate::easy::reference::active_handle(easy),
                 )
             };
+            unsafe { crate::easy::reference::release_handle(easy) };
         }
         let _ = unsafe { ref_multi_cleanup()(reference_multi) };
     }
@@ -766,9 +771,10 @@ pub(crate) unsafe fn remove_handle(multi: *mut CURLM, easy_handle: *mut CURL) ->
         let _ = unsafe {
             ref_multi_remove_handle()(
                 reference_multi,
-                crate::easy::handle::reference_handle(easy_handle),
+                crate::easy::reference::active_handle(easy_handle),
             )
         };
+        unsafe { crate::easy::reference::release_handle(easy_handle) };
         if cleanup_reference_multi {
             let _ = unsafe { ref_multi_cleanup()(reference_multi) };
         }
@@ -816,9 +822,10 @@ pub(crate) unsafe fn drop_easy_reference(multi: *mut CURLM, easy_handle: *mut CU
             let _ = unsafe {
                 ref_multi_remove_handle()(
                     reference_multi,
-                    crate::easy::handle::reference_handle(easy_handle),
+                    crate::easy::reference::active_handle(easy_handle),
                 )
             };
+            unsafe { crate::easy::reference::release_handle(easy_handle) };
             if cleanup_reference_multi {
                 let _ = unsafe { ref_multi_cleanup()(reference_multi) };
             }
@@ -1565,7 +1572,7 @@ fn harvest_reference_messages(wrapper: &MultiHandle) {
         }
 
         let easy_reference = unsafe { (*msg).easy_handle };
-        let easy_handle = crate::easy::handle::public_from_reference(easy_reference);
+        let easy_handle = crate::easy::reference::public_from_reference(easy_reference);
         let result = unsafe { (*msg).data.result };
         let mut guard = wrapper.inner.lock().expect("multi mutex poisoned");
         let Some(record) = guard.records.get_mut(&(easy_handle as usize)) else {
@@ -1623,12 +1630,11 @@ fn start_pending_transfers(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> CURL
                 Err(code) => return code,
             };
             let suppressed_verbose = suppress_reference_verbose(easy_handle);
-            let rc = unsafe {
-                ref_multi_add_handle()(
-                    reference_multi,
-                    crate::easy::handle::reference_handle(easy_handle),
-                )
-            };
+            let reference_easy = unsafe { crate::easy::reference::ensure_handle(easy_handle) };
+            if reference_easy.is_null() {
+                return crate::multi::CURLM_OUT_OF_MEMORY;
+            }
+            let rc = unsafe { ref_multi_add_handle()(reference_multi, reference_easy) };
             if rc != crate::abi::CURLM_OK {
                 restore_reference_verbose(easy_handle, suppressed_verbose);
                 return rc;

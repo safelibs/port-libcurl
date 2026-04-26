@@ -144,13 +144,6 @@ unsafe extern "C" {
     ) -> CURLcode;
 }
 
-type CurlEasyPauseFn = unsafe extern "C" fn(*mut CURL, c_int) -> CURLcode;
-
-fn ref_easy_pause() -> CurlEasyPauseFn {
-    static FN: OnceLock<CurlEasyPauseFn> = OnceLock::new();
-    *FN.get_or_init(|| unsafe { crate::global::load_reference(b"curl_easy_pause\0") })
-}
-
 #[derive(Clone)]
 pub(crate) struct EasyMetadata {
     pub url: Option<String>,
@@ -912,6 +905,9 @@ pub(crate) fn easy_getinfo_string(
     let shadow = guard.get(&(handle as usize));
     unsafe {
         *value = match info {
+            CURLINFO_PRIVATE => shadow
+                .map(|shadow| shadow.metadata.private_data as *mut c_char)
+                .unwrap_or(ptr::null_mut()),
             CURLINFO_SCHEME => {
                 let scheme = shadow
                     .and_then(|shadow| shadow.metadata.url.as_deref())
@@ -1203,12 +1199,7 @@ pub(crate) unsafe fn easy_perform(handle: *mut CURL) -> CURLcode {
 }
 
 pub(crate) unsafe fn easy_pause(handle: *mut CURL, bitmask: c_int) -> CURLcode {
-    let ref_handle = crate::easy::handle::reference_handle(handle);
-    let ref_rc = if ref_handle.is_null() {
-        crate::abi::CURLE_FAILED_INIT
-    } else {
-        unsafe { ref_easy_pause()(ref_handle, bitmask) }
-    };
+    let ref_rc = unsafe { crate::easy::reference::pause_handle(handle, bitmask) };
     let rc = crate::transfer::pause_handle(handle, bitmask);
     if rc != crate::abi::CURLE_OK {
         return rc;

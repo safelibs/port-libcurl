@@ -49,7 +49,11 @@ impl ShareState {
 }
 
 unsafe fn handle_mut(handle: *mut CURLSH) -> Option<&'static mut ShareHandle> {
-    (!handle.is_null()).then_some(unsafe { &mut *handle.cast::<ShareHandle>() })
+    if handle.is_null() {
+        None
+    } else {
+        Some(unsafe { &mut *handle.cast::<ShareHandle>() })
+    }
 }
 
 fn share_strerror_message(code: CURLSHcode) -> &'static [u8] {
