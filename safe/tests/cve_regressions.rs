@@ -1,4 +1,7 @@
-use port_libcurl_safe::abi::{curl_header, curl_slist, curl_ws_frame, CURLHcode, CURLcode, CURL};
+use port_libcurl_safe::abi::{
+    curl_header, curl_pushheaders, curl_slist, curl_waitfd, curl_ws_frame, CURLHcode, CURLMcode,
+    CURLMoption, CURLMsg, CURLcode, CURLM, CURL,
+};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::ffi::{c_char, c_long, c_void, CStr, CString};
@@ -6,6 +9,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
 use std::ptr;
 use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock};
@@ -19,25 +23,40 @@ const CURLOPT_AUTOREFERER: u32 = 58;
 const CURLOPT_RESOLVE: u32 = 10203;
 const CURLOPT_NETRC: u32 = 51;
 const CURLOPT_NETRC_FILE: u32 = 10118;
+const CURLOPT_PROXY: u32 = 10004;
+const CURLOPT_PROXYUSERPWD: u32 = 10006;
 const CURLOPT_COOKIEFILE: u32 = 10031;
+const CURLOPT_HTTPHEADER: u32 = 10023;
+const CURLOPT_HTTP_VERSION: u32 = 84;
 const CURLOPT_CONNECT_ONLY: u32 = 141;
 const CURLOPT_ALTSVC_CTRL: u32 = 286;
 const CURLOPT_ALTSVC: u32 = 10287;
 const CURLOPT_HSTS_CTRL: u32 = 299;
 const CURLOPT_HSTS: u32 = 10300;
+const CURLOPT_WRITEFUNCTION: u32 = 20011;
+const CURLOPT_SSL_VERIFYPEER: u32 = 64;
+const CURLOPT_SSL_VERIFYHOST: u32 = 81;
 
 const CURL_GLOBAL_DEFAULT: c_long = 3;
 const CURL_NETRC_OPTIONAL: c_long = 1;
 const CURLH_HEADER: u32 = 1 << 0;
 const CURLH_TRAILER: u32 = 1 << 1;
+const CURL_HTTP_VERSION_2_0: c_long = 3;
 const CURLWS_TEXT: u32 = 1 << 0;
 const CURLWS_CLOSE: u32 = 1 << 3;
 const CURLPAUSE_RECV: i32 = 1 << 0;
 const CURLPAUSE_SEND: i32 = 1 << 2;
+const CURLMOPT_PIPELINING: CURLMoption = 3;
+const CURLMOPT_PUSHFUNCTION: CURLMoption = 20014;
+const CURLMOPT_PUSHDATA: CURLMoption = 10015;
+const CURLPIPE_MULTIPLEX: c_long = 2;
+const CURLMSG_DONE: u32 = 1;
 
 const CURLE_OK: CURLcode = 0;
 const CURLE_AGAIN: CURLcode = 81;
 const CURLE_RECV_ERROR: CURLcode = 56;
+const CURLM_OK: CURLMcode = 0;
+const CURL_PUSH_OK: i32 = 0;
 
 unsafe extern "C" {
     fn curl_global_init(flags: c_long) -> CURLcode;
@@ -76,6 +95,25 @@ unsafe extern "C" {
     ) -> *mut curl_header;
     fn curl_slist_append(list: *mut curl_slist, data: *const c_char) -> *mut curl_slist;
     fn curl_slist_free_all(list: *mut curl_slist);
+    fn curl_multi_init() -> *mut CURLM;
+    fn curl_multi_cleanup(multi: *mut CURLM) -> CURLMcode;
+    fn curl_multi_add_handle(multi: *mut CURLM, easy: *mut CURL) -> CURLMcode;
+    fn curl_multi_remove_handle(multi: *mut CURLM, easy: *mut CURL) -> CURLMcode;
+    fn curl_multi_perform(multi: *mut CURLM, running_handles: *mut i32) -> CURLMcode;
+    fn curl_multi_poll(
+        multi: *mut CURLM,
+        extra_fds: *mut curl_waitfd,
+        extra_nfds: u32,
+        timeout_ms: i32,
+        ret: *mut i32,
+    ) -> CURLMcode;
+    fn curl_multi_info_read(multi: *mut CURLM, msgs_in_queue: *mut i32) -> *mut CURLMsg;
+    fn curl_multi_setopt(multi: *mut CURLM, option: CURLMoption, ...) -> CURLMcode;
+    fn curl_pushheader_byname(
+        headers: *mut curl_pushheaders,
+        name: *const c_char,
+    ) -> *mut c_char;
+    fn curl_pushheader_bynum(headers: *mut curl_pushheaders, index: usize) -> *mut c_char;
     fn curl_ws_send(
         curl: *mut CURL,
         buffer: *const c_void,
@@ -169,6 +207,101 @@ impl Drop for Slist {
     }
 }
 
+struct MultiHandle(*mut CURLM);
+
+impl MultiHandle {
+    fn new() -> Self {
+        let handle = unsafe { curl_multi_init() };
+        assert!(!handle.is_null());
+        Self(handle)
+    }
+
+    fn as_ptr(&self) -> *mut CURLM {
+        self.0
+    }
+}
+
+impl Drop for MultiHandle {
+    fn drop(&mut self) {
+        unsafe {
+            assert_eq!(curl_multi_cleanup(self.0), CURLM_OK);
+        }
+    }
+}
+
+#[derive(Default)]
+struct PushCapture {
+    count: usize,
+    path: Option<String>,
+    first_header: Option<String>,
+}
+
+struct HttpsFixture {
+    port: u16,
+    child: Child,
+}
+
+impl Drop for HttpsFixture {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+unsafe extern "C" fn sink_write(
+    _buffer: *mut c_char,
+    size: usize,
+    nmemb: usize,
+    _userdata: *mut c_void,
+) -> usize {
+    size.saturating_mul(nmemb)
+}
+
+unsafe extern "C" fn capture_push_callback(
+    _parent: *mut CURL,
+    easy: *mut CURL,
+    _num_headers: usize,
+    headers: *mut curl_pushheaders,
+    userp: *mut c_void,
+) -> i32 {
+    if userp.is_null() {
+        return 1;
+    }
+    let state = unsafe { &mut *(userp as *mut PushCapture) };
+    let path_name = CString::new(":path").expect("path name");
+    let path = unsafe { curl_pushheader_byname(headers, path_name.as_ptr()) };
+    if !path.is_null() {
+        state.path = Some(
+            unsafe { CStr::from_ptr(path) }
+                .to_str()
+                .expect("push path")
+                .to_string(),
+        );
+    }
+    let first = unsafe { curl_pushheader_bynum(headers, 0) };
+    if !first.is_null() {
+        state.first_header = Some(
+            unsafe { CStr::from_ptr(first) }
+                .to_str()
+                .expect("push header")
+                .to_string(),
+        );
+    }
+    state.count += 1;
+
+    if unsafe {
+        curl_easy_setopt(
+            easy,
+            CURLOPT_WRITEFUNCTION,
+            sink_write as unsafe extern "C" fn(*mut c_char, usize, usize, *mut c_void) -> usize,
+        )
+    } != CURLE_OK
+    {
+        return 1;
+    }
+    CURL_PUSH_OK
+}
+
 #[derive(Debug)]
 struct CaseDescriptor {
     id: String,
@@ -226,9 +359,11 @@ fn case_root() -> PathBuf {
 
 fn runtime_case_ids() -> BTreeSet<String> {
     [
+        "proxy_auth_reuse",
         "redirect_credentials",
         "cookie_origin_scope",
         "headers_api_semantics",
+        "hsts_domain_scope",
         "websocket_mask_entropy",
         "websocket_recv_progress",
         "response_header_limit",
@@ -332,15 +467,73 @@ fn runtime_cases_execute_from_mapping() {
             continue;
         }
         match descriptor.id.as_str() {
+            "proxy_auth_reuse" => run_proxy_auth_reuse_case(),
             "redirect_credentials" => run_redirect_credentials_case(),
             "cookie_origin_scope" => run_cookie_origin_scope_case(),
             "headers_api_semantics" => run_headers_api_case(),
+            "hsts_domain_scope" => run_hsts_domain_scope_case(),
             "websocket_mask_entropy" => run_websocket_mask_entropy_case(),
             "websocket_recv_progress" => run_websocket_recv_progress_case(),
             "response_header_limit" => run_response_header_limit_case(),
             other => panic!("unimplemented runtime case {other}"),
         }
     }
+}
+
+fn run_proxy_auth_reuse_case() {
+    let server = spawn_scripted_http_server(vec![
+        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_string(),
+    ]);
+    let url = CString::new(format!("http://127.0.0.1:{}/direct", server.port)).expect("url");
+    let mut headers = Slist::new();
+    headers.push("Proxy-Authorization: Basic Zm9vOmJhcg==");
+    let handle = EasyHandle::new();
+    unsafe {
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_URL, url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_HTTPHEADER, headers.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(curl_easy_perform(handle.as_ptr()), CURLE_OK);
+    }
+    server.join.join().expect("direct server");
+    let requests = server.requests.lock().expect("requests").clone();
+    assert!(header(&requests[0], "Proxy-Authorization").is_none());
+
+    let proxy = spawn_scripted_http_server(vec![
+        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_string(),
+    ]);
+    let url = CString::new("http://origin.test/resource").expect("url");
+    let proxy_url =
+        CString::new(format!("http://127.0.0.1:{}", proxy.port)).expect("proxy url");
+    let proxy_userpwd = CString::new("alice:secret").expect("proxy creds");
+    let handle = EasyHandle::new();
+    unsafe {
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_URL, url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_PROXY, proxy_url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_PROXYUSERPWD, proxy_userpwd.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(curl_easy_perform(handle.as_ptr()), CURLE_OK);
+    }
+    proxy.join.join().expect("proxy server");
+    let requests = proxy.requests.lock().expect("proxy requests").clone();
+    assert!(
+        requests[0].starts_with("GET http://origin.test/resource HTTP/1.1"),
+        "unexpected proxied request line: {}",
+        requests[0].lines().next().unwrap_or_default()
+    );
+    assert!(header(&requests[0], "Proxy-Authorization").is_some());
 }
 
 fn run_redirect_credentials_case() {
@@ -539,6 +732,172 @@ fn run_headers_api_case() {
     }
     assert!(seen.contains(&"Set-Cookie".to_string()));
     assert!(seen.contains(&"X-Test".to_string()));
+
+    let server = spawn_scripted_http_server(vec![
+        "HTTP/1.1 200 OK\r\nLink: </push/asset.txt>; rel=preload\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_string(),
+        "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nasset".to_string(),
+    ]);
+    let mut resolve = Slist::new();
+    resolve.push(format!("push.test:{}:127.0.0.1", server.port));
+    let url = CString::new(format!("http://push.test:{}/push", server.port)).expect("url");
+    let multi = MultiHandle::new();
+    let handle = EasyHandle::new();
+    let mut push_state = Box::new(PushCapture::default());
+    unsafe {
+        assert_eq!(
+            curl_multi_setopt(
+                multi.as_ptr(),
+                CURLMOPT_PIPELINING,
+                CURLPIPE_MULTIPLEX as c_long
+            ),
+            CURLM_OK
+        );
+        assert_eq!(
+            curl_multi_setopt(
+                multi.as_ptr(),
+                CURLMOPT_PUSHFUNCTION,
+                capture_push_callback as unsafe extern "C" fn(
+                    *mut CURL,
+                    *mut CURL,
+                    usize,
+                    *mut curl_pushheaders,
+                    *mut c_void,
+                ) -> i32,
+            ),
+            CURLM_OK
+        );
+        assert_eq!(
+            curl_multi_setopt(
+                multi.as_ptr(),
+                CURLMOPT_PUSHDATA,
+                (&mut *push_state) as *mut PushCapture as *mut c_void
+            ),
+            CURLM_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_URL, url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_RESOLVE, resolve.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(
+                handle.as_ptr(),
+                CURLOPT_WRITEFUNCTION,
+                sink_write as unsafe extern "C" fn(*mut c_char, usize, usize, *mut c_void) -> usize,
+            ),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_multi_add_handle(multi.as_ptr(), handle.as_ptr()),
+            CURLM_OK
+        );
+    }
+
+    let start = std::time::Instant::now();
+    let mut running = 1;
+    let mut primary_done = false;
+    while !primary_done || running > 0 {
+        unsafe {
+            assert_eq!(
+                curl_multi_perform(multi.as_ptr(), &mut running),
+                CURLM_OK
+            );
+            let mut messages = 0;
+            loop {
+                let message = curl_multi_info_read(multi.as_ptr(), &mut messages);
+                if message.is_null() {
+                    break;
+                }
+                if (*message).msg != CURLMSG_DONE {
+                    continue;
+                }
+                let easy = (*message).easy_handle;
+                assert_eq!(curl_multi_remove_handle(multi.as_ptr(), easy), CURLM_OK);
+                if easy == handle.as_ptr() {
+                    primary_done = true;
+                } else {
+                    curl_easy_cleanup(easy);
+                }
+            }
+            if running > 0 {
+                let mut ready = 0;
+                assert_eq!(
+                    curl_multi_poll(multi.as_ptr(), ptr::null_mut(), 0, 100, &mut ready),
+                    CURLM_OK
+                );
+            }
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(3),
+            "timed out waiting for synthetic push transfer"
+        );
+    }
+
+    server.join.join().expect("push server");
+    assert_eq!(push_state.count, 1);
+    assert_eq!(push_state.path.as_deref(), Some("/push/asset.txt"));
+    assert!(
+        push_state
+            .first_header
+            .as_deref()
+            .is_some_and(|value| value.contains(":method: GET"))
+    );
+}
+
+fn run_hsts_domain_scope_case() {
+    let https = spawn_https_fixture();
+    let hsts_file = temp_path("hsts-runtime");
+    fs::write(&hsts_file, ".hsts.test \"20991231 23:59:59\"\n").expect("write hsts");
+    let mut resolve = Slist::new();
+    resolve.push(format!("a.hsts.test:{}:127.0.0.1", https.port));
+    let url = CString::new(format!("http://a.hsts.test:{}/upgrade", https.port)).expect("url");
+    let hsts_file_c = CString::new(hsts_file.to_string_lossy().into_owned()).expect("hsts");
+    let handle = EasyHandle::new();
+    unsafe {
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_URL, url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_RESOLVE, resolve.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_HSTS, hsts_file_c.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_HSTS_CTRL, 1 as c_long),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_SSL_VERIFYPEER, 0 as c_long),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_SSL_VERIFYHOST, 0 as c_long),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(
+                handle.as_ptr(),
+                CURLOPT_WRITEFUNCTION,
+                sink_write as unsafe extern "C" fn(*mut c_char, usize, usize, *mut c_void) -> usize,
+            ),
+            CURLE_OK
+        );
+        assert_eq!(curl_easy_perform(handle.as_ptr()), CURLE_OK);
+    }
+    let text = fs::read_to_string(&hsts_file).expect("read hsts");
+    assert!(text.contains(".hsts.test"));
+    let _ = fs::remove_file(hsts_file);
 }
 
 fn run_websocket_mask_entropy_case() {
@@ -670,6 +1029,51 @@ fn run_websocket_recv_progress_case() {
     assert!(!meta.is_null());
     assert_eq!(unsafe { (*meta).len }, 2);
     join.join().expect("ws recv server");
+
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind masked ws");
+    let port = listener.local_addr().expect("addr").port();
+    let join = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept ws");
+        let _ = read_http_headers(&mut stream);
+        stream
+            .write_all(
+                b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: ignored\r\n\r\n",
+            )
+            .expect("write handshake");
+        stream
+            .write_all(&[0x81, 0x82, 1, 2, 3, 4, b'o' ^ 1, b'k' ^ 2])
+            .expect("write masked text");
+        stream.flush().expect("flush masked ws");
+        let _ = stream.shutdown(Shutdown::Both);
+    });
+
+    let url = CString::new(format!("ws://127.0.0.1:{port}/echo")).expect("url");
+    let handle = EasyHandle::new();
+    unsafe {
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_URL, url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_CONNECT_ONLY, 2 as c_long),
+            CURLE_OK
+        );
+        assert_eq!(curl_easy_perform(handle.as_ptr()), CURLE_OK);
+    }
+    let mut recv_len = 0usize;
+    let mut meta = ptr::null();
+    let mut buffer = [0u8; 16];
+    let code = unsafe {
+        curl_ws_recv(
+            handle.as_ptr(),
+            buffer.as_mut_ptr().cast(),
+            buffer.len(),
+            &mut recv_len,
+            &mut meta,
+        )
+    };
+    assert_eq!(code, CURLE_RECV_ERROR);
+    join.join().expect("masked ws server");
 }
 
 fn run_response_header_limit_case() {
@@ -804,6 +1208,50 @@ fn temp_path(stem: &str) -> PathBuf {
         .expect("time")
         .as_nanos();
     std::env::temp_dir().join(format!("port-libcurl-safe-{stem}-{nanos}.tmp"))
+}
+
+fn pick_unused_port() -> u16 {
+    TcpListener::bind(("127.0.0.1", 0))
+        .expect("bind port picker")
+        .local_addr()
+        .expect("port picker addr")
+        .port()
+}
+
+fn wait_for_port(port: u16, child: &mut Child) {
+    for _ in 0..100 {
+        if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            return;
+        }
+        if child.try_wait().expect("poll https child").is_some() {
+            panic!("openssl s_server exited before becoming ready");
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    panic!("openssl s_server did not become ready on port {port}");
+}
+
+fn spawn_https_fixture() -> HttpsFixture {
+    let port = pick_unused_port();
+    let cert_dir = safe_dir().join("vendor").join("upstream").join("tests").join("certs");
+    let cert = cert_dir.join("Server-localhost-sv.pem");
+    let key = cert_dir.join("Server-localhost-sv.key");
+    let mut child = Command::new("openssl")
+        .arg("s_server")
+        .arg("-accept")
+        .arg(port.to_string())
+        .arg("-cert")
+        .arg(&cert)
+        .arg("-key")
+        .arg(&key)
+        .arg("-www")
+        .arg("-quiet")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn openssl s_server");
+    wait_for_port(port, &mut child);
+    HttpsFixture { port, child }
 }
 
 #[test]

@@ -7,7 +7,7 @@ use crate::abi::{
 };
 use crate::conn::cache::ConnectionCache;
 use crate::dns::ResolverOwner;
-use crate::{alloc, easy, global, transfer};
+use crate::{alloc, easy, transfer};
 use core::ffi::{c_char, c_int, c_long, c_uint, c_void};
 use core::{mem, ptr};
 use std::collections::{HashMap, VecDeque};
@@ -71,21 +71,6 @@ type CurlPushCallback = Option<
     unsafe extern "C" fn(*mut CURL, *mut CURL, usize, *mut curl_pushheaders, *mut c_void) -> c_int,
 >;
 
-type RefMultiInitFn = unsafe extern "C" fn() -> *mut CURLM;
-type RefMultiCleanupFn = unsafe extern "C" fn(*mut CURLM) -> CURLMcode;
-type RefMultiAddHandleFn = unsafe extern "C" fn(*mut CURLM, *mut CURL) -> CURLMcode;
-type RefMultiRemoveHandleFn = unsafe extern "C" fn(*mut CURLM, *mut CURL) -> CURLMcode;
-type RefMultiPollFn = unsafe extern "C" fn(
-    *mut CURLM,
-    *mut crate::abi::curl_waitfd,
-    c_uint,
-    c_int,
-    *mut c_int,
-) -> CURLMcode;
-type RefMultiPerformFn = unsafe extern "C" fn(*mut CURLM, *mut c_int) -> CURLMcode;
-type RefMultiSetoptFn = unsafe extern "C" fn(*mut CURLM, CURLMoption, ...) -> CURLMcode;
-type RefMultiInfoReadFn = unsafe extern "C" fn(*mut CURLM, *mut c_int) -> *mut CURLMsg;
-
 #[repr(C)]
 pub(crate) struct libc_fd_set {
     fds_bits: [c_long; 16],
@@ -106,6 +91,12 @@ struct CallbackState {
     push_cb: CurlPushCallback,
     push_userp: *mut c_void,
     in_callback: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SyntheticPushRequest {
+    pub url: String,
+    pub headers: Vec<String>,
 }
 
 enum TransferEvent {
@@ -215,280 +206,172 @@ fn wrapper_from_ptr(multi: *mut CURLM) -> Option<&'static MultiHandle> {
     Some(wrapper)
 }
 
-fn ref_multi_init() -> RefMultiInitFn {
-    static FN: std::sync::OnceLock<RefMultiInitFn> = std::sync::OnceLock::new();
-    *FN.get_or_init(|| unsafe { global::load_reference(b"curl_multi_init\0") })
+fn remember_connection_id(
+    inner: &mut MultiInner,
+    plan: &transfer::TransferPlan,
+    metadata: &easy::perform::EasyMetadata,
+) -> usize {
+    let maxconnects = inner
+        .maxconnects
+        .max(metadata.maxconnects.unwrap_or(0).max(0) as usize);
+    let next_connection_id = inner.next_connection_id;
+    let (connection_id, reused) =
+        inner
+            .conncache
+            .remember(plan.cache_key.clone(), maxconnects, next_connection_id);
+    if !reused {
+        inner.next_connection_id += 1;
+    }
+    connection_id
 }
 
-fn ref_multi_cleanup() -> RefMultiCleanupFn {
-    static FN: std::sync::OnceLock<RefMultiCleanupFn> = std::sync::OnceLock::new();
-    *FN.get_or_init(|| unsafe { global::load_reference(b"curl_multi_cleanup\0") })
-}
-
-fn ref_multi_add_handle() -> RefMultiAddHandleFn {
-    static FN: std::sync::OnceLock<RefMultiAddHandleFn> = std::sync::OnceLock::new();
-    *FN.get_or_init(|| unsafe { global::load_reference(b"curl_multi_add_handle\0") })
-}
-
-fn ref_multi_remove_handle() -> RefMultiRemoveHandleFn {
-    static FN: std::sync::OnceLock<RefMultiRemoveHandleFn> = std::sync::OnceLock::new();
-    *FN.get_or_init(|| unsafe { global::load_reference(b"curl_multi_remove_handle\0") })
-}
-
-fn ref_multi_poll() -> RefMultiPollFn {
-    static FN: std::sync::OnceLock<RefMultiPollFn> = std::sync::OnceLock::new();
-    *FN.get_or_init(|| unsafe { global::load_reference(b"curl_multi_poll\0") })
-}
-
-fn ref_multi_perform() -> RefMultiPerformFn {
-    static FN: std::sync::OnceLock<RefMultiPerformFn> = std::sync::OnceLock::new();
-    *FN.get_or_init(|| unsafe { global::load_reference(b"curl_multi_perform\0") })
-}
-
-fn ref_multi_setopt() -> RefMultiSetoptFn {
-    static FN: std::sync::OnceLock<RefMultiSetoptFn> = std::sync::OnceLock::new();
-    *FN.get_or_init(|| unsafe { global::load_reference(b"curl_multi_setopt\0") })
-}
-
-fn ref_multi_info_read() -> RefMultiInfoReadFn {
-    static FN: std::sync::OnceLock<RefMultiInfoReadFn> = std::sync::OnceLock::new();
-    *FN.get_or_init(|| unsafe { global::load_reference(b"curl_multi_info_read\0") })
-}
-
-unsafe fn reference_multi_setopt_long(
-    multi_handle: *mut CURLM,
-    option: CURLMoption,
-    value: c_long,
-) -> CURLMcode {
-    unsafe { ref_multi_setopt()(multi_handle, option, value) }
-}
-
-unsafe fn reference_multi_setopt_ptr(
-    multi_handle: *mut CURLM,
-    option: CURLMoption,
-    value: *mut c_void,
-) -> CURLMcode {
-    unsafe { ref_multi_setopt()(multi_handle, option, value) }
-}
-
-unsafe fn reference_multi_setopt_function(
-    multi_handle: *mut CURLM,
-    option: CURLMoption,
-    value: Option<unsafe extern "C" fn()>,
-) -> CURLMcode {
-    unsafe { ref_multi_setopt()(multi_handle, option, value) }
-}
-
-unsafe extern "C" fn reference_push_callback(
-    parent: *mut CURL,
+fn spawn_transfer_worker(
+    wrapper: &MultiHandle,
+    multi_ptr: *mut CURLM,
     easy_handle: *mut CURL,
-    num_headers: usize,
-    headers: *mut curl_pushheaders,
-    userp: *mut c_void,
-) -> c_int {
-    let Some(wrapper) = wrapper_from_ptr(userp.cast()) else {
-        return CURL_PUSH_ERROROUT;
+    plan: transfer::TransferPlan,
+) -> Result<(UnixStream, std::thread::JoinHandle<()>), CURLMcode> {
+    for next_state in state_path_for(&plan) {
+        easy::perform::on_transfer_progress(easy_handle, next_state);
+    }
+    debug_assert!(
+        !plan.reference_backend,
+        "public multi transfers must stay on the native path"
+    );
+
+    let Ok((poll_reader, mut poll_writer)) = UnixStream::pair() else {
+        return Err(CURLM_INTERNAL_ERROR);
     };
-    let multi_ptr: *mut CURLM = userp.cast();
-    let parent_public = crate::easy::reference::public_from_reference(parent);
-    let pushed_public = crate::easy::reference::public_from_reference(easy_handle);
-    let (push_cb, push_userp, parent_plan, parent_connection_id) = {
+    let socket_fd = poll_reader.as_raw_fd() as curl_socket_t;
+    let socket_rc = invoke_socket_callback(wrapper, multi_ptr, easy_handle, socket_fd, CURL_POLL_IN);
+    if socket_rc != crate::abi::CURLM_OK {
+        return Err(socket_rc);
+    }
+    let events = Arc::clone(&wrapper.events);
+    let easy_key = easy_handle as usize;
+    let join = transfer::spawn_transfer(easy_key, plan, move |result| {
+        let _ = poll_writer.write_all(&[1]);
+        let _ = poll_writer.flush();
+        events.push(TransferEvent::Completed { easy_key, result });
+    });
+    Ok((poll_reader, join))
+}
+
+fn cleanup_synthetic_handle(easy_handle: *mut CURL) {
+    if easy_handle.is_null() {
+        return;
+    }
+    unsafe { crate::easy::handle::easy_cleanup(easy_handle) };
+}
+
+pub(crate) fn schedule_http2_pushes(parent_easy: *mut CURL, pushes: Vec<SyntheticPushRequest>) {
+    if pushes.is_empty() || parent_easy.is_null() {
+        return;
+    }
+
+    let Some(multi_ptr) = easy::perform::attached_multi_for(parent_easy).map(|value| value as *mut CURLM)
+    else {
+        return;
+    };
+    let Some(wrapper) = wrapper_from_ptr(multi_ptr) else {
+        return;
+    };
+    let (push_cb, push_userp) = {
         let guard = wrapper.inner.lock().expect("multi mutex poisoned");
-        let parent_record = guard.records.get(&(parent_public as usize));
-        let plan = parent_record
-            .map(|record| record.plan.clone())
-            .unwrap_or_else(|| {
-                transfer::build_plan(
-                    &easy::perform::snapshot_metadata(parent_public),
-                    ResolverOwner::Multi,
-                )
-            });
-        let connection_id = parent_record
-            .map(|record| record.connection_id)
-            .unwrap_or(0);
-        (
-            guard.callbacks.push_cb,
-            guard.callbacks.push_userp,
-            plan,
-            connection_id,
-        )
+        (guard.callbacks.push_cb, guard.callbacks.push_userp)
+    };
+    let Some(push_cb) = push_cb else {
+        return;
     };
 
-    unsafe { crate::protocols::capture_push_headers(headers, num_headers) };
-    let decision = if let Some(push_cb) = push_cb {
-        unsafe {
+    for push in pushes {
+        let pushed_easy = unsafe { easy::handle::alloc_public_handle() };
+        easy::perform::register_duplicate(parent_easy, pushed_easy);
+        easy::perform::configure_push_handle(pushed_easy, push.url.clone());
+
+        let headers = crate::protocols::create_push_headers(&push.headers);
+        {
+            let mut guard = wrapper.inner.lock().expect("multi mutex poisoned");
+            if guard.callbacks.in_callback {
+                crate::protocols::release_push_headers(headers);
+                cleanup_synthetic_handle(pushed_easy);
+                return;
+            }
+            guard.callbacks.in_callback = true;
+        }
+        let decision = unsafe {
             push_cb(
-                parent_public,
-                pushed_public,
-                num_headers,
+                parent_easy,
+                pushed_easy,
+                push.headers.len(),
                 headers,
                 push_userp,
             )
-        }
-    } else {
-        CURL_PUSH_DENY
-    };
-    crate::protocols::release_push_headers(headers);
-    if decision != CURL_PUSH_OK {
-        return decision;
-    }
-    {
-        let mut guard = wrapper.inner.lock().expect("multi mutex poisoned");
-        if !guard.easies.contains(&pushed_public) {
-            guard.easies.push(pushed_public);
-        }
-        guard.records.insert(
-            pushed_public as usize,
-            TransferRecord {
-                easy: pushed_public,
-                state: state::MultiState::Performing,
-                plan: parent_plan,
-                connection_id: parent_connection_id,
-                poll_reader: None,
-                worker: None,
-                started: true,
-                completed: false,
-                message_enqueued: false,
-            },
-        );
-    }
-    easy::perform::on_attached(
-        pushed_public,
-        multi_ptr as usize,
-        state::MultiState::Performing,
-    );
-    CURL_PUSH_OK
-}
-
-fn enqueue_completed_event(multi: *mut CURLM, easy_handle: *mut CURL, result: CURLcode) {
-    let Some(wrapper) = wrapper_from_ptr(multi) else {
-        return;
-    };
-    wrapper.events.push(TransferEvent::Completed {
-        easy_key: easy_handle as usize,
-        result,
-    });
-}
-
-// Phase 5 removal point: this is the only remaining HTTP/2 compatibility bridge.
-// Public easy/multi option ownership and callback state stay in Rust above this boundary.
-pub(crate) fn run_reference_http2_session(parent_easy: *mut CURL) -> CURLcode {
-    let multi_ptr = easy::perform::attached_multi_for(parent_easy)
-        .map(|value| value as *mut CURLM)
-        .unwrap_or(ptr::null_mut());
-    let parent_reference = unsafe { crate::easy::reference::ensure_handle(parent_easy) };
-    if parent_reference.is_null() {
-        return crate::abi::CURLE_FAILED_INIT;
-    }
-    let reference_multi = unsafe { ref_multi_init()() };
-    if reference_multi.is_null() {
-        return crate::abi::CURLE_OUT_OF_MEMORY;
-    }
-
-    if !multi_ptr.is_null() {
-        let reference_push = Some(unsafe {
-            mem::transmute::<
-                unsafe extern "C" fn(
-                    *mut CURL,
-                    *mut CURL,
-                    usize,
-                    *mut curl_pushheaders,
-                    *mut c_void,
-                ) -> c_int,
-                unsafe extern "C" fn(),
-            >(reference_push_callback)
-        });
-
-        let configure = |rc: CURLMcode| {
-            if rc == crate::abi::CURLM_OK {
-                Ok(())
-            } else {
-                Err(rc)
-            }
         };
-        if configure(unsafe {
-            reference_multi_setopt_function(reference_multi, CURLMOPT_PUSHFUNCTION, reference_push)
-        })
-        .and_then(|_| {
-            configure(unsafe {
-                reference_multi_setopt_ptr(reference_multi, CURLMOPT_PUSHDATA, multi_ptr.cast())
-            })
-        })
-        .is_err()
+        crate::protocols::release_push_headers(headers);
         {
-            let _ = unsafe { ref_multi_cleanup()(reference_multi) };
-            return crate::abi::CURLE_BAD_FUNCTION_ARGUMENT;
+            let mut guard = wrapper.inner.lock().expect("multi mutex poisoned");
+            guard.callbacks.in_callback = false;
         }
-    }
-
-    let add_rc = unsafe { ref_multi_add_handle()(reference_multi, parent_reference) };
-    if add_rc != crate::abi::CURLM_OK {
-        let _ = unsafe { ref_multi_cleanup()(reference_multi) };
-        return transfer::map_multi_code(add_rc);
-    }
-
-    let mut parent_result = crate::abi::CURLE_OK;
-    let mut parent_done = false;
-
-    loop {
-        let mut running = 0;
-        let rc = unsafe { ref_multi_perform()(reference_multi, &mut running) };
-        if rc != crate::abi::CURLM_OK {
-            parent_result = transfer::map_multi_code(rc);
-            break;
+        if decision != CURL_PUSH_OK {
+            cleanup_synthetic_handle(pushed_easy);
+            continue;
         }
 
-        loop {
-            let mut queued = 0;
-            let msg = unsafe { ref_multi_info_read()(reference_multi, &mut queued) };
-            if msg.is_null() {
-                break;
-            }
-            if unsafe { (*msg).msg } != CURLMSG_DONE {
+        let metadata = easy::perform::snapshot_metadata(pushed_easy);
+        let plan = transfer::build_plan(&metadata, ResolverOwner::Multi);
+        let connection_id = {
+            let mut guard = wrapper.inner.lock().expect("multi mutex poisoned");
+            if guard.records.contains_key(&(pushed_easy as usize)) {
+                cleanup_synthetic_handle(pushed_easy);
                 continue;
             }
-
-            let easy_reference = unsafe { (*msg).easy_handle };
-            let easy_handle = crate::easy::reference::public_from_reference(easy_reference);
-            let result = unsafe { (*msg).data.result };
-            let _ = unsafe { ref_multi_remove_handle()(reference_multi, easy_reference) };
-            if easy_handle == parent_easy || easy_reference == parent_reference {
-                parent_result = result;
-                parent_done = true;
-            } else if !multi_ptr.is_null() {
-                enqueue_completed_event(multi_ptr, easy_handle, result);
-            } else {
-                unsafe { crate::easy::reference::cleanup_raw_reference(easy_reference) };
+            let connection_id = remember_connection_id(&mut guard, &plan, &metadata);
+            if !guard.easies.contains(&pushed_easy) {
+                guard.easies.push(pushed_easy);
+            }
+            guard.records.insert(
+                pushed_easy as usize,
+                TransferRecord {
+                    easy: pushed_easy,
+                    state: state::MultiState::Pending,
+                    plan: plan.clone(),
+                    connection_id,
+                    poll_reader: None,
+                    worker: None,
+                    started: true,
+                    completed: false,
+                    message_enqueued: false,
+                },
+            );
+            connection_id
+        };
+        let _ = connection_id;
+        easy::perform::on_attached(pushed_easy, multi_ptr as usize, state::MultiState::Pending);
+        match spawn_transfer_worker(wrapper, multi_ptr, pushed_easy, plan) {
+            Ok((poll_reader, worker)) => {
+                if let Some(record) = wrapper
+                    .inner
+                    .lock()
+                    .expect("multi mutex poisoned")
+                    .records
+                    .get_mut(&(pushed_easy as usize))
+                {
+                    record.poll_reader = Some(poll_reader);
+                    record.worker = Some(worker);
+                }
+                let _ = update_timer(wrapper, multi_ptr);
+            }
+            Err(_) => {
+                {
+                    let mut guard = wrapper.inner.lock().expect("multi mutex poisoned");
+                    guard.easies.retain(|candidate| *candidate != pushed_easy);
+                    guard.records.remove(&(pushed_easy as usize));
+                }
+                cleanup_synthetic_handle(pushed_easy);
             }
         }
-
-        if parent_done && running == 0 {
-            break;
-        }
-        if running == 0 {
-            break;
-        }
-
-        let mut numfds = 0;
-        let rc = unsafe {
-            ref_multi_poll()(
-                reference_multi,
-                ptr::null_mut(),
-                0,
-                transfer::EASY_PERFORM_WAIT_TIMEOUT_MS as c_int,
-                &mut numfds,
-            )
-        };
-        if rc != crate::abi::CURLM_OK {
-            parent_result = transfer::map_multi_code(rc);
-            break;
-        }
     }
-
-    let _ = unsafe { ref_multi_remove_handle()(reference_multi, parent_reference) };
-    let _ = unsafe { ref_multi_cleanup()(reference_multi) };
-    unsafe { crate::easy::reference::release_handle(parent_easy) };
-    parent_result
 }
 
 pub(crate) unsafe fn init_handle() -> *mut CURLM {
@@ -1067,29 +950,12 @@ fn start_pending_transfers(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> CURL
     };
 
     for (easy_handle, plan, states) in starts {
-        for next_state in states {
-            easy::perform::on_transfer_progress(easy_handle, next_state);
-        }
-        debug_assert!(
-            !plan.reference_backend,
-            "public multi transfers must stay on the native path"
-        );
-        let Ok((poll_reader, mut poll_writer)) = UnixStream::pair() else {
-            return CURLM_INTERNAL_ERROR;
-        };
-        let socket_fd = poll_reader.as_raw_fd() as curl_socket_t;
-        let socket_rc =
-            invoke_socket_callback(wrapper, multi_ptr, easy_handle, socket_fd, CURL_POLL_IN);
-        if socket_rc != crate::abi::CURLM_OK {
-            return socket_rc;
-        }
-        let events = Arc::clone(&wrapper.events);
-        let easy_key = easy_handle as usize;
-        let join = transfer::spawn_transfer(easy_key, plan, move |result| {
-            let _ = poll_writer.write_all(&[1]);
-            let _ = poll_writer.flush();
-            events.push(TransferEvent::Completed { easy_key, result });
-        });
+        let _ = states;
+        let (poll_reader, join) =
+            match spawn_transfer_worker(wrapper, multi_ptr, easy_handle, plan) {
+                Ok(values) => values,
+                Err(code) => return code,
+            };
         if let Some(record) = wrapper
             .inner
             .lock()

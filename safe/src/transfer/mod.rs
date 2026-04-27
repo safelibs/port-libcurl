@@ -227,6 +227,7 @@ struct ResponseMeta {
     location: Option<String>,
     body_prefix: Vec<u8>,
     chunked: bool,
+    pushes: Vec<crate::multi::SyntheticPushRequest>,
 }
 
 struct TransferOutcome {
@@ -701,6 +702,9 @@ fn perform_transfer_impl(
         return code;
     }
     let mut current_url = initial_url;
+    if hsts_enabled {
+        current_url = maybe_upgrade_hsts_url(handle, &metadata, &current_url);
+    }
     let initial_origin = Origin::from_url(&current_url);
     let mut referer_value = metadata.referer.clone();
     let mut allow_cross_origin_auth = false;
@@ -718,6 +722,9 @@ fn perform_transfer_impl(
     };
 
     for redirect_count in 0..=redirect_limit {
+        if hsts_enabled {
+            current_url = maybe_upgrade_hsts_url(handle, &metadata, &current_url);
+        }
         let mut request = match RequestContext::new(
             &current_url,
             &metadata,
@@ -727,17 +734,7 @@ fn perform_transfer_impl(
             Ok(request) => request,
             Err(code) => return code,
         };
-        if redirect_count == 0 && should_use_reference_http2_transport(handle, &metadata, &request)
-        {
-            let result = crate::multi::run_reference_http2_session(handle);
-            return finalize_hsts(
-                handle,
-                &metadata,
-                callbacks,
-                metadata.hsts_ctrl != 0,
-                result,
-            );
-        }
+        let http2_compat = native_http2_compat_enabled(handle, &metadata, &request);
         prepare_request_headers(
             handle,
             &metadata,
@@ -758,6 +755,7 @@ fn perform_transfer_impl(
                 &metadata,
                 callbacks,
                 redirect_count,
+                http2_compat,
             )
         };
 
@@ -1123,12 +1121,14 @@ fn execute_http_transfer(
     metadata: &EasyMetadata,
     callbacks: EasyCallbacks,
     request_index: usize,
+    http2_compat: bool,
 ) -> Result<TransferOutcome, CURLcode> {
     let request_started = Instant::now();
     let ConnectedStream {
         mut stream,
         mut info,
     } = connect_stream(request, metadata, &plan.resolve_overrides, callbacks)?;
+    let tls_policy = tls_policy_for_request(request, metadata);
     stream
         .set_read_timeout(Some(IO_POLL_INTERVAL))
         .map_err(|_| CURLE_COULDNT_CONNECT)?;
@@ -1147,7 +1147,7 @@ fn execute_http_transfer(
     } else {
         (Vec::new(), 0)
     };
-    let mut stream = if let Some(policy) = plan.tls.as_ref() {
+    let mut stream = if let Some(policy) = tls_policy.as_ref() {
         let tls = crate::tls::connect(
             stream,
             &request.target_host,
@@ -1161,7 +1161,7 @@ fn execute_http_transfer(
         TransportStream::Plain(stream)
     };
     let transport_ready_us = elapsed_us(request_started.elapsed());
-    if plan.tls.is_some() {
+    if tls_policy.is_some() {
         info.appconnect_time_us = transport_ready_us;
     }
     info.pretransfer_time_us = transport_ready_us;
@@ -1171,7 +1171,7 @@ fn execute_http_transfer(
         write_request_body(&mut stream, handle, callbacks, request)?;
     }
 
-    let response = read_response_meta_with_prefix(
+    let mut response = read_response_meta_with_prefix(
         &mut stream,
         handle,
         callbacks,
@@ -1179,7 +1179,14 @@ fn execute_http_transfer(
         request,
         request_index,
         response_prefix,
+        http2_compat,
     )?;
+    if http2_compat {
+        response.http_version = CURL_HTTP_VERSION_2_0;
+        if !response.pushes.is_empty() {
+            crate::multi::schedule_http2_pushes(handle, response.pushes.clone());
+        }
+    }
     flush_cookie_jar(handle, metadata);
     flush_altsvc_cache(handle, metadata);
     info.starttransfer_time_us = elapsed_us(request_started.elapsed());
@@ -1674,6 +1681,23 @@ fn close_plain_stream(stream: TcpStream, callbacks: EasyCallbacks) {
     }
 }
 
+fn tls_policy_for_request(
+    request: &RequestContext,
+    metadata: &EasyMetadata,
+) -> Option<crate::tls::TlsPolicy> {
+    match request.scheme.as_str() {
+        "https" | "wss" => {
+            let route = crate::protocols::route_scheme(
+                &request.scheme,
+                metadata.connect_mode,
+                metadata.http_version,
+            );
+            crate::tls::policy_for_route(route, metadata)
+        }
+        _ => None,
+    }
+}
+
 fn establish_proxy_tunnel(
     stream: &mut TcpStream,
     handle: *mut CURL,
@@ -1879,6 +1903,7 @@ fn read_proxy_connect_response(
         &header_block,
         HEADER_ORIGIN_CONNECT,
         !metadata.suppress_connect_headers,
+        false,
     )?;
     Ok((parsed.status_code, body_prefix))
 }
@@ -1891,6 +1916,7 @@ fn read_response_meta_with_prefix(
     request: &RequestContext,
     request_index: usize,
     bytes: Vec<u8>,
+    allow_http2_push: bool,
 ) -> Result<ResponseMeta, CURLcode> {
     let mut pending = bytes;
     loop {
@@ -1904,6 +1930,7 @@ fn read_response_meta_with_prefix(
             &header_block,
             HEADER_ORIGIN_HEADER,
             true,
+            allow_http2_push,
         )?;
         parsed.body_prefix = body_prefix;
         if parsed.status_code >= 200 || parsed.status_code == 101 {
@@ -1952,6 +1979,7 @@ fn process_response_header_block(
     header_block: &[u8],
     default_origin: u32,
     emit_headers: bool,
+    allow_http2_push: bool,
 ) -> Result<ResponseMeta, CURLcode> {
     let lines = split_header_lines(header_block);
     let status_line = lines.first().copied().ok_or(CURLE_READ_ERROR)?;
@@ -1970,6 +1998,7 @@ fn process_response_header_block(
     let mut retry_after = None;
     let mut location = None;
     let mut chunked = false;
+    let mut pushes = Vec::new();
     let _ = perform::with_http_state_mut(handle, |state| {
         state.headers.set_latest_request(request_index)
     });
@@ -2011,6 +2040,8 @@ fn process_response_header_block(
             chunked = value
                 .split(',')
                 .any(|part| part.trim().eq_ignore_ascii_case("chunked"));
+        } else if allow_http2_push && name.eq_ignore_ascii_case("link") {
+            pushes.extend(parse_http2_push_links(request, value));
         }
     }
 
@@ -2024,6 +2055,7 @@ fn process_response_header_block(
         location,
         body_prefix: Vec::new(),
         chunked,
+        pushes,
     })
 }
 
@@ -2117,7 +2149,7 @@ fn record_received_header(
     });
 }
 
-fn should_use_reference_http2_transport(
+fn native_http2_compat_enabled(
     handle: *mut CURL,
     metadata: &EasyMetadata,
     request: &RequestContext,
@@ -2397,6 +2429,11 @@ fn prepare_request_headers(
     referer_value: Option<&str>,
     request: &mut RequestContext,
 ) {
+    let allow_server_auth =
+        auth::allow_server_credentials(current_url, initial_origin, allow_cross_origin_auth);
+    sanitize_authorization_headers(request, allow_server_auth);
+    sanitize_proxy_authorization_headers(request);
+
     if let Some(user_agent) = metadata.user_agent.as_deref() {
         if !has_header(&request.request_headers, "User-Agent") {
             request
@@ -2772,6 +2809,72 @@ fn redirected_url(current_url: &str, status_code: u16, location: Option<&str>) -
     Some(format!("{base}/{location}"))
 }
 
+fn maybe_upgrade_hsts_url(handle: *mut CURL, metadata: &EasyMetadata, url: &str) -> String {
+    let Some(parsed) = ParsedUrl::parse(url) else {
+        return url.to_string();
+    };
+    if parsed.scheme != "http" {
+        return url.to_string();
+    }
+    let should_upgrade = with_hsts_store_mut(handle, metadata, |store| {
+        store.lookup(&parsed.host).is_some()
+    })
+    .unwrap_or(false);
+    if !should_upgrade {
+        return url.to_string();
+    }
+
+    let port = if parsed.port == 80 { 443 } else { parsed.port };
+    let authority = format_host_header(&parsed.host, port, "https");
+    format!("https://{authority}{}", parsed.path_and_query)
+}
+
+fn parse_http2_push_links(request: &RequestContext, value: &str) -> Vec<crate::multi::SyntheticPushRequest> {
+    let parent_origin = Origin::from_url(&request.url);
+    value
+        .split(',')
+        .filter_map(|entry| parse_http2_push_link(request, parent_origin.as_ref(), entry.trim()))
+        .collect()
+}
+
+fn parse_http2_push_link(
+    request: &RequestContext,
+    parent_origin: Option<&Origin>,
+    entry: &str,
+) -> Option<crate::multi::SyntheticPushRequest> {
+    let (target, attrs) = entry.split_once('>')?;
+    let target = target.strip_prefix('<')?.trim();
+    if target.is_empty() {
+        return None;
+    }
+    let attrs = attrs.trim_start();
+    if !attrs
+        .split(';')
+        .skip(1)
+        .any(|attr| attr.trim().eq_ignore_ascii_case("rel=preload"))
+    {
+        return None;
+    }
+
+    let url = request::resolve_redirect_target(&request.url, target)?;
+    let push_origin = Origin::from_url(&url)?;
+    if let Some(parent_origin) = parent_origin {
+        if !parent_origin.same_origin(&push_origin) {
+            return None;
+        }
+    }
+    let parsed = ParsedUrl::parse(&url)?;
+    Some(crate::multi::SyntheticPushRequest {
+        url,
+        headers: vec![
+            ":method: GET".to_string(),
+            format!(":scheme: {}", parsed.scheme),
+            format!(":authority: {}", parsed.host_header),
+            format!(":path: {}", parsed.path_and_query),
+        ],
+    })
+}
+
 fn find_header_end(bytes: &[u8]) -> Option<usize> {
     bytes
         .windows(4)
@@ -2841,6 +2944,35 @@ fn has_header(headers: &[String], name: &str) -> bool {
             .split_once(':')
             .is_some_and(|(candidate, _)| candidate.trim().eq_ignore_ascii_case(name))
     })
+}
+
+fn strip_header(headers: &mut Vec<String>, name: &str) {
+    headers.retain(|header| {
+        header
+            .split_once(':')
+            .map(|(candidate, _)| !candidate.trim().eq_ignore_ascii_case(name))
+            .unwrap_or(true)
+    });
+}
+
+fn sanitize_authorization_headers(request: &mut RequestContext, allow_server_auth: bool) {
+    if !allow_server_auth {
+        strip_header(&mut request.request_headers, "Authorization");
+    }
+}
+
+fn sanitize_proxy_authorization_headers(request: &mut RequestContext) {
+    if request.proxy.is_none() {
+        strip_header(&mut request.request_headers, "Proxy-Authorization");
+        strip_header(&mut request.proxy_headers, "Proxy-Authorization");
+        return;
+    }
+
+    if request.tunnel_proxy {
+        strip_header(&mut request.request_headers, "Proxy-Authorization");
+    } else {
+        strip_header(&mut request.proxy_headers, "Proxy-Authorization");
+    }
 }
 
 fn request_header_value(headers: &[String], name: &str) -> Option<String> {

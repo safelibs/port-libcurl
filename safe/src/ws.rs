@@ -185,7 +185,15 @@ impl WebSocketSession {
 
         let first = self.recv_buffer[0];
         let second = self.recv_buffer[1];
+        let finish = (first & 0x80) != 0;
+        let opcode = first & 0x0f;
+        if (first & 0x70) != 0 || !matches!(opcode, 0x0 | 0x1 | 0x2 | 0x8 | 0x9 | 0xA) {
+            return Err(CURLE_RECV_ERROR);
+        }
         let masked = (second & 0x80) != 0;
+        if masked {
+            return Err(CURLE_RECV_ERROR);
+        }
         let mut payload_len = (second & 0x7f) as usize;
         let mut header_len = 2usize;
         if payload_len == 126 {
@@ -206,6 +214,9 @@ impl WebSocketSession {
             header_len = 10;
         }
         if payload_len > MAX_FRAME_PAYLOAD {
+            return Err(CURLE_RECV_ERROR);
+        }
+        if matches!(opcode, 0x8 | 0x9 | 0xA) && (!finish || payload_len > 125) {
             return Err(CURLE_RECV_ERROR);
         }
 
@@ -229,7 +240,7 @@ impl WebSocketSession {
         }
         self.recv_buffer.drain(..header_len + payload_len);
         Ok(Some(PendingFrame {
-            flags: flags_from_opcode(first & 0x0f, (first & 0x80) == 0),
+            flags: flags_from_opcode(opcode, !finish),
             payload,
             offset: 0,
         }))
@@ -473,5 +484,23 @@ mod tests {
         let frame = session.try_parse_frame().expect("parse").expect("frame");
         assert_eq!(frame.flags & CURLWS_PING, CURLWS_PING);
         assert!(frame.payload.is_empty());
+    }
+
+    #[test]
+    fn masked_server_frames_are_rejected() {
+        let mut session = WebSocketSession {
+            raw_mode: false,
+            recv_buffer: vec![0x81, 0x81, 1, 2, 3, 4, b'o' ^ 1],
+            pending: None,
+            frame: crate::abi::curl_ws_frame {
+                age: 0,
+                flags: 0,
+                offset: 0,
+                bytesleft: 0,
+                len: 0,
+            },
+            send_fragment_remaining: None,
+        };
+        assert_eq!(session.try_parse_frame(), Err(super::CURLE_RECV_ERROR));
     }
 }

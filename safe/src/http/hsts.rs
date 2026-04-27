@@ -1,6 +1,7 @@
 use crate::http::response::split_header_line;
 use std::collections::HashSet;
 use std::fs;
+use std::net::IpAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -38,24 +39,16 @@ impl HstsStore {
         expires: i64,
         expire_text: Option<String>,
     ) {
+        let Some(host) = normalize_host(host) else {
+            return;
+        };
         if expires <= current_unix_time() {
-            self.remove(host);
+            self.remove_exact(&host);
             return;
         }
-        if let Some(existing) = self
-            .entries
-            .iter_mut()
-            .find(|entry| entry.host.eq_ignore_ascii_case(host))
-        {
-            if expires > existing.expires {
-                existing.expires = expires;
-            }
-            existing.include_subdomains |= include_subdomains;
-            existing.expire_text = expire_text;
-            return;
-        }
+        self.remove_exact(&host);
         self.entries.push(HstsEntry {
-            host: host.to_ascii_lowercase(),
+            host,
             include_subdomains,
             expires,
             expire_text,
@@ -68,11 +61,13 @@ impl HstsStore {
         include_subdomains: bool,
         expire_text: &str,
     ) {
-        self.entries
-            .retain(|entry| !entry.host.eq_ignore_ascii_case(host));
+        let Some(host) = normalize_host(host) else {
+            return;
+        };
+        self.remove_exact(&host);
         let expires = parse_hsts_file_date(expire_text).unwrap_or(i64::MAX);
         self.entries.push(HstsEntry {
-            host: host.to_ascii_lowercase(),
+            host,
             include_subdomains,
             expires,
             expire_text: (!expire_text.is_empty()).then(|| expire_text.to_string()),
@@ -80,12 +75,15 @@ impl HstsStore {
     }
 
     pub(crate) fn lookup(&self, host: &str) -> Option<&HstsEntry> {
-        let host = host.to_ascii_lowercase();
+        let host = normalize_host(host)?;
+        if is_ip_address(&host) {
+            return None;
+        }
         let now = current_unix_time();
         if let Some(exact) = self
             .entries
             .iter()
-            .find(|entry| entry.host.eq_ignore_ascii_case(&host) && entry.expires > now)
+            .find(|entry| entry.host == host && entry.expires > now)
         {
             return Some(exact);
         }
@@ -156,9 +154,8 @@ impl HstsStore {
         fs::write(path, out)
     }
 
-    fn remove(&mut self, host: &str) {
-        self.entries
-            .retain(|entry| !entry.host.eq_ignore_ascii_case(host));
+    fn remove_exact(&mut self, host: &str) {
+        self.entries.retain(|entry| entry.host != host);
     }
 }
 
@@ -167,6 +164,12 @@ pub(crate) fn record_from_header(store: &mut HstsStore, url_host: &str, line: &s
         return;
     };
     if !name.eq_ignore_ascii_case("strict-transport-security") {
+        return;
+    }
+    let Some(host) = normalize_host(url_host) else {
+        return;
+    };
+    if is_ip_address(&host) {
         return;
     }
 
@@ -188,11 +191,11 @@ pub(crate) fn record_from_header(store: &mut HstsStore, url_host: &str, line: &s
 
     if let Some(max_age) = max_age {
         if max_age <= 0 {
-            store.remove(url_host);
+            store.remove_exact(&host);
             return;
         }
         store.remember_absolute(
-            url_host,
+            &host,
             include_subdomains,
             current_unix_time().saturating_add(max_age),
             None,
@@ -204,9 +207,18 @@ fn parse_hsts_line(line: &str) -> Option<(String, bool, i64, String)> {
     let (host, rest) = line.split_once(' ')?;
     let expire_text = rest.trim().trim_matches('"').to_string();
     let include_subdomains = host.starts_with('.');
-    let host = host.trim_start_matches('.').to_ascii_lowercase();
+    let host = normalize_host(host.trim_start_matches('.'))?;
     let expires = parse_hsts_file_date(&expire_text)?;
     Some((host, include_subdomains, expires, expire_text))
+}
+
+fn normalize_host(host: &str) -> Option<String> {
+    let host = host.trim().trim_end_matches('.');
+    (!host.is_empty()).then(|| host.to_ascii_lowercase())
+}
+
+fn is_ip_address(host: &str) -> bool {
+    host.parse::<IpAddr>().is_ok()
 }
 
 fn parse_hsts_file_date(value: &str) -> Option<i64> {

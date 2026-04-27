@@ -1,5 +1,5 @@
 {
   "id": "hsts_domain_scope",
-  "kind": "documented",
-  "title": "HSTS keeps exact-host replacement and longest-tail subdomain matching"
+  "kind": "runtime",
+  "title": "Persisted HSTS state upgrades matching HTTP requests onto the native HTTPS path"
 }

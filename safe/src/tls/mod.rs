@@ -16,6 +16,12 @@ const CURLE_PEER_FAILED_VERIFICATION: CURLcode = 60;
 const CURLE_SSL_PINNEDPUBKEYNOTMATCH: CURLcode = 90;
 const CURL_HTTP_VERSION_1_0: c_long = 1;
 const CURL_HTTP_VERSION_1_1: c_long = 2;
+const CURL_HTTP_VERSION_2_0: c_long = 3;
+const CURL_HTTP_VERSION_2TLS: c_long = 4;
+const CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE: c_long = 5;
+const ALPN_DISABLED: c_int = 0;
+const ALPN_HTTP1_ONLY: c_int = 1;
+const ALPN_HTTP2_PREFERRED: c_int = 2;
 
 #[derive(Clone, Debug)]
 pub(crate) struct TlsPolicy {
@@ -23,7 +29,7 @@ pub(crate) struct TlsPolicy {
     pub scheme: &'static str,
     pub verify_peer: bool,
     pub verify_host: bool,
-    pub alpn: bool,
+    pub alpn: c_int,
     pub certinfo: bool,
     pub pinned_public_key: Option<String>,
     pub session_cache_scope: String,
@@ -171,14 +177,21 @@ pub(crate) fn backend_name() -> &'static str {
     current_backend().name()
 }
 
-pub(crate) fn enable_http_alpn(scheme: &str, metadata: &EasyMetadata) -> bool {
+pub(crate) fn enable_http_alpn(scheme: &str, metadata: &EasyMetadata) -> c_int {
     if !metadata.ssl_enable_alpn || !scheme.eq_ignore_ascii_case("https") {
-        return false;
+        return ALPN_DISABLED;
     }
-    !matches!(
-        metadata.http_version,
-        CURL_HTTP_VERSION_1_0 | CURL_HTTP_VERSION_1_1
-    )
+    match metadata.http_version {
+        CURL_HTTP_VERSION_1_0 => ALPN_DISABLED,
+        CURL_HTTP_VERSION_1_1 => ALPN_HTTP1_ONLY,
+        CURL_HTTP_VERSION_2_0 | CURL_HTTP_VERSION_2TLS | CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE => {
+            // The native transport now owns the HTTP/2 compatibility surface, but
+            // until it emits wire-level frames it must avoid negotiating real h2
+            // with TLS backends.
+            ALPN_HTTP1_ONLY
+        }
+        _ => ALPN_HTTP1_ONLY,
+    }
 }
 
 fn current_backend() -> &'static dyn TlsBackendAdapter {

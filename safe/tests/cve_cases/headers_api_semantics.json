@@ -1,5 +1,5 @@
 {
   "id": "headers_api_semantics",
   "kind": "runtime",
-  "title": "curl_easy_header and curl_easy_nextheader preserve amount, index, origin, and anchors"
+  "title": "curl header APIs preserve indexed headers and HTTP/2 push-header inspection"
 }

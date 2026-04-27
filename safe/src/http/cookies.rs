@@ -1,8 +1,20 @@
 use crate::http::request::Origin;
 use crate::http::response::split_header_line;
+use core::ffi::{c_char, c_int, c_void};
 use std::collections::HashSet;
+use std::ffi::CString;
 use std::fs;
+use std::net::IpAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+unsafe extern "C" {
+    fn psl_builtin() -> *const c_void;
+    fn psl_is_cookie_domain_acceptable(
+        psl: *const c_void,
+        domain: *const c_char,
+        cookie_domain: *const c_char,
+    ) -> c_int;
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Cookie {
@@ -147,16 +159,17 @@ pub(crate) fn parse_set_cookie(
     request_path: &str,
     header_value: &str,
 ) -> Option<Cookie> {
+    let request_host = normalize_host(host)?;
     let mut segments = header_value.split(';');
     let (name, value) = segments.next()?.split_once('=')?;
-    if has_control(name) || has_control(value) {
+    if name.trim().is_empty() || has_control(name) || has_control(value) {
         return None;
     }
 
     let mut cookie = Cookie {
         name: name.trim().to_string(),
         value: value.trim().to_string(),
-        domain: host.to_ascii_lowercase(),
+        domain: request_host.clone(),
         path: default_cookie_path(request_path),
         secure: false,
         host_only: true,
@@ -175,22 +188,21 @@ pub(crate) fn parse_set_cookie(
         };
         match attr_name.trim().to_ascii_lowercase().as_str() {
             "domain" => {
-                let candidate = attr_value
-                    .trim()
-                    .trim_start_matches('.')
-                    .trim_end_matches('.');
-                if candidate.is_empty()
-                    || is_public_suffix(candidate)
-                    || !domain_match(host, candidate)
+                let candidate = attr_value.trim().trim_start_matches('.');
+                let candidate = normalize_host(candidate)?;
+                if is_ip_address(&request_host)
+                    || !domain_match(&request_host, &candidate)
+                    || !psl_cookie_domain_acceptable(&request_host, &candidate)
                 {
                     return None;
                 }
-                cookie.domain = candidate.to_ascii_lowercase();
+                cookie.domain = candidate;
                 cookie.host_only = false;
             }
             "path" => {
-                if !attr_value.trim().is_empty() {
-                    cookie.path = attr_value.trim().to_string();
+                let candidate = attr_value.trim();
+                if candidate.starts_with('/') {
+                    cookie.path = candidate.to_string();
                 }
             }
             "max-age" => {
@@ -221,6 +233,9 @@ pub(crate) fn record_from_header(store: &mut CookieStore, url: &str, line: &str)
 }
 
 fn cookie_matches(cookie: &Cookie, host: &str, path: &str, secure_request: bool, now: i64) -> bool {
+    let Some(host) = normalize_host(host) else {
+        return false;
+    };
     if cookie
         .expires_at
         .is_some_and(|expires_at| expires_at <= now)
@@ -231,13 +246,13 @@ fn cookie_matches(cookie: &Cookie, host: &str, path: &str, secure_request: bool,
         return false;
     }
     if cookie.host_only {
-        if !host.eq_ignore_ascii_case(&cookie.domain) {
+        if host != cookie.domain {
             return false;
         }
-    } else if !domain_match(host, &cookie.domain) {
+    } else if !domain_match(&host, &cookie.domain) {
         return false;
     }
-    path.starts_with(&cookie.path)
+    path_match(path, &cookie.path)
 }
 
 fn path_for_url(url: &str) -> String {
@@ -274,15 +289,43 @@ fn domain_match(host: &str, domain: &str) -> bool {
             .is_some()
 }
 
-fn is_public_suffix(domain: &str) -> bool {
-    let domain = domain.to_ascii_lowercase();
-    if !domain.contains('.') {
+fn path_match(request_path: &str, cookie_path: &str) -> bool {
+    if request_path == cookie_path {
         return true;
     }
-    matches!(
-        domain.as_str(),
-        "com" | "net" | "org" | "edu" | "gov" | "co.uk" | "uk"
-    )
+    if let Some(rest) = request_path.strip_prefix(cookie_path) {
+        return cookie_path.ends_with('/') || rest.starts_with('/');
+    }
+    false
+}
+
+fn normalize_host(host: &str) -> Option<String> {
+    let host = host.trim().trim_end_matches('.');
+    (!host.is_empty()).then(|| host.to_ascii_lowercase())
+}
+
+fn is_ip_address(host: &str) -> bool {
+    host.parse::<IpAddr>().is_ok()
+}
+
+fn psl_cookie_domain_acceptable(host: &str, cookie_domain: &str) -> bool {
+    let host_c = CString::new(host).ok();
+    let cookie_c = CString::new(cookie_domain).ok();
+    if let (Some(host_c), Some(cookie_c)) = (host_c, cookie_c) {
+        let psl = unsafe { psl_builtin() };
+        if !psl.is_null() {
+            return unsafe {
+                psl_is_cookie_domain_acceptable(psl, host_c.as_ptr(), cookie_c.as_ptr()) != 0
+            };
+        }
+    }
+
+    let domain = cookie_domain.to_ascii_lowercase();
+    domain.contains('.')
+        && !matches!(
+            domain.as_str(),
+            "com" | "net" | "org" | "edu" | "gov" | "co.uk" | "uk"
+        )
 }
 
 fn has_control(value: &str) -> bool {
@@ -409,6 +452,12 @@ mod tests {
     }
 
     #[test]
+    fn cookie_rejects_domain_attribute_on_ip_literals() {
+        let cookie = parse_set_cookie("127.0.0.1", "/index", "a=b; Domain=127.0.0.1");
+        assert!(cookie.is_none());
+    }
+
+    #[test]
     fn cookie_rejects_control_characters() {
         let cookie = parse_set_cookie("example.test", "/index", "a=\x01b");
         assert!(cookie.is_none());
@@ -424,6 +473,18 @@ mod tests {
         assert_eq!(header, "sid=one");
         assert!(store
             .apply_request("http://other.test/next", None)
+            .is_none());
+    }
+
+    #[test]
+    fn cookie_path_match_requires_directory_boundary() {
+        let mut store = CookieStore::default();
+        store.store_set_cookie("http://example.test/login/start", "sid=one; Path=/login");
+        assert!(store
+            .apply_request("http://example.test/login/en", None)
+            .is_some());
+        assert!(store
+            .apply_request("http://example.test/loginhelper", None)
             .is_none());
     }
 

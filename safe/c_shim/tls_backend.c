@@ -590,12 +590,18 @@ int port_safe_tls_connect(int fd,
     if(verify_host)
       SSL_set1_host(conn->ssl, host);
   }
-  if(enable_alpn) {
+  if(enable_alpn == 2) {
     static const unsigned char alpn_h2_h11[] = {
       2, 'h', '2',
       8, 'h', 't', 't', 'p', '/', '1', '.', '1'
     };
     SSL_set_alpn_protos(conn->ssl, alpn_h2_h11, sizeof(alpn_h2_h11));
+  }
+  else if(enable_alpn == 1) {
+    static const unsigned char alpn_h11[] = {
+      8, 'h', 't', 't', 'p', '/', '1', '.', '1'
+    };
+    SSL_set_alpn_protos(conn->ssl, alpn_h11, sizeof(alpn_h11));
   }
   if(session_data && session_len) {
     session = d2i_SSL_SESSION(NULL, &session_cursor, (long)session_len);
@@ -1047,13 +1053,19 @@ int port_safe_tls_connect(int fd,
     free(conn);
     return -1;
   }
-  if(enable_alpn) {
+  if(enable_alpn == 2) {
     gnutls_datum_t protocols[2];
     protocols[0].data = (unsigned char *)"h2";
     protocols[0].size = 2;
     protocols[1].data = (unsigned char *)"http/1.1";
     protocols[1].size = 8;
     gnutls_alpn_set_protocols(conn->session, protocols, 2, 0);
+  }
+  else if(enable_alpn == 1) {
+    gnutls_datum_t protocol;
+    protocol.data = (unsigned char *)"http/1.1";
+    protocol.size = 8;
+    gnutls_alpn_set_protocols(conn->session, &protocol, 1, 0);
   }
   if(host && *host)
     gnutls_server_name_set(conn->session, GNUTLS_NAME_DNS, host, strlen(host));

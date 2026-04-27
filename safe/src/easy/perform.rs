@@ -17,6 +17,8 @@ pub(crate) type CurlWriteCallback =
     Option<unsafe extern "C" fn(*mut c_char, usize, usize, *mut c_void) -> usize>;
 pub(crate) type CurlReadCallback =
     Option<unsafe extern "C" fn(*mut c_char, usize, usize, *mut c_void) -> usize>;
+pub(crate) type CurlDebugCallback =
+    Option<unsafe extern "C" fn(*mut CURL, c_int, *mut c_char, usize, *mut c_void) -> c_int>;
 pub(crate) type CurlSeekCallback = crate::abi::curl_seek_callback;
 pub(crate) type CurlTrailerCallback =
     Option<unsafe extern "C" fn(*mut *mut curl_slist, *mut c_void) -> c_int>;
@@ -40,6 +42,7 @@ const CURLOPT_REFERER: CURLoption = 10016;
 const CURLOPT_USERAGENT: CURLoption = 10018;
 const CURLOPT_WRITEFUNCTION: CURLoption = 20011;
 const CURLOPT_READFUNCTION: CURLoption = 20012;
+const CURLOPT_DEBUGFUNCTION: CURLoption = 20094;
 const CURLOPT_APPEND: CURLoption = 50;
 const CURLOPT_INTERLEAVEDATA: CURLoption = 10195;
 const CURLOPT_SEEKFUNCTION: CURLoption = 20167;
@@ -67,6 +70,7 @@ const CURLOPT_FOLLOWLOCATION: CURLoption = 52;
 const CURLOPT_TRANSFERTEXT: CURLoption = 53;
 const CURLOPT_AUTOREFERER: CURLoption = 58;
 const CURLOPT_XFERINFODATA: CURLoption = 10057;
+const CURLOPT_DEBUGDATA: CURLoption = 10095;
 const CURLOPT_PROXYPORT: CURLoption = 59;
 const CURLOPT_HTTPPROXYTUNNEL: CURLoption = 61;
 const CURLOPT_HTTP_VERSION: CURLoption = 84;
@@ -420,6 +424,8 @@ pub(crate) struct EasyCallbacks {
     pub trailer_data: usize,
     pub write_function: CurlWriteCallback,
     pub write_data: usize,
+    pub debug_function: CurlDebugCallback,
+    pub debug_data: usize,
     pub interleave_data: usize,
     pub seek_function: CurlSeekCallback,
     pub seek_data: usize,
@@ -688,6 +694,34 @@ pub(crate) fn reset_handle(handle: *mut CURL) {
         shadow.http_state = crate::http::HandleHttpState::default();
         shadow.state = MultiState::Init;
     }
+}
+
+pub(crate) fn configure_push_handle(handle: *mut CURL, url: String) {
+    if handle.is_null() {
+        return;
+    }
+
+    let mut guard = registry().lock().expect("easy registry mutex poisoned");
+    let Some(shadow) = guard.get_mut(&(handle as usize)) else {
+        return;
+    };
+    shadow.cached_multi_plan = None;
+    shadow.metadata.url = Some(url);
+    shadow.metadata.curlu_handle = None;
+    shadow.metadata.custom_request = None;
+    shadow.metadata.request_target = None;
+    shadow.metadata.range = None;
+    shadow.metadata.resume_from = 0;
+    shadow.metadata.nobody = false;
+    shadow.metadata.upload = false;
+    shadow.metadata.upload_size = None;
+    shadow.metadata.http_get = true;
+    shadow.metadata.connect_only = false;
+    shadow.metadata.connect_mode = 0;
+    shadow.metadata.ws_options = 0;
+    shadow.info = EasyInfo::default();
+    shadow.http_state.headers.clear();
+    shadow.state = MultiState::Init;
 }
 
 pub(crate) fn unregister_handle(handle: *mut CURL) -> Option<usize> {
@@ -979,6 +1013,10 @@ pub(crate) fn easy_setopt_ptr(
         }
         CURLOPT_WRITEDATA => {
             shadow.callbacks.write_data = value as usize;
+            CURLE_OK
+        }
+        CURLOPT_DEBUGDATA => {
+            shadow.callbacks.debug_data = value as usize;
             CURLE_OK
         }
         CURLOPT_INTERLEAVEDATA => {
@@ -1277,6 +1315,10 @@ pub(crate) fn easy_setopt_function(
         }
         CURLOPT_WRITEFUNCTION => {
             shadow.callbacks.write_function = unsafe { core::mem::transmute(value) };
+            CURLE_OK
+        }
+        CURLOPT_DEBUGFUNCTION => {
+            shadow.callbacks.debug_function = unsafe { core::mem::transmute(value) };
             CURLE_OK
         }
         CURLOPT_HEADERFUNCTION => {

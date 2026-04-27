@@ -85,6 +85,7 @@ fn main() {
     compile_c_shims(&manifest_dir, flavor, &public_export_shim);
 
     println!("cargo:rustc-link-lib=dl");
+    link_psl();
     println!("cargo:rustc-link-lib=ssh2");
     match flavor {
         "openssl" => {
@@ -104,6 +105,23 @@ fn main() {
         "cargo:rustc-cdylib-link-arg=-Wl,--version-script={}",
         out_map.display()
     );
+}
+
+fn link_psl() {
+    let candidates = [
+        Path::new("/lib/x86_64-linux-gnu/libpsl.so.5"),
+        Path::new("/usr/lib/x86_64-linux-gnu/libpsl.so.5"),
+        Path::new("/lib/i386-linux-gnu/libpsl.so.5"),
+        Path::new("/usr/lib/i386-linux-gnu/libpsl.so.5"),
+    ];
+    if let Some(found) = candidates.iter().find(|path| path.is_file()) {
+        if let Some(parent) = found.parent() {
+            println!("cargo:rustc-link-search=native={}", parent.display());
+        }
+        println!("cargo:rustc-link-arg=-l:{}", found.file_name().unwrap().to_string_lossy());
+    } else {
+        println!("cargo:rustc-link-lib=psl");
+    }
 }
 
 #[derive(Default)]

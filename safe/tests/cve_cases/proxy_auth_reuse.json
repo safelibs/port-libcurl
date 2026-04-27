@@ -1,5 +1,5 @@
 {
   "id": "proxy_auth_reuse",
-  "kind": "documented",
-  "title": "Connection cache keys remain proxy-aware and authentication-aware"
+  "kind": "runtime",
+  "title": "Proxy credentials stay proxy-scoped and never leak into direct origin requests"
 }

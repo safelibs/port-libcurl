@@ -75,12 +75,8 @@ pub(crate) fn request_auth_headers(
     allow_cross_origin_auth: bool,
     referer: Option<&str>,
 ) -> RequestAuthHeaders {
-    let current_origin = Origin::from_url(current_url);
-    let same_origin = match (initial_origin, current_origin.as_ref()) {
-        (Some(initial), Some(current)) => initial.same_origin(current),
-        _ => false,
-    };
-    let allow_server_auth = same_origin || allow_cross_origin_auth;
+    let allow_server_auth =
+        allow_server_credentials(current_url, initial_origin, allow_cross_origin_auth);
 
     let authorization = if allow_server_auth {
         if let Some(token) = metadata.xoauth2_bearer.as_deref() {
@@ -118,6 +114,19 @@ pub(crate) fn request_auth_headers(
         proxy_authorization,
         referer,
     }
+}
+
+pub(crate) fn allow_server_credentials(
+    current_url: &str,
+    initial_origin: Option<&Origin>,
+    allow_cross_origin_auth: bool,
+) -> bool {
+    let current_origin = Origin::from_url(current_url);
+    let same_origin = match (initial_origin, current_origin.as_ref()) {
+        (Some(initial), Some(current)) => initial.same_origin(current),
+        _ => false,
+    };
+    same_origin || allow_cross_origin_auth
 }
 
 pub(crate) fn connection_oriented_auth_enabled(metadata: &EasyMetadata) -> bool {
