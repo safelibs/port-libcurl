@@ -248,7 +248,7 @@ fn parse_http_date(text: &str) -> Option<time_t> {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_getenv(variable: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn port_safe_export_curl_getenv(variable: *const c_char) -> *mut c_char {
     if variable.is_null() {
         return ptr::null_mut();
     }
@@ -262,7 +262,7 @@ pub unsafe extern "C" fn curl_getenv(variable: *const c_char) -> *mut c_char {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_getdate(input: *const c_char, _unused: *const time_t) -> time_t {
+pub unsafe extern "C" fn port_safe_export_curl_getdate(input: *const c_char, _unused: *const time_t) -> time_t {
     if input.is_null() {
         return -1;
     }
@@ -271,7 +271,7 @@ pub unsafe extern "C" fn curl_getdate(input: *const c_char, _unused: *const time
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_strequal(s1: *const c_char, s2: *const c_char) -> i32 {
+pub unsafe extern "C" fn port_safe_export_curl_strequal(s1: *const c_char, s2: *const c_char) -> i32 {
     if s1.is_null() || s2.is_null() {
         return 0;
     }
@@ -291,7 +291,7 @@ pub unsafe extern "C" fn curl_strequal(s1: *const c_char, s2: *const c_char) -> 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_strnequal(s1: *const c_char, s2: *const c_char, n: size_t) -> i32 {
+pub unsafe extern "C" fn port_safe_export_curl_strnequal(s1: *const c_char, s2: *const c_char, n: size_t) -> i32 {
     if n == 0 {
         return 1;
     }
@@ -315,7 +315,7 @@ pub unsafe extern "C" fn curl_strnequal(s1: *const c_char, s2: *const c_char, n:
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_version() -> *mut c_char {
+pub unsafe extern "C" fn port_safe_export_curl_version() -> *mut c_char {
     if let Some(ptr) = *VERSION_CACHE.lock().expect("version cache mutex poisoned") {
         return ptr as *mut c_char;
     }
@@ -335,6 +335,6 @@ pub unsafe extern "C" fn curl_version() -> *mut c_char {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_version_info(_stamp: CURLversion) -> *mut curl_version_info_data {
+pub unsafe extern "C" fn port_safe_export_curl_version_info(_stamp: CURLversion) -> *mut curl_version_info_data {
     version_info() as *const curl_version_info_data as *mut curl_version_info_data
 }

@@ -320,7 +320,7 @@ pub unsafe extern "C" fn port_safe_formadd_parsed(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_formget(
+pub unsafe extern "C" fn port_safe_export_curl_formget(
     form: *mut curl_httppost,
     arg: *mut c_void,
     append: curl_formget_callback,
@@ -346,7 +346,7 @@ pub unsafe extern "C" fn curl_formget(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_formfree(mut form: *mut curl_httppost) {
+pub unsafe extern "C" fn port_safe_export_curl_formfree(mut form: *mut curl_httppost) {
     while !form.is_null() {
         let next = unsafe { (*form).next };
         if let Some(node) = form_node_mut(form) {

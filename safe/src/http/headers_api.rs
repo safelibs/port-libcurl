@@ -215,7 +215,7 @@ impl HeaderStore {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_header(
+pub unsafe extern "C" fn port_safe_export_curl_easy_header(
     easy: *mut CURL,
     name: *const c_char,
     index: usize,
@@ -242,7 +242,7 @@ pub unsafe extern "C" fn curl_easy_header(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_nextheader(
+pub unsafe extern "C" fn port_safe_export_curl_easy_nextheader(
     easy: *mut CURL,
     origin: u32,
     request: i32,

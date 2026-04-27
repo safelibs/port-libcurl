@@ -334,7 +334,7 @@ fn find_header_end(bytes: &[u8]) -> Option<usize> {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_ws_meta(curl: *mut CURL) -> *const curl_ws_frame {
+pub unsafe extern "C" fn port_safe_export_curl_ws_meta(curl: *mut CURL) -> *const curl_ws_frame {
     if curl.is_null() {
         return core::ptr::null();
     }
@@ -349,7 +349,7 @@ pub unsafe extern "C" fn curl_ws_meta(curl: *mut CURL) -> *const curl_ws_frame {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_ws_recv(
+pub unsafe extern "C" fn port_safe_export_curl_ws_recv(
     curl: *mut CURL,
     buffer: *mut c_void,
     buflen: usize,
@@ -389,7 +389,7 @@ pub unsafe extern "C" fn curl_ws_recv(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_ws_send(
+pub unsafe extern "C" fn port_safe_export_curl_ws_send(
     curl: *mut CURL,
     buffer: *const c_void,
     buflen: usize,

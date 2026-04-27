@@ -26,7 +26,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${expected}" || -z "${flavor}" ]]; then
-  echo "usage: $0 --expected <libcurl.def> --flavor <openssl|gnutls>" >&2
+  echo "usage: $0 --expected <symbols-file|libcurl.def> --flavor <openssl|gnutls>" >&2
   exit 2
 fi
 
@@ -51,6 +51,7 @@ resolve_artifact() {
     "${safe_dir}/target/public-abi/${flavor}/stage/lib/${soname}"
     "${safe_dir}/target/public-abi/${flavor}/package/${soname}"
     "${safe_dir}/target/public-abi/${flavor}/debug/libport_libcurl_safe.so"
+    "${safe_dir}/target/public-abi/${flavor}/debug/deps/libport_libcurl_safe.so"
     "${safe_dir}/target/check-public-abi-${flavor}/debug/deps/libport_libcurl_safe.so"
     "${safe_dir}/target/impl-public-abi-${flavor}/debug/deps/libport_libcurl_safe.so"
     "${safe_dir}/target/check-foundation-${flavor}/debug/deps/libport_libcurl_safe.so"
@@ -82,10 +83,28 @@ fi
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT
 
-awk 'NF && $1 != "EXPORTS" { print $1 }' "${expected}" | sort -u > "${tmpdir}/expected.txt"
-nm -D --defined-only "${artifact}" \
-  | awk '$3 ~ /^curl_/ { print $3 }' \
-  | sed 's/@.*$//' \
-  | sort -u > "${tmpdir}/actual.txt"
+first_token="$(awk 'NF { print $1; exit }' "${expected}")"
+if [[ "${first_token}" == "EXPORTS" ]]; then
+  awk 'NF && $1 != "EXPORTS" { print $1 }' "${expected}" | sort -u > "${tmpdir}/expected.txt"
+else
+  awk '$1 ~ /^curl_/ { split($1, parts, "@"); print parts[1] }' "${expected}" | sort -u > "${tmpdir}/expected.txt"
+fi
 
-diff -u "${tmpdir}/expected.txt" "${tmpdir}/actual.txt"
+nm -D --defined-only --with-symbol-versions "${artifact}" \
+  | awk '{ print $NF }' \
+  | sed 's/@.*$//' \
+  | awk '/^[a-z_]/ { print }' \
+  | sort -u > "${tmpdir}/actual-lower.txt"
+
+grep '^curl_' "${tmpdir}/actual-lower.txt" > "${tmpdir}/actual-curl.txt" || true
+
+if ! diff -u "${tmpdir}/expected.txt" "${tmpdir}/actual-curl.txt"; then
+  exit 1
+fi
+
+comm -23 "${tmpdir}/actual-lower.txt" "${tmpdir}/expected.txt" > "${tmpdir}/unexpected.txt"
+if [[ -s "${tmpdir}/unexpected.txt" ]]; then
+  echo "unexpected public exports in ${artifact}:" >&2
+  cat "${tmpdir}/unexpected.txt" >&2
+  exit 1
+fi

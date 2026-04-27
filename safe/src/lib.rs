@@ -60,6 +60,8 @@ unsafe extern "C" {
         option: crate::abi::CURLoption,
         ...
     ) -> crate::abi::CURLcode;
+    #[link_name = "curl_easy_init_shim"]
+    fn retain_public_export_shims() -> *mut crate::abi::CURL;
     #[link_name = "curl_maprintf"]
     fn retain_mprintf_c_shims(format: *const core::ffi::c_char, ...) -> *mut core::ffi::c_char;
 }
@@ -74,6 +76,10 @@ static RETAIN_VARIADIC_C_SHIM: unsafe extern "C" fn(
     crate::abi::CURLoption,
     ...
 ) -> crate::abi::CURLcode = retain_variadic_c_shims;
+
+#[used]
+static RETAIN_PUBLIC_EXPORT_SHIM: unsafe extern "C" fn() -> *mut crate::abi::CURL =
+    retain_public_export_shims;
 
 #[used]
 static RETAIN_MPRINTF_C_SHIM: unsafe extern "C" fn(

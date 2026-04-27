@@ -51,6 +51,7 @@ resolve_artifact() {
     "${safe_dir}/target/public-abi/${flavor}/stage/lib/${soname}"
     "${safe_dir}/target/public-abi/${flavor}/package/${soname}"
     "${safe_dir}/target/public-abi/${flavor}/debug/libport_libcurl_safe.so"
+    "${safe_dir}/target/public-abi/${flavor}/debug/deps/libport_libcurl_safe.so"
     "${safe_dir}/target/check-public-abi-${flavor}/debug/deps/libport_libcurl_safe.so"
     "${safe_dir}/target/impl-public-abi-${flavor}/debug/deps/libport_libcurl_safe.so"
     "${safe_dir}/target/check-foundation-${flavor}/debug/deps/libport_libcurl_safe.so"
@@ -99,17 +100,26 @@ trap 'rm -rf "${tmpdir}"' EXIT
 
 nm -D --defined-only --with-symbol-versions "${artifact}" \
   | awk -v expected_namespace="${expected_namespace}" '
-      $3 ~ /^curl_/ {
-        symbol = $3;
+      {
+        symbol = $NF;
         split(symbol, parts, /@+/);
-        if (length(parts) > 1 && parts[2] != expected_namespace) {
-          print symbol;
+        base = parts[1];
+        if (base ~ /^curl_/) {
+          if (length(parts) < 2) {
+            print "unversioned " base;
+          }
+          else if (parts[2] != expected_namespace) {
+            print symbol;
+          }
+        }
+        else if (base ~ /^[a-z_]/) {
+          print "unexpected " base;
         }
       }
     ' > "${tmpdir}/unexpected.txt"
 
 if [[ -s "${tmpdir}/unexpected.txt" ]]; then
-  echo "unexpected public symbol versions in ${artifact}:" >&2
+  echo "unexpected public symbol surface in ${artifact}:" >&2
   cat "${tmpdir}/unexpected.txt" >&2
   exit 1
 fi

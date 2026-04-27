@@ -161,7 +161,7 @@ unsafe fn free_mime_tree(mime: *mut curl_mime, from_owner: bool) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_mime_init(easy: *mut CURL) -> *mut curl_mime {
+pub unsafe extern "C" fn port_safe_export_curl_mime_init(easy: *mut CURL) -> *mut curl_mime {
     Box::into_raw(Box::new(MimeHandle {
         easy,
         parts: Vec::new(),
@@ -171,12 +171,12 @@ pub unsafe extern "C" fn curl_mime_init(easy: *mut CURL) -> *mut curl_mime {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_mime_free(mime: *mut curl_mime) {
+pub unsafe extern "C" fn port_safe_export_curl_mime_free(mime: *mut curl_mime) {
     unsafe { free_mime_tree(mime, false) };
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_mime_addpart(mime: *mut curl_mime) -> *mut curl_mimepart {
+pub unsafe extern "C" fn port_safe_export_curl_mime_addpart(mime: *mut curl_mime) -> *mut curl_mimepart {
     let Some(mime) = mime_mut(mime) else {
         return ptr::null_mut();
     };
@@ -193,7 +193,7 @@ pub unsafe extern "C" fn curl_mime_addpart(mime: *mut curl_mime) -> *mut curl_mi
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_mime_name(part: *mut curl_mimepart, name: *const c_char) -> CURLcode {
+pub unsafe extern "C" fn port_safe_export_curl_mime_name(part: *mut curl_mimepart, name: *const c_char) -> CURLcode {
     let Some(part) = part_mut(part) else {
         return CURLE_BAD_FUNCTION_ARGUMENT;
     };
@@ -205,7 +205,7 @@ pub unsafe extern "C" fn curl_mime_name(part: *mut curl_mimepart, name: *const c
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_mime_filename(
+pub unsafe extern "C" fn port_safe_export_curl_mime_filename(
     part: *mut curl_mimepart,
     filename: *const c_char,
 ) -> CURLcode {
@@ -220,7 +220,7 @@ pub unsafe extern "C" fn curl_mime_filename(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_mime_type(
+pub unsafe extern "C" fn port_safe_export_curl_mime_type(
     part: *mut curl_mimepart,
     mimetype: *const c_char,
 ) -> CURLcode {
@@ -235,7 +235,7 @@ pub unsafe extern "C" fn curl_mime_type(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_mime_encoder(
+pub unsafe extern "C" fn port_safe_export_curl_mime_encoder(
     part: *mut curl_mimepart,
     encoding: *const c_char,
 ) -> CURLcode {
@@ -250,7 +250,7 @@ pub unsafe extern "C" fn curl_mime_encoder(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_mime_data(
+pub unsafe extern "C" fn port_safe_export_curl_mime_data(
     part: *mut curl_mimepart,
     data: *const c_char,
     datasize: usize,
@@ -267,7 +267,7 @@ pub unsafe extern "C" fn curl_mime_data(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_mime_filedata(
+pub unsafe extern "C" fn port_safe_export_curl_mime_filedata(
     part: *mut curl_mimepart,
     filename: *const c_char,
 ) -> CURLcode {
@@ -286,7 +286,7 @@ pub unsafe extern "C" fn curl_mime_filedata(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_mime_data_cb(
+pub unsafe extern "C" fn port_safe_export_curl_mime_data_cb(
     part: *mut curl_mimepart,
     datasize: curl_off_t,
     readfunc: curl_read_callback,
@@ -311,7 +311,7 @@ pub unsafe extern "C" fn curl_mime_data_cb(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_mime_subparts(
+pub unsafe extern "C" fn port_safe_export_curl_mime_subparts(
     part: *mut curl_mimepart,
     subparts: *mut curl_mime,
 ) -> CURLcode {
@@ -326,7 +326,7 @@ pub unsafe extern "C" fn curl_mime_subparts(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_mime_headers(
+pub unsafe extern "C" fn port_safe_export_curl_mime_headers(
     part: *mut curl_mimepart,
     headers: *mut curl_slist,
     take_ownership: c_int,

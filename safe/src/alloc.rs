@@ -127,7 +127,7 @@ pub(crate) unsafe fn alloc_and_copy(bytes: &[u8]) -> *mut c_char {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_free(ptr: *mut c_void) {
+pub unsafe extern "C" fn port_safe_export_curl_free(ptr: *mut c_void) {
     unsafe { free_ptr(ptr) };
 }
 

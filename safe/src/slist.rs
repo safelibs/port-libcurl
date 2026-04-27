@@ -5,7 +5,7 @@ use core::mem;
 use core::ptr;
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_slist_append(
+pub unsafe extern "C" fn port_safe_export_curl_slist_append(
     list: *mut curl_slist,
     data: *const c_char,
 ) -> *mut curl_slist {
@@ -44,7 +44,7 @@ pub unsafe extern "C" fn curl_slist_append(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_slist_free_all(mut list: *mut curl_slist) {
+pub unsafe extern "C" fn port_safe_export_curl_slist_free_all(mut list: *mut curl_slist) {
     while !list.is_null() {
         let next = unsafe { (*list).next };
         unsafe {
@@ -54,3 +54,6 @@ pub unsafe extern "C" fn curl_slist_free_all(mut list: *mut curl_slist) {
         list = next;
     }
 }
+
+pub(crate) use port_safe_export_curl_slist_append as curl_slist_append;
+pub(crate) use port_safe_export_curl_slist_free_all as curl_slist_free_all;

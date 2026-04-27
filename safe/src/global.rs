@@ -97,7 +97,7 @@ pub(crate) fn ensure_global_init_for_easy() -> Result<(), CURLcode> {
         return Ok(());
     }
 
-    let code = unsafe { curl_global_init(CURL_GLOBAL_DEFAULT) };
+    let code = unsafe { port_safe_export_curl_global_init(CURL_GLOBAL_DEFAULT) };
     if code == CURLE_OK {
         Ok(())
     } else {
@@ -106,7 +106,7 @@ pub(crate) fn ensure_global_init_for_easy() -> Result<(), CURLcode> {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_global_init(flags: c_long) -> CURLcode {
+pub unsafe extern "C" fn port_safe_export_curl_global_init(flags: c_long) -> CURLcode {
     let _ = flags;
     let mut state = GLOBAL_STATE.lock().expect("global mutex poisoned");
     if state.init_depth == 0 {
@@ -119,7 +119,7 @@ pub unsafe extern "C" fn curl_global_init(flags: c_long) -> CURLcode {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_global_init_mem(
+pub unsafe extern "C" fn port_safe_export_curl_global_init_mem(
     flags: c_long,
     malloc: curl_malloc_callback,
     free: curl_free_callback,
@@ -148,7 +148,7 @@ pub unsafe extern "C" fn curl_global_init_mem(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_global_cleanup() {
+pub unsafe extern "C" fn port_safe_export_curl_global_cleanup() {
     let should_clear = {
         let mut state = GLOBAL_STATE.lock().expect("global mutex poisoned");
         if state.init_depth > 0 {
@@ -171,12 +171,12 @@ pub unsafe extern "C" fn curl_global_cleanup() {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_global_trace(_config: *const c_char) -> CURLcode {
+pub unsafe extern "C" fn port_safe_export_curl_global_trace(_config: *const c_char) -> CURLcode {
     CURLE_OK
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_global_sslset(
+pub unsafe extern "C" fn port_safe_export_curl_global_sslset(
     id: curl_sslbackend,
     name: *const c_char,
     avail: *mut *const *const curl_ssl_backend,
@@ -199,6 +199,6 @@ pub unsafe extern "C" fn curl_global_sslset(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_get_handles(multi_handle: *mut CURLM) -> *mut *mut CURL {
+pub unsafe extern "C" fn port_safe_export_curl_multi_get_handles(multi_handle: *mut CURLM) -> *mut *mut CURL {
     unsafe { crate::multi::get_handles_copy(multi_handle) }
 }

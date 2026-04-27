@@ -2,22 +2,22 @@ use crate::abi::{CURLUPart, CURLUcode, CURLU};
 use core::ffi::c_char;
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_url() -> *mut CURLU {
+pub unsafe extern "C" fn port_safe_export_curl_url() -> *mut CURLU {
     unsafe { crate::urlapi::url() }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_url_cleanup(handle: *mut CURLU) {
+pub unsafe extern "C" fn port_safe_export_curl_url_cleanup(handle: *mut CURLU) {
     unsafe { crate::urlapi::url_cleanup(handle) };
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_url_dup(handle: *const CURLU) -> *mut CURLU {
+pub unsafe extern "C" fn port_safe_export_curl_url_dup(handle: *const CURLU) -> *mut CURLU {
     unsafe { crate::urlapi::url_dup(handle) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_url_get(
+pub unsafe extern "C" fn port_safe_export_curl_url_get(
     handle: *const CURLU,
     what: CURLUPart,
     part: *mut *mut c_char,
@@ -27,7 +27,7 @@ pub unsafe extern "C" fn curl_url_get(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_url_set(
+pub unsafe extern "C" fn port_safe_export_curl_url_set(
     handle: *mut CURLU,
     what: CURLUPart,
     part: *const c_char,
@@ -37,7 +37,7 @@ pub unsafe extern "C" fn curl_url_set(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_url_strerror(code: CURLUcode) -> *const c_char {
+pub unsafe extern "C" fn port_safe_export_curl_url_strerror(code: CURLUcode) -> *const c_char {
     unsafe { crate::urlapi::url_strerror(code) }
 }
 

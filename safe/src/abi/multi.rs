@@ -2,17 +2,17 @@ use crate::abi::{curl_off_t, curl_pushheaders, CURLMcode, CURLMoption, CURLMsg, 
 use core::ffi::{c_char, c_int, c_long, c_uint, c_void};
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_init() -> *mut CURLM {
+pub unsafe extern "C" fn port_safe_export_curl_multi_init() -> *mut CURLM {
     unsafe { crate::multi::init_handle() }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_cleanup(multi_handle: *mut CURLM) -> CURLMcode {
+pub unsafe extern "C" fn port_safe_export_curl_multi_cleanup(multi_handle: *mut CURLM) -> CURLMcode {
     unsafe { crate::multi::cleanup_handle(multi_handle) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_add_handle(
+pub unsafe extern "C" fn port_safe_export_curl_multi_add_handle(
     multi_handle: *mut CURLM,
     curl_handle: *mut CURL,
 ) -> CURLMcode {
@@ -20,7 +20,7 @@ pub unsafe extern "C" fn curl_multi_add_handle(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_remove_handle(
+pub unsafe extern "C" fn port_safe_export_curl_multi_remove_handle(
     multi_handle: *mut CURLM,
     curl_handle: *mut CURL,
 ) -> CURLMcode {
@@ -28,7 +28,7 @@ pub unsafe extern "C" fn curl_multi_remove_handle(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_fdset(
+pub unsafe extern "C" fn port_safe_export_curl_multi_fdset(
     multi_handle: *mut CURLM,
     read_fd_set: *mut c_void,
     write_fd_set: *mut c_void,
@@ -47,7 +47,7 @@ pub unsafe extern "C" fn curl_multi_fdset(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_perform(
+pub unsafe extern "C" fn port_safe_export_curl_multi_perform(
     multi_handle: *mut CURLM,
     running_handles: *mut c_int,
 ) -> CURLMcode {
@@ -55,7 +55,7 @@ pub unsafe extern "C" fn curl_multi_perform(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_wait(
+pub unsafe extern "C" fn port_safe_export_curl_multi_wait(
     multi_handle: *mut CURLM,
     extra_fds: *mut crate::abi::curl_waitfd,
     extra_nfds: c_uint,
@@ -66,7 +66,7 @@ pub unsafe extern "C" fn curl_multi_wait(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_poll(
+pub unsafe extern "C" fn port_safe_export_curl_multi_poll(
     multi_handle: *mut CURLM,
     extra_fds: *mut crate::abi::curl_waitfd,
     extra_nfds: c_uint,
@@ -77,7 +77,7 @@ pub unsafe extern "C" fn curl_multi_poll(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_timeout(
+pub unsafe extern "C" fn port_safe_export_curl_multi_timeout(
     multi_handle: *mut CURLM,
     milliseconds: *mut c_long,
 ) -> CURLMcode {
@@ -85,12 +85,12 @@ pub unsafe extern "C" fn curl_multi_timeout(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_wakeup(multi_handle: *mut CURLM) -> CURLMcode {
+pub unsafe extern "C" fn port_safe_export_curl_multi_wakeup(multi_handle: *mut CURLM) -> CURLMcode {
     unsafe { crate::multi::wakeup_handle(multi_handle) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_info_read(
+pub unsafe extern "C" fn port_safe_export_curl_multi_info_read(
     multi_handle: *mut CURLM,
     msgs_in_queue: *mut c_int,
 ) -> *mut CURLMsg {
@@ -98,7 +98,7 @@ pub unsafe extern "C" fn curl_multi_info_read(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_socket(
+pub unsafe extern "C" fn port_safe_export_curl_multi_socket(
     multi_handle: *mut CURLM,
     socket: crate::abi::curl_socket_t,
     running_handles: *mut c_int,
@@ -107,7 +107,7 @@ pub unsafe extern "C" fn curl_multi_socket(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_socket_all(
+pub unsafe extern "C" fn port_safe_export_curl_multi_socket_all(
     multi_handle: *mut CURLM,
     running_handles: *mut c_int,
 ) -> CURLMcode {
@@ -115,7 +115,7 @@ pub unsafe extern "C" fn curl_multi_socket_all(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_socket_action(
+pub unsafe extern "C" fn port_safe_export_curl_multi_socket_action(
     multi_handle: *mut CURLM,
     socket: crate::abi::curl_socket_t,
     ev_bitmask: c_int,
@@ -125,7 +125,7 @@ pub unsafe extern "C" fn curl_multi_socket_action(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_assign(
+pub unsafe extern "C" fn port_safe_export_curl_multi_assign(
     multi_handle: *mut CURLM,
     socket: crate::abi::curl_socket_t,
     socketp: *mut c_void,
@@ -134,7 +134,7 @@ pub unsafe extern "C" fn curl_multi_assign(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_multi_strerror(code: CURLMcode) -> *const c_char {
+pub unsafe extern "C" fn port_safe_export_curl_multi_strerror(code: CURLMcode) -> *const c_char {
     unsafe { crate::multi::multi_strerror(code) }
 }
 
@@ -175,7 +175,7 @@ pub unsafe extern "C" fn port_safe_multi_setopt_off_t(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_pushheader_byname(
+pub unsafe extern "C" fn port_safe_export_curl_pushheader_byname(
     headers: *mut curl_pushheaders,
     name: *const c_char,
 ) -> *mut c_char {
@@ -183,7 +183,7 @@ pub unsafe extern "C" fn curl_pushheader_byname(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_pushheader_bynum(
+pub unsafe extern "C" fn port_safe_export_curl_pushheader_bynum(
     headers: *mut curl_pushheaders,
     index: usize,
 ) -> *mut c_char {

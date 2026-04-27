@@ -2,17 +2,17 @@ use crate::abi::{curl_off_t, curl_socket_t, CURLcode, CURLoption, CURL, CURLINFO
 use core::ffi::{c_char, c_int, c_long, c_void};
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_perform(curl: *mut CURL) -> CURLcode {
+pub unsafe extern "C" fn port_safe_export_curl_easy_perform(curl: *mut CURL) -> CURLcode {
     unsafe { crate::easy::perform::easy_perform(curl) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_pause(handle: *mut CURL, bitmask: c_int) -> CURLcode {
+pub unsafe extern "C" fn port_safe_export_curl_easy_pause(handle: *mut CURL, bitmask: c_int) -> CURLcode {
     unsafe { crate::easy::perform::easy_pause(handle, bitmask) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_recv(
+pub unsafe extern "C" fn port_safe_export_curl_easy_recv(
     curl: *mut CURL,
     buffer: *mut c_void,
     buflen: usize,
@@ -22,7 +22,7 @@ pub unsafe extern "C" fn curl_easy_recv(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_send(
+pub unsafe extern "C" fn port_safe_export_curl_easy_send(
     curl: *mut CURL,
     buffer: *const c_void,
     buflen: usize,
@@ -32,7 +32,7 @@ pub unsafe extern "C" fn curl_easy_send(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_upkeep(curl: *mut CURL) -> CURLcode {
+pub unsafe extern "C" fn port_safe_export_curl_easy_upkeep(curl: *mut CURL) -> CURLcode {
     unsafe { crate::easy::perform::easy_upkeep(curl) }
 }
 

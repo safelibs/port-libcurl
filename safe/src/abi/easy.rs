@@ -2,12 +2,12 @@ use crate::abi::{curl_easyoption, CURL};
 use core::ffi::{c_char, c_int};
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_init() -> *mut CURL {
+pub unsafe extern "C" fn port_safe_export_curl_easy_init() -> *mut CURL {
     unsafe { crate::easy::handle::easy_init() }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_cleanup(handle: *mut CURL) {
+pub unsafe extern "C" fn port_safe_export_curl_easy_cleanup(handle: *mut CURL) {
     unsafe { crate::easy::handle::easy_cleanup(handle) };
 }
 
@@ -17,17 +17,17 @@ pub unsafe extern "C" fn port_safe_reference_easy_handle(handle: *mut CURL) -> *
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_duphandle(handle: *mut CURL) -> *mut CURL {
+pub unsafe extern "C" fn port_safe_export_curl_easy_duphandle(handle: *mut CURL) -> *mut CURL {
     unsafe { crate::easy::handle::easy_duphandle(handle) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_reset(handle: *mut CURL) {
+pub unsafe extern "C" fn port_safe_export_curl_easy_reset(handle: *mut CURL) {
     unsafe { crate::easy::handle::easy_reset(handle) };
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_escape(
+pub unsafe extern "C" fn port_safe_export_curl_easy_escape(
     handle: *mut CURL,
     input: *const c_char,
     len: c_int,
@@ -36,12 +36,12 @@ pub unsafe extern "C" fn curl_easy_escape(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_escape(input: *const c_char, len: c_int) -> *mut c_char {
+pub unsafe extern "C" fn port_safe_export_curl_escape(input: *const c_char, len: c_int) -> *mut c_char {
     unsafe { crate::easy::handle::easy_escape(core::ptr::null_mut(), input, len) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_unescape(
+pub unsafe extern "C" fn port_safe_export_curl_easy_unescape(
     handle: *mut CURL,
     input: *const c_char,
     len: c_int,
@@ -51,24 +51,24 @@ pub unsafe extern "C" fn curl_easy_unescape(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_unescape(input: *const c_char, len: c_int) -> *mut c_char {
+pub unsafe extern "C" fn port_safe_export_curl_unescape(input: *const c_char, len: c_int) -> *mut c_char {
     unsafe {
         crate::easy::handle::easy_unescape(core::ptr::null_mut(), input, len, core::ptr::null_mut())
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_option_by_name(name: *const c_char) -> *const curl_easyoption {
+pub unsafe extern "C" fn port_safe_export_curl_easy_option_by_name(name: *const c_char) -> *const curl_easyoption {
     unsafe { crate::easy::options::option_by_name(name) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_option_by_id(id: u32) -> *const curl_easyoption {
+pub unsafe extern "C" fn port_safe_export_curl_easy_option_by_id(id: u32) -> *const curl_easyoption {
     unsafe { crate::easy::options::option_by_id(id) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_easy_option_next(
+pub unsafe extern "C" fn port_safe_export_curl_easy_option_next(
     prev: *const curl_easyoption,
 ) -> *const curl_easyoption {
     unsafe { crate::easy::options::option_next(prev) }

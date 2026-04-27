@@ -1,5 +1,5 @@
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -14,6 +14,7 @@ struct SymbolManifest {
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    let source_files = collect_rust_source_files(&manifest_dir.join("src"));
     let flavor = detect_flavor();
     let symbols_path = match flavor {
         "openssl" => manifest_dir.join("debian/libcurl4t64.symbols"),
@@ -43,24 +44,13 @@ fn main() {
         &tls_backend,
         &ssh_backend,
         &reference_script,
-        &manifest_dir.join("src/lib.rs"),
-        &manifest_dir.join("src/abi/connect_only.rs"),
-        &manifest_dir.join("src/abi/easy.rs"),
-        &manifest_dir.join("src/abi/multi.rs"),
-        &manifest_dir.join("src/abi/url.rs"),
-        &manifest_dir.join("src/easy/handle.rs"),
-        &manifest_dir.join("src/easy/perform.rs"),
-        &manifest_dir.join("src/form.rs"),
-        &manifest_dir.join("src/global.rs"),
-        &manifest_dir.join("src/mime.rs"),
-        &manifest_dir.join("src/multi/mod.rs"),
-        &manifest_dir.join("src/transfer/mod.rs"),
-        &manifest_dir.join("src/urlapi.rs"),
-        &manifest_dir.join("src/version.rs"),
         &manifest_dir.join("include/curl/curl.h"),
         &manifest_dir.join("include/curl/options.h"),
         &manifest_dir.join("original/lib/easyoptions.c"),
     ] {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
+    for path in &source_files {
         println!("cargo:rerun-if-changed={}", path.display());
     }
     println!("cargo:rerun-if-env-changed=CC");
@@ -69,7 +59,18 @@ fn main() {
     let generated_map = render_version_script(&symbol_manifest);
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
     let out_map = out_dir.join(format!("libcurl-{}.map", flavor));
+    let public_exports = collect_rust_public_exports(&source_files);
+    let public_export_shim = out_dir.join(format!("public-exports-{}.S", flavor));
     fs::write(&out_map, generated_map.as_bytes()).expect("write version script");
+    fs::write(
+        &public_export_shim,
+        render_public_export_shim(
+            &symbol_manifest.namespace,
+            &public_exports.public_exports,
+            &public_exports.hidden_helpers,
+        ),
+    )
+    .expect("write public export shim");
 
     let committed_map = fs::read_to_string(&checked_in_map).unwrap_or_default();
     if committed_map != generated_map {
@@ -81,7 +82,7 @@ fn main() {
 
     run_reference_build(&manifest_dir, &reference_script, flavor);
     generate_easy_option_table(&manifest_dir, &abi_manifest_path, &out_dir);
-    compile_c_shims(&manifest_dir, flavor);
+    compile_c_shims(&manifest_dir, flavor, &public_export_shim);
 
     println!("cargo:rustc-link-lib=dl");
     println!("cargo:rustc-link-lib=ssh2");
@@ -105,6 +106,12 @@ fn main() {
     );
 }
 
+#[derive(Default)]
+struct RustPublicExports {
+    public_exports: Vec<String>,
+    hidden_helpers: Vec<String>,
+}
+
 fn detect_flavor() -> &'static str {
     let openssl = env::var_os("CARGO_FEATURE_OPENSSL_FLAVOR").is_some();
     let gnutls = env::var_os("CARGO_FEATURE_GNUTLS_FLAVOR").is_some();
@@ -114,6 +121,74 @@ fn detect_flavor() -> &'static str {
         (true, true) => panic!("enable exactly one flavor feature"),
         (false, false) => panic!("enable one of `openssl-flavor` or `gnutls-flavor`"),
     }
+}
+
+fn collect_rust_source_files(src_dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    collect_rust_source_files_recursive(src_dir, &mut files);
+    files.sort();
+    files
+}
+
+fn collect_rust_source_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
+    let entries = fs::read_dir(dir)
+        .unwrap_or_else(|err| panic!("read_dir {}: {}", dir.display(), err));
+    for entry in entries {
+        let entry = entry.expect("dir entry");
+        let path = entry.path();
+        let file_type = entry.file_type().expect("entry file type");
+        if file_type.is_dir() {
+            collect_rust_source_files_recursive(&path, files);
+        } else if path.extension() == Some(OsStr::new("rs")) {
+            files.push(path);
+        }
+    }
+}
+
+fn collect_rust_public_exports(source_files: &[PathBuf]) -> RustPublicExports {
+    let mut public_exports = BTreeSet::new();
+    let mut hidden_helpers = BTreeSet::new();
+
+    for path in source_files {
+        let contents =
+            fs::read_to_string(path).unwrap_or_else(|err| panic!("read {}: {}", path.display(), err));
+        for line in contents.lines() {
+            if let Some(name) = parse_rust_abi_fn_name(line, "port_safe_export_curl_") {
+                public_exports.insert(name.to_string());
+            }
+            if let Some(name) = parse_rust_abi_fn_name(line, "port_safe_") {
+                hidden_helpers.insert(name.to_string());
+            }
+        }
+    }
+
+    RustPublicExports {
+        public_exports: public_exports.into_iter().collect(),
+        hidden_helpers: hidden_helpers.into_iter().collect(),
+    }
+}
+
+fn parse_rust_abi_fn_name<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
+    const PREFIXES: [&str; 2] = [
+        "pub unsafe extern \"C\" fn ",
+        "pub extern \"C\" fn ",
+    ];
+
+    let trimmed = line.trim();
+    for marker in PREFIXES {
+        let Some(rest) = trimmed.strip_prefix(marker) else {
+            continue;
+        };
+        let end = rest
+            .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+            .unwrap_or(rest.len());
+        let name = &rest[..end];
+        if name.starts_with(prefix) {
+            return Some(name);
+        }
+    }
+
+    None
 }
 
 fn parse_symbols(path: &Path) -> SymbolManifest {
@@ -177,6 +252,59 @@ fn render_version_script(manifest: &SymbolManifest) -> String {
     body
 }
 
+fn render_public_export_shim(
+    namespace: &str,
+    public_exports: &[String],
+    hidden_helpers: &[String],
+) -> String {
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+    let branch_template = match target_arch.as_str() {
+        "x86_64" => "  jmp {target}\n",
+        "aarch64" => "  b {target}\n",
+        other => panic!("unsupported target arch for ABI export shim: {}", other),
+    };
+
+    let mut source = String::new();
+    source.push_str(".text\n");
+    for helper in hidden_helpers {
+        source.push_str(".hidden ");
+        source.push_str(helper);
+        source.push('\n');
+    }
+    for symbol in public_exports {
+        let public_symbol = symbol
+            .strip_prefix("port_safe_export_")
+            .unwrap_or_else(|| panic!("unexpected export impl symbol {}", symbol));
+        let wrapper = format!("{}_shim", public_symbol);
+        source.push_str(".hidden ");
+        source.push_str(symbol);
+        source.push('\n');
+        source.push_str(".globl ");
+        source.push_str(&wrapper);
+        source.push('\n');
+        source.push_str(".type ");
+        source.push_str(&wrapper);
+        source.push_str(", @function\n");
+        source.push_str(&wrapper);
+        source.push_str(":\n");
+        source.push_str(&branch_template.replace("{target}", symbol));
+        source.push_str(".size ");
+        source.push_str(&wrapper);
+        source.push_str(", .-");
+        source.push_str(&wrapper);
+        source.push('\n');
+        source.push_str(".symver ");
+        source.push_str(&wrapper);
+        source.push_str(", ");
+        source.push_str(public_symbol);
+        source.push_str("@@");
+        source.push_str(namespace);
+        source.push('\n');
+    }
+    source.push_str(".section .note.GNU-stack,\"\",@progbits\n");
+    source
+}
+
 fn run_reference_build(manifest_dir: &Path, script: &Path, flavor: &str) {
     let status = Command::new("bash")
         .arg(script)
@@ -190,7 +318,7 @@ fn run_reference_build(manifest_dir: &Path, script: &Path, flavor: &str) {
     }
 }
 
-fn compile_c_shims(manifest_dir: &Path, flavor: &str) {
+fn compile_c_shims(manifest_dir: &Path, flavor: &str, public_export_shim: &Path) {
     let reference_path = manifest_dir
         .join(".reference")
         .join(flavor)
@@ -214,6 +342,7 @@ fn compile_c_shims(manifest_dir: &Path, flavor: &str) {
         .file(manifest_dir.join("c_shim/mprintf.c"))
         .file(manifest_dir.join("c_shim/tls_backend.c"))
         .file(manifest_dir.join("c_shim/ssh_backend.c"))
+        .file(public_export_shim)
         .flag_if_supported("-std=c11")
         .flag_if_supported("-fPIC")
         .flag_if_supported("-Wall")
