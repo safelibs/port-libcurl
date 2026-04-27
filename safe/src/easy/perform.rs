@@ -50,6 +50,7 @@ const CURLOPT_SEEKDATA: CURLoption = 10168;
 const CURLOPT_COOKIE: CURLoption = 10022;
 const CURLOPT_HTTPPOST: CURLoption = 10024;
 const CURLOPT_HTTPHEADER: CURLoption = 10023;
+const CURLOPT_POSTFIELDS: CURLoption = 10015;
 const CURLOPT_COOKIEFILE: CURLoption = 10031;
 const CURLOPT_CUSTOMREQUEST: CURLoption = 10036;
 const CURLOPT_PROXYHEADER: CURLoption = 10228;
@@ -64,6 +65,7 @@ const CURLOPT_NOPROGRESS: CURLoption = 43;
 const CURLOPT_NOBODY: CURLoption = 44;
 const CURLOPT_FAILONERROR: CURLoption = 45;
 const CURLOPT_UPLOAD: CURLoption = 46;
+const CURLOPT_POST: CURLoption = 47;
 const CURLOPT_DIRLISTONLY: CURLoption = 48;
 const CURLOPT_NETRC: CURLoption = 51;
 const CURLOPT_FOLLOWLOCATION: CURLoption = 52;
@@ -93,10 +95,13 @@ const CURLOPT_HTTPAUTH: CURLoption = 107;
 const CURLOPT_PROXYAUTH: CURLoption = 111;
 const CURLOPT_NETRC_FILE: CURLoption = 10118;
 const CURLOPT_COOKIELIST: CURLoption = 10135;
+const CURLOPT_POSTFIELDSIZE: CURLoption = 60;
 const CURLOPT_INFILESIZE_LARGE: CURLoption = 30115;
 const CURLOPT_RESUME_FROM_LARGE: CURLoption = 30116;
+const CURLOPT_POSTFIELDSIZE_LARGE: CURLoption = 30120;
 const CURLOPT_CONNECT_ONLY: CURLoption = 141;
 const CURLOPT_OPENSOCKETDATA: CURLoption = 10164;
+const CURLOPT_COPYPOSTFIELDS: CURLoption = 10165;
 const CURLOPT_TCP_NODELAY: CURLoption = 121;
 const CURLOPT_USERNAME: CURLoption = 10173;
 const CURLOPT_PASSWORD: CURLoption = 10174;
@@ -220,6 +225,12 @@ const CURLPROTO_SMBS: c_long = 1 << 27;
 const CURLPROTO_MQTT: c_long = 1 << 28;
 
 #[derive(Clone)]
+pub(crate) enum PostFieldSource {
+    Borrowed(usize),
+    Owned(Vec<u8>),
+}
+
+#[derive(Clone)]
 pub(crate) struct EasyMetadata {
     pub url: Option<String>,
     pub custom_request: Option<String>,
@@ -268,6 +279,9 @@ pub(crate) struct EasyMetadata {
     pub ws_options: c_long,
     pub quick_exit: bool,
     pub curlu_handle: Option<usize>,
+    pub post_request: bool,
+    pub post_fields: Option<PostFieldSource>,
+    pub post_field_size: Option<usize>,
     pub mimepost_handle: Option<usize>,
     pub httppost_handle: Option<usize>,
     pub rtsp_request: c_long,
@@ -371,6 +385,9 @@ impl Default for EasyMetadata {
             ws_options: 0,
             quick_exit: false,
             curlu_handle: None,
+            post_request: false,
+            post_fields: None,
+            post_field_size: None,
             mimepost_handle: None,
             httppost_handle: None,
             rtsp_request: 0,
@@ -715,6 +732,9 @@ pub(crate) fn configure_push_handle(handle: *mut CURL, url: String) {
     shadow.metadata.nobody = false;
     shadow.metadata.upload = false;
     shadow.metadata.upload_size = None;
+    shadow.metadata.post_request = false;
+    shadow.metadata.post_fields = None;
+    shadow.metadata.post_field_size = None;
     shadow.metadata.http_get = true;
     shadow.metadata.connect_only = false;
     shadow.metadata.connect_mode = 0;
@@ -862,6 +882,11 @@ pub(crate) fn easy_setopt_long(handle: *mut CURL, option: CURLoption, value: c_l
         }
         CURLOPT_NOBODY => {
             shadow.metadata.nobody = value != 0;
+            if value != 0 {
+                shadow.metadata.http_get = false;
+                shadow.metadata.post_request = false;
+                shadow.metadata.upload = false;
+            }
             CURLE_OK
         }
         CURLOPT_FAILONERROR => {
@@ -870,6 +895,20 @@ pub(crate) fn easy_setopt_long(handle: *mut CURL, option: CURLoption, value: c_l
         }
         CURLOPT_UPLOAD => {
             shadow.metadata.upload = value != 0;
+            if value != 0 {
+                shadow.metadata.nobody = false;
+                shadow.metadata.http_get = false;
+                shadow.metadata.post_request = false;
+            }
+            CURLE_OK
+        }
+        CURLOPT_POST => {
+            shadow.metadata.post_request = value != 0;
+            if value != 0 {
+                shadow.metadata.nobody = false;
+                shadow.metadata.http_get = false;
+                shadow.metadata.upload = false;
+            }
             CURLE_OK
         }
         CURLOPT_DIRLISTONLY => {
@@ -898,6 +937,15 @@ pub(crate) fn easy_setopt_long(handle: *mut CURL, option: CURLoption, value: c_l
         }
         CURLOPT_HTTPGET => {
             shadow.metadata.http_get = value != 0;
+            if value != 0 {
+                shadow.metadata.nobody = false;
+                shadow.metadata.post_request = false;
+                shadow.metadata.upload = false;
+            }
+            CURLE_OK
+        }
+        CURLOPT_POSTFIELDSIZE => {
+            shadow.metadata.post_field_size = usize::try_from(value).ok();
             CURLE_OK
         }
         CURLOPT_HTTP_VERSION => {
@@ -1064,8 +1112,34 @@ pub(crate) fn easy_setopt_ptr(
             shadow.metadata.cookie = copy_c_string(value.cast());
             CURLE_OK
         }
+        CURLOPT_POSTFIELDS => {
+            shadow.metadata.post_fields = Some(PostFieldSource::Borrowed(value as usize));
+            shadow.metadata.post_request = true;
+            shadow.metadata.nobody = false;
+            shadow.metadata.http_get = false;
+            shadow.metadata.upload = false;
+            CURLE_OK
+        }
+        CURLOPT_COPYPOSTFIELDS => match copy_post_fields(value.cast(), shadow.metadata.post_field_size)
+        {
+            Some(body) => {
+                shadow.metadata.post_fields = Some(PostFieldSource::Owned(body));
+                shadow.metadata.post_request = true;
+                shadow.metadata.nobody = false;
+                shadow.metadata.http_get = false;
+                shadow.metadata.upload = false;
+                CURLE_OK
+            }
+            None => CURLE_OUT_OF_MEMORY,
+        },
         CURLOPT_HTTPPOST => {
             shadow.metadata.httppost_handle = (!value.is_null()).then_some(value as usize);
+            if !value.is_null() {
+                shadow.metadata.post_request = true;
+                shadow.metadata.nobody = false;
+                shadow.metadata.http_get = false;
+                shadow.metadata.upload = false;
+            }
             CURLE_OK
         }
         CURLOPT_HTTPHEADER => {
@@ -1201,6 +1275,12 @@ pub(crate) fn easy_setopt_ptr(
         }
         CURLOPT_MIMEPOST => {
             shadow.metadata.mimepost_handle = (!value.is_null()).then_some(value as usize);
+            if !value.is_null() {
+                shadow.metadata.post_request = true;
+                shadow.metadata.nobody = false;
+                shadow.metadata.http_get = false;
+                shadow.metadata.upload = false;
+            }
             CURLE_OK
         }
         CURLOPT_CURLU => {
@@ -1366,6 +1446,10 @@ pub(crate) fn easy_setopt_off_t(
             }
             CURLOPT_INFILESIZE_LARGE => {
                 metadata.upload_size = (value >= 0).then_some(value);
+                CURLE_OK
+            }
+            CURLOPT_POSTFIELDSIZE_LARGE => {
+                metadata.post_field_size = usize::try_from(value).ok();
                 CURLE_OK
             }
             _ => CURLE_UNKNOWN_OPTION,
@@ -1563,16 +1647,28 @@ fn effective_method_from_metadata(metadata: &EasyMetadata) -> String {
     if metadata.nobody {
         return "HEAD".to_string();
     }
+    if metadata.post_request || metadata.mimepost_handle.is_some() || metadata.httppost_handle.is_some() {
+        return "POST".to_string();
+    }
     if metadata.upload {
         return "PUT".to_string();
-    }
-    if metadata.mimepost_handle.is_some() || metadata.httppost_handle.is_some() {
-        return "POST".to_string();
     }
     if metadata.http_get {
         return "GET".to_string();
     }
     "GET".to_string()
+}
+
+fn copy_post_fields(value: *const c_char, size: Option<usize>) -> Option<Vec<u8>> {
+    if value.is_null() {
+        return Some(Vec::new());
+    }
+    let bytes = if let Some(size) = size {
+        unsafe { std::slice::from_raw_parts(value.cast::<u8>(), size) }.to_vec()
+    } else {
+        unsafe { CStr::from_ptr(value) }.to_bytes().to_vec()
+    };
+    Some(bytes)
 }
 
 pub(crate) fn protocol_from_url(url: Option<&str>) -> c_long {

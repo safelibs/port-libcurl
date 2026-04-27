@@ -71,6 +71,7 @@ unsafe extern "C" {
         out_session_data: *mut *mut u8,
         out_session_len: *mut usize,
     ) -> c_int;
+    fn port_safe_tls_negotiated_alpn(conn: *mut SafeTlsConnection) -> c_int;
     fn port_safe_tls_close(conn: *mut SafeTlsConnection);
     fn port_safe_tls_free_bytes(ptr: *mut u8);
 }
@@ -85,6 +86,7 @@ trait TlsBackendAdapter {
 pub(crate) struct TlsConnection {
     raw: *mut SafeTlsConnection,
     stream: TcpStream,
+    negotiated_alpn: c_int,
     session_cache_key: Option<String>,
     share_handle: Option<usize>,
 }
@@ -104,6 +106,10 @@ impl TlsConnection {
         timeout: Option<std::time::Duration>,
     ) -> std::io::Result<()> {
         self.stream.set_write_timeout(timeout)
+    }
+
+    pub(crate) const fn negotiated_http2(&self) -> bool {
+        self.negotiated_alpn == ALPN_HTTP2_PREFERRED
     }
 
     fn cache_live_session(&self) {
@@ -185,12 +191,9 @@ pub(crate) fn enable_http_alpn(scheme: &str, metadata: &EasyMetadata) -> c_int {
         CURL_HTTP_VERSION_1_0 => ALPN_DISABLED,
         CURL_HTTP_VERSION_1_1 => ALPN_HTTP1_ONLY,
         CURL_HTTP_VERSION_2_0 | CURL_HTTP_VERSION_2TLS | CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE => {
-            // The native transport now owns the HTTP/2 compatibility surface, but
-            // until it emits wire-level frames it must avoid negotiating real h2
-            // with TLS backends.
-            ALPN_HTTP1_ONLY
+            ALPN_HTTP2_PREFERRED
         }
-        _ => ALPN_HTTP1_ONLY,
+        _ => ALPN_HTTP2_PREFERRED,
     }
 }
 
@@ -307,6 +310,7 @@ pub(crate) fn connect(
             .into_owned();
         return Err(current_backend().classify_connect_error(&message));
     }
+    let negotiated_alpn = unsafe { port_safe_tls_negotiated_alpn(raw) };
 
     if !new_session.is_null() && new_session_len != 0 {
         let bytes = unsafe { std::slice::from_raw_parts(new_session, new_session_len) }.to_vec();
@@ -317,6 +321,7 @@ pub(crate) fn connect(
     Ok(TlsConnection {
         raw,
         stream,
+        negotiated_alpn,
         session_cache_key: Some(session_key),
         share_handle: metadata.share_handle,
     })

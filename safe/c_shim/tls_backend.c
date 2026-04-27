@@ -185,6 +185,15 @@ static int append_certinfo_line(struct certinfo_builder *builder,
                          value ? value : "");
 }
 
+static int safe_tls_map_alpn(const unsigned char *protocol, size_t protocol_len)
+{
+  if(protocol && protocol_len == 2 && memcmp(protocol, "h2", 2) == 0)
+    return 2;
+  if(protocol && protocol_len == 8 && memcmp(protocol, "http/1.1", 8) == 0)
+    return 1;
+  return 0;
+}
+
 #ifdef SAFE_TLS_GNUTLS
 static int append_certinfo_time(struct certinfo_builder *builder,
                                 unsigned int certnum,
@@ -205,6 +214,7 @@ static int append_certinfo_time(struct certinfo_builder *builder,
 
 struct safe_tls_connection {
   SSL *ssl;
+  int negotiated_alpn;
 };
 
 static pthread_once_t openssl_once = PTHREAD_ONCE_INIT;
@@ -630,6 +640,12 @@ int port_safe_tls_connect(int fd,
     free(conn);
     return -1;
   }
+  {
+    const unsigned char *protocol = NULL;
+    unsigned int protocol_len = 0;
+    SSL_get0_alpn_selected(conn->ssl, &protocol, &protocol_len);
+    conn->negotiated_alpn = safe_tls_map_alpn(protocol, protocol_len);
+  }
 
   openssl_export_session(conn->ssl, out_session_data, out_session_len);
 
@@ -688,6 +704,13 @@ int port_safe_tls_export_session(struct safe_tls_connection *conn,
                                 out_session_len);
 }
 
+int port_safe_tls_negotiated_alpn(struct safe_tls_connection *conn)
+{
+  if(!conn)
+    return 0;
+  return conn->negotiated_alpn;
+}
+
 void port_safe_tls_close(struct safe_tls_connection *conn)
 {
   if(!conn)
@@ -706,7 +729,10 @@ void port_safe_tls_close(struct safe_tls_connection *conn)
 struct safe_tls_connection {
   gnutls_certificate_credentials_t creds;
   gnutls_session_t session;
+  int negotiated_alpn;
 };
+
+static pthread_once_t gnutls_once = PTHREAD_ONCE_INIT;
 
 static int gnutls_export_session(struct safe_tls_connection *conn,
                                  unsigned char **out_session_data,
@@ -733,13 +759,14 @@ static int gnutls_export_session(struct safe_tls_connection *conn,
   return (*out_session_data && *out_session_len) ? 0 : -1;
 }
 
+static void gnutls_global_init_once(void)
+{
+  gnutls_global_init();
+}
+
 static void gnutls_init_once(void)
 {
-  static int initialized = 0;
-  if(!initialized) {
-    gnutls_global_init();
-    initialized = 1;
-  }
+  pthread_once(&gnutls_once, gnutls_global_init_once);
 }
 
 static int gnutls_export_pubkey_der(gnutls_x509_crt_t cert,
@@ -1116,6 +1143,12 @@ int port_safe_tls_connect(int fd,
     free(conn);
     return -1;
   }
+  {
+    gnutls_datum_t protocol = { 0 };
+    if(gnutls_alpn_get_selected_protocol(conn->session, &protocol) == 0) {
+      conn->negotiated_alpn = safe_tls_map_alpn(protocol.data, protocol.size);
+    }
+  }
 
   gnutls_export_session(conn, out_session_data, out_session_len);
 
@@ -1166,6 +1199,13 @@ int port_safe_tls_export_session(struct safe_tls_connection *conn,
   if(!out_session_data || !out_session_len)
     return -1;
   return gnutls_export_session(conn, out_session_data, out_session_len);
+}
+
+int port_safe_tls_negotiated_alpn(struct safe_tls_connection *conn)
+{
+  if(!conn)
+    return 0;
+  return conn->negotiated_alpn;
 }
 
 void port_safe_tls_close(struct safe_tls_connection *conn)

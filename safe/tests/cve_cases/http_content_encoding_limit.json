@@ -1,0 +1,5 @@
+{
+  "id": "http_content_encoding_limit",
+  "kind": "runtime",
+  "title": "HTTP responses with too many cumulative content-encoding steps are rejected across repeated headers"
+}

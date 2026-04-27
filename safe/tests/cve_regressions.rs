@@ -18,6 +18,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const CURLOPT_URL: u32 = 10002;
 const CURLOPT_FOLLOWLOCATION: u32 = 52;
+const CURLOPT_READDATA: u32 = 10009;
+const CURLOPT_READFUNCTION: u32 = 20012;
 const CURLOPT_XOAUTH2_BEARER: u32 = 10220;
 const CURLOPT_AUTOREFERER: u32 = 58;
 const CURLOPT_RESOLVE: u32 = 10203;
@@ -27,7 +29,7 @@ const CURLOPT_PROXY: u32 = 10004;
 const CURLOPT_PROXYUSERPWD: u32 = 10006;
 const CURLOPT_COOKIEFILE: u32 = 10031;
 const CURLOPT_HTTPHEADER: u32 = 10023;
-const CURLOPT_HTTP_VERSION: u32 = 84;
+const CURLOPT_POSTFIELDS: u32 = 10015;
 const CURLOPT_CONNECT_ONLY: u32 = 141;
 const CURLOPT_ALTSVC_CTRL: u32 = 286;
 const CURLOPT_ALTSVC: u32 = 10287;
@@ -36,12 +38,13 @@ const CURLOPT_HSTS: u32 = 10300;
 const CURLOPT_WRITEFUNCTION: u32 = 20011;
 const CURLOPT_SSL_VERIFYPEER: u32 = 64;
 const CURLOPT_SSL_VERIFYHOST: u32 = 81;
+const CURLOPT_UPLOAD: u32 = 46;
+const CURLOPT_INFILESIZE_LARGE: u32 = 30115;
 
 const CURL_GLOBAL_DEFAULT: c_long = 3;
 const CURL_NETRC_OPTIONAL: c_long = 1;
 const CURLH_HEADER: u32 = 1 << 0;
 const CURLH_TRAILER: u32 = 1 << 1;
-const CURL_HTTP_VERSION_2_0: c_long = 3;
 const CURLWS_TEXT: u32 = 1 << 0;
 const CURLWS_CLOSE: u32 = 1 << 3;
 const CURLPAUSE_RECV: i32 = 1 << 0;
@@ -53,6 +56,7 @@ const CURLPIPE_MULTIPLEX: c_long = 2;
 const CURLMSG_DONE: u32 = 1;
 
 const CURLE_OK: CURLcode = 0;
+const CURLE_BAD_CONTENT_ENCODING: CURLcode = 61;
 const CURLE_AGAIN: CURLcode = 81;
 const CURLE_RECV_ERROR: CURLcode = 56;
 const CURLM_OK: CURLMcode = 0;
@@ -257,6 +261,33 @@ unsafe extern "C" fn sink_write(
     size.saturating_mul(nmemb)
 }
 
+struct UploadSource {
+    body: Vec<u8>,
+    offset: usize,
+    calls: usize,
+}
+
+unsafe extern "C" fn upload_read(
+    buffer: *mut c_char,
+    size: usize,
+    nmemb: usize,
+    userdata: *mut c_void,
+) -> usize {
+    if buffer.is_null() || userdata.is_null() {
+        return 0;
+    }
+    let source = unsafe { &mut *(userdata as *mut UploadSource) };
+    source.calls = source.calls.saturating_add(1);
+    let capacity = size.saturating_mul(nmemb);
+    let remaining = &source.body[source.offset.min(source.body.len())..];
+    let amount = remaining.len().min(capacity);
+    unsafe {
+        ptr::copy_nonoverlapping(remaining.as_ptr(), buffer.cast::<u8>(), amount);
+    }
+    source.offset = source.offset.saturating_add(amount);
+    amount
+}
+
 unsafe extern "C" fn capture_push_callback(
     _parent: *mut CURL,
     easy: *mut CURL,
@@ -364,6 +395,8 @@ fn runtime_case_ids() -> BTreeSet<String> {
         "cookie_origin_scope",
         "headers_api_semantics",
         "hsts_domain_scope",
+        "http_content_encoding_limit",
+        "http_method_state",
         "websocket_mask_entropy",
         "websocket_recv_progress",
         "response_header_limit",
@@ -413,7 +446,6 @@ fn mapping_and_case_inventory_stay_in_sync() {
                 "reference_backend_transport",
                 "reference_backend_parsing",
                 "reference_backend_resource",
-                "reference_backend_method_state",
                 "reference_backend_platform",
                 "reference_backend_permissions",
                 "reference_backend_ssh_auth",
@@ -472,6 +504,8 @@ fn runtime_cases_execute_from_mapping() {
             "cookie_origin_scope" => run_cookie_origin_scope_case(),
             "headers_api_semantics" => run_headers_api_case(),
             "hsts_domain_scope" => run_hsts_domain_scope_case(),
+            "http_content_encoding_limit" => run_http_content_encoding_limit_case(),
+            "http_method_state" => run_http_method_state_case(),
             "websocket_mask_entropy" => run_websocket_mask_entropy_case(),
             "websocket_recv_progress" => run_websocket_recv_progress_case(),
             "response_header_limit" => run_response_header_limit_case(),
@@ -783,10 +817,6 @@ fn run_headers_api_case() {
             CURLE_OK
         );
         assert_eq!(
-            curl_easy_setopt(handle.as_ptr(), CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0),
-            CURLE_OK
-        );
-        assert_eq!(
             curl_easy_setopt(
                 handle.as_ptr(),
                 CURLOPT_WRITEFUNCTION,
@@ -1094,9 +1124,122 @@ fn run_response_header_limit_case() {
     server.join.join().expect("huge headers server");
 }
 
+fn run_http_content_encoding_limit_case() {
+    let server = spawn_scripted_http_server(vec![concat!(
+        "HTTP/1.1 200 OK\r\n",
+        "Content-Encoding: gzip\r\n",
+        "Transfer-Encoding: deflate\r\n",
+        "Content-Encoding: br\r\n",
+        "Transfer-Encoding: gzip\r\n",
+        "Content-Encoding: zstd\r\n",
+        "Transfer-Encoding: compress\r\n",
+        "Connection: close\r\n\r\n"
+    )
+    .to_string()]);
+    let url = CString::new(format!("http://127.0.0.1:{}/encoded", server.port)).expect("url");
+    let handle = EasyHandle::new();
+    let code = unsafe {
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_URL, url.as_ptr()),
+            CURLE_OK
+        );
+        curl_easy_perform(handle.as_ptr())
+    };
+    assert_eq!(code, CURLE_BAD_CONTENT_ENCODING);
+    server.join.join().expect("content encoding server");
+}
+
+fn run_http_method_state_case() {
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_string();
+    let server = spawn_body_recording_server(vec![response.clone(), response]);
+    let url = CString::new(format!("http://127.0.0.1:{}/state", server.port)).expect("url");
+    let post_body = CString::new("post-body").expect("post body");
+    let put_body = b"put-body".to_vec();
+    let mut upload = UploadSource {
+        body: put_body.clone(),
+        offset: 0,
+        calls: 0,
+    };
+    let handle = EasyHandle::new();
+    unsafe {
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_URL, url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(
+                handle.as_ptr(),
+                CURLOPT_WRITEFUNCTION,
+                sink_write as unsafe extern "C" fn(*mut c_char, usize, usize, *mut c_void) -> usize,
+            ),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(
+                handle.as_ptr(),
+                CURLOPT_READDATA,
+                (&mut upload as *mut UploadSource).cast::<c_void>(),
+            ),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(
+                handle.as_ptr(),
+                CURLOPT_READFUNCTION,
+                upload_read as unsafe extern "C" fn(*mut c_char, usize, usize, *mut c_void) -> usize,
+            ),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(
+                handle.as_ptr(),
+                CURLOPT_INFILESIZE_LARGE,
+                put_body.len() as i64,
+            ),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_UPLOAD, 1 as c_long),
+            CURLE_OK
+        );
+        assert_eq!(curl_easy_perform(handle.as_ptr()), CURLE_OK);
+    }
+    let calls_after_put = upload.calls;
+    assert!(calls_after_put > 0, "PUT transfer never used the read callback");
+
+    unsafe {
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_POSTFIELDS, post_body.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(curl_easy_perform(handle.as_ptr()), CURLE_OK);
+    }
+    assert_eq!(upload.calls, calls_after_put);
+
+    server.join.join().expect("method state server");
+    let requests = server.requests.lock().expect("requests").clone();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[0].head.starts_with("PUT /state HTTP/1.1\r\n"));
+    assert_eq!(requests[0].body, put_body);
+    assert!(requests[1].head.starts_with("POST /state HTTP/1.1\r\n"));
+    assert_eq!(requests[1].body, post_body.as_bytes());
+}
+
+#[derive(Clone, Debug)]
+struct RecordedRequest {
+    head: String,
+    body: Vec<u8>,
+}
+
 struct ScriptedServer {
     port: u16,
     requests: std::sync::Arc<Mutex<Vec<String>>>,
+    join: thread::JoinHandle<()>,
+}
+
+struct BodyRecordingServer {
+    port: u16,
+    requests: std::sync::Arc<Mutex<Vec<RecordedRequest>>>,
     join: thread::JoinHandle<()>,
 }
 
@@ -1118,6 +1261,30 @@ fn spawn_scripted_http_server(responses: Vec<String>) -> ScriptedServer {
         }
     });
     ScriptedServer {
+        port,
+        requests,
+        join,
+    }
+}
+
+fn spawn_body_recording_server(responses: Vec<String>) -> BodyRecordingServer {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind server");
+    let port = listener.local_addr().expect("addr").port();
+    let requests = std::sync::Arc::new(Mutex::new(Vec::new()));
+    let captured = requests.clone();
+    let join = thread::spawn(move || {
+        for response in responses {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let request = read_http_request(&mut stream);
+            captured.lock().expect("requests").push(request);
+            stream
+                .write_all(response.as_bytes())
+                .expect("write response");
+            stream.flush().expect("flush response");
+            let _ = stream.shutdown(Shutdown::Both);
+        }
+    });
+    BodyRecordingServer {
         port,
         requests,
         join,
@@ -1163,6 +1330,31 @@ fn read_http_headers(stream: &mut TcpStream) -> String {
         }
     }
     String::from_utf8(bytes).expect("utf-8 request")
+}
+
+fn read_http_request(stream: &mut TcpStream) -> RecordedRequest {
+    let mut bytes = Vec::new();
+    let mut buf = [0u8; 1024];
+    let header_end = loop {
+        let read = stream.read(&mut buf).expect("read request");
+        assert!(read != 0, "connection closed before complete request");
+        bytes.extend_from_slice(&buf[..read]);
+        if let Some(index) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
+            break index + 4;
+        }
+    };
+    let head = String::from_utf8(bytes[..header_end].to_vec()).expect("utf-8 request");
+    let content_length = header(&head, "Content-Length")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
+    let mut body = bytes[header_end..].to_vec();
+    while body.len() < content_length {
+        let read = stream.read(&mut buf).expect("read request body");
+        assert!(read != 0, "connection closed before complete request body");
+        body.extend_from_slice(&buf[..read]);
+    }
+    body.truncate(content_length);
+    RecordedRequest { head, body }
 }
 
 fn header(request: &str, name: &str) -> Option<String> {

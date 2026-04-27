@@ -101,6 +101,10 @@ pub(crate) struct SyntheticPushRequest {
 
 enum TransferEvent {
     Completed { easy_key: usize, result: CURLcode },
+    PushesOffered {
+        parent_easy_key: usize,
+        pushes: Vec<SyntheticPushRequest>,
+    },
     Wakeup,
 }
 
@@ -372,6 +376,45 @@ pub(crate) fn schedule_http2_pushes(parent_easy: *mut CURL, pushes: Vec<Syntheti
             }
         }
     }
+}
+
+pub(crate) fn offer_http2_pushes(parent_easy: *mut CURL, pushes: Vec<SyntheticPushRequest>) {
+    if pushes.is_empty() || !has_push_callback(parent_easy) {
+        return;
+    }
+
+    let Some(multi_ptr) = easy::perform::attached_multi_for(parent_easy).map(|value| value as *mut CURLM)
+    else {
+        return;
+    };
+    let Some(wrapper) = wrapper_from_ptr(multi_ptr) else {
+        return;
+    };
+    wrapper.events.push(TransferEvent::PushesOffered {
+        parent_easy_key: parent_easy as usize,
+        pushes,
+    });
+}
+
+pub(crate) fn has_push_callback(parent_easy: *mut CURL) -> bool {
+    if parent_easy.is_null() {
+        return false;
+    }
+
+    let Some(multi_ptr) = easy::perform::attached_multi_for(parent_easy).map(|value| value as *mut CURLM)
+    else {
+        return false;
+    };
+    let Some(wrapper) = wrapper_from_ptr(multi_ptr) else {
+        return false;
+    };
+    wrapper
+        .inner
+        .lock()
+        .expect("multi mutex poisoned")
+        .callbacks
+        .push_cb
+        .is_some()
 }
 
 pub(crate) unsafe fn init_handle() -> *mut CURLM {
@@ -1115,6 +1158,13 @@ fn process_event(wrapper: &MultiHandle, event: TransferEvent) -> c_int {
                 CURL_POLL_REMOVE,
             );
             let _ = update_timer(wrapper, multi_ptr);
+            1
+        }
+        TransferEvent::PushesOffered {
+            parent_easy_key,
+            pushes,
+        } => {
+            schedule_http2_pushes(parent_easy_key as *mut CURL, pushes);
             1
         }
         TransferEvent::Wakeup => 1,

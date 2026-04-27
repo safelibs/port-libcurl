@@ -30,6 +30,7 @@ fn main() {
     let forwarders = manifest_dir.join("c_shim/forwarders.c");
     let variadic = manifest_dir.join("c_shim/variadic.c");
     let mprintf = manifest_dir.join("c_shim/mprintf.c");
+    let http2_transport = manifest_dir.join("c_shim/http2_transport.c");
     let tls_backend = manifest_dir.join("c_shim/tls_backend.c");
     let ssh_backend = manifest_dir.join("c_shim/ssh_backend.c");
     let reference_script = manifest_dir.join("scripts/build-reference-curl.sh");
@@ -41,6 +42,7 @@ fn main() {
         &forwarders,
         &variadic,
         &mprintf,
+        &http2_transport,
         &tls_backend,
         &ssh_backend,
         &reference_script,
@@ -86,6 +88,7 @@ fn main() {
 
     println!("cargo:rustc-link-lib=dl");
     link_psl();
+    println!("cargo:rustc-link-lib=nghttp2");
     println!("cargo:rustc-link-lib=ssh2");
     match flavor {
         "openssl" => {
@@ -355,6 +358,7 @@ fn compile_c_shims(manifest_dir: &Path, flavor: &str, public_export_shim: &Path)
         .file(manifest_dir.join("c_shim/forwarders.c"))
         .file(manifest_dir.join("c_shim/variadic.c"))
         .file(manifest_dir.join("c_shim/mprintf.c"))
+        .file(manifest_dir.join("c_shim/http2_transport.c"))
         .file(manifest_dir.join("c_shim/tls_backend.c"))
         .file(manifest_dir.join("c_shim/ssh_backend.c"))
         .file(public_export_shim)

@@ -1,0 +1,5 @@
+{
+  "id": "http_method_state",
+  "kind": "runtime",
+  "title": "Reused HTTP easy handles switch cleanly from PUT uploads to POST bodies without leaking read-callback state"
+}

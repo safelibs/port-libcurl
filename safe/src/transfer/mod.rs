@@ -1,19 +1,22 @@
 use crate::abi::{
     curl_hstsentry, curl_index, curl_off_t, curl_slist, curl_socket_t, CURLMcode, CURLSTScode,
-    CURLcode, CURL, CURLE_BAD_FUNCTION_ARGUMENT, CURLINFO,
+    CURLcode, CURL, CURLE_BAD_FUNCTION_ARGUMENT, CURLE_OK, CURLINFO,
 };
 use crate::conn::cache::{parse_proxy_authority, parse_url_authority, ConnectionCacheKey};
 use crate::conn::filter::{ConnectionFilterChain, ConnectionFilterStep};
 use crate::dns::{ConnectOverride, ResolveOverride, ResolverLease, ResolverOwner};
-use crate::easy::perform::{self, EasyCallbacks, EasyMetadata, RecordedTransferInfo};
+use crate::easy::perform::{
+    self, EasyCallbacks, EasyMetadata, PostFieldSource, RecordedTransferInfo,
+};
 use crate::http::auth;
 use crate::http::cookies;
 use crate::http::hsts;
 use crate::http::request::{self, Origin};
 use crate::http::response::{
-    self, HEADER_ORIGIN_1XX, HEADER_ORIGIN_CONNECT, HEADER_ORIGIN_HEADER, HEADER_ORIGIN_TRAILER,
+    self, HEADER_ORIGIN_1XX, HEADER_ORIGIN_CONNECT, HEADER_ORIGIN_HEADER, HEADER_ORIGIN_PSEUDO,
+    HEADER_ORIGIN_TRAILER,
 };
-use core::ffi::{c_int, c_long, c_void};
+use core::ffi::{c_char, c_int, c_long, c_void};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
@@ -41,7 +44,10 @@ const CURLE_FILE_COULDNT_READ_FILE: CURLcode = 37;
 const CURLE_ABORTED_BY_CALLBACK: CURLcode = 42;
 const CURLE_SEND_ERROR: CURLcode = 55;
 const CURLE_RECV_ERROR: CURLcode = 56;
+const CURLE_BAD_CONTENT_ENCODING: CURLcode = 61;
 const CURLE_AGAIN: CURLcode = 81;
+const CURLE_HTTP2: CURLcode = 16;
+const CURLE_HTTP2_STREAM: CURLcode = 92;
 const CURLSTS_OK: CURLSTScode = 0;
 const CURLSTS_DONE: CURLSTScode = 1;
 const CURLSTS_FAIL: CURLSTScode = 2;
@@ -69,6 +75,11 @@ const CURL_HTTP_VERSION_1_1: c_long = 2;
 const CURL_HTTP_VERSION_2_0: c_long = 3;
 const CURL_HTTP_VERSION_2TLS: c_long = 4;
 const CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE: c_long = 5;
+const SAFE_H2_BLOCK_RESPONSE: c_int = 1;
+const SAFE_H2_BLOCK_TRAILER: c_int = 2;
+const H2_NV_FLAG_NONE: u8 = 0;
+const H2_NV_FLAG_NO_INDEX: u8 = 0x01;
+const MAX_CONTENT_ENCODING_STEPS: usize = 5;
 
 unsafe extern "C" {
     static mut stdin: *mut c_void;
@@ -77,6 +88,33 @@ unsafe extern "C" {
     fn fwrite(ptr: *const c_void, size: usize, nmemb: usize, stream: *mut c_void) -> usize;
     fn connect(fd: c_int, addr: *const crate::abi::sockaddr, len: u32) -> c_int;
     fn close(fd: c_int) -> c_int;
+    fn port_safe_http2_perform(
+        headers: *const SafeH2Nv,
+        header_count: usize,
+        has_body: c_int,
+        allow_push: c_int,
+        send_cb: Option<unsafe extern "C" fn(*mut c_void, *const u8, usize) -> isize>,
+        recv_cb: Option<unsafe extern "C" fn(*mut c_void, *mut u8, usize) -> isize>,
+        body_read_cb: Option<unsafe extern "C" fn(*mut c_void, *mut u8, usize, *mut c_int) -> isize>,
+        header_block_cb: Option<
+            unsafe extern "C" fn(*mut c_void, c_int, *const u8, usize, c_int) -> c_int,
+        >,
+        push_promise_cb: Option<unsafe extern "C" fn(*mut c_void, *const u8, usize) -> c_int>,
+        data_cb: Option<unsafe extern "C" fn(*mut c_void, *const u8, usize) -> isize>,
+        userp: *mut c_void,
+        stream_error_code: *mut u32,
+        errbuf: *mut c_char,
+        errlen: usize,
+    ) -> c_int;
+}
+
+#[repr(C)]
+struct SafeH2Nv {
+    name: *const u8,
+    namelen: usize,
+    value: *const u8,
+    valuelen: usize,
+    flags: u8,
 }
 
 #[repr(C)]
@@ -212,11 +250,13 @@ struct RequestContext {
     websocket_style: bool,
     use_chunked_upload: bool,
     range_header: Option<String>,
+    body_bytes: Option<Vec<u8>>,
     body_length: Option<usize>,
     send_body: bool,
     http_version: c_long,
 }
 
+#[derive(Clone)]
 struct ResponseMeta {
     status_code: u16,
     http_version: c_long,
@@ -237,6 +277,31 @@ struct TransferOutcome {
     retry_after: Option<curl_off_t>,
     location: Option<String>,
     info: RecordedTransferInfo,
+}
+
+struct OwnedH2Header {
+    name: Vec<u8>,
+    value: Vec<u8>,
+    flags: u8,
+}
+
+struct Http2TransferState<'a> {
+    stream: *mut TransportStream,
+    handle: *mut CURL,
+    callbacks: EasyCallbacks,
+    metadata: &'a EasyMetadata,
+    allow_push: bool,
+    request: &'a RequestContext,
+    request_index: usize,
+    request_started: Instant,
+    low_speed: LowSpeedGuard,
+    response: Option<ResponseMeta>,
+    response_end_stream: bool,
+    received_body_bytes: usize,
+    promised_pushes: Vec<crate::multi::SyntheticPushRequest>,
+    result: CURLcode,
+    info: RecordedTransferInfo,
+    body_offset: usize,
 }
 
 pub(crate) struct LowSpeedGuard {
@@ -1124,6 +1189,7 @@ fn execute_http_transfer(
     http2_compat: bool,
 ) -> Result<TransferOutcome, CURLcode> {
     let request_started = Instant::now();
+    let http2_requested = http2_compat;
     let ConnectedStream {
         mut stream,
         mut info,
@@ -1147,7 +1213,7 @@ fn execute_http_transfer(
     } else {
         (Vec::new(), 0)
     };
-    let mut stream = if let Some(policy) = tls_policy.as_ref() {
+    let (mut stream, tls_negotiated_http2) = if let Some(policy) = tls_policy.as_ref() {
         let tls = crate::tls::connect(
             stream,
             &request.target_host,
@@ -1155,10 +1221,11 @@ fn execute_http_transfer(
             metadata,
             policy,
         )?;
+        let negotiated_http2 = tls.negotiated_http2();
         record_certinfo(handle, policy.certinfo, &tls);
-        TransportStream::Tls(tls)
+        (TransportStream::Tls(tls), negotiated_http2)
     } else {
-        TransportStream::Plain(stream)
+        (TransportStream::Plain(stream), false)
     };
     let transport_ready_us = elapsed_us(request_started.elapsed());
     if tls_policy.is_some() {
@@ -1166,11 +1233,30 @@ fn execute_http_transfer(
     }
     info.pretransfer_time_us = transport_ready_us;
     info.http_connect_code = http_connect_code;
+    let use_http2 = if tls_policy.is_some() {
+        http2_requested && tls_negotiated_http2
+    } else {
+        http2_requested
+    };
+    if use_http2 {
+        return execute_http2_transfer(
+            &mut stream,
+            handle,
+            request,
+            metadata,
+            callbacks,
+            request_index,
+            plan.low_speed,
+            info,
+            request_started,
+        );
+    }
     write_request(&mut stream, request)?;
     if request.send_body {
         write_request_body(&mut stream, handle, callbacks, request)?;
     }
 
+    let allow_synthetic_push = crate::multi::has_push_callback(handle);
     let mut response = read_response_meta_with_prefix(
         &mut stream,
         handle,
@@ -1179,13 +1265,13 @@ fn execute_http_transfer(
         request,
         request_index,
         response_prefix,
-        http2_compat,
+        allow_synthetic_push,
     )?;
-    if http2_compat {
+    if use_http2 {
         response.http_version = CURL_HTTP_VERSION_2_0;
-        if !response.pushes.is_empty() {
-            crate::multi::schedule_http2_pushes(handle, response.pushes.clone());
-        }
+    }
+    if !response.pushes.is_empty() {
+        crate::multi::offer_http2_pushes(handle, response.pushes.clone());
     }
     flush_cookie_jar(handle, metadata);
     flush_altsvc_cache(handle, metadata);
@@ -1796,12 +1882,485 @@ fn append_headers(encoded: &mut String, headers: &[String]) {
     }
 }
 
+fn h2_header_flags(name: &str) -> u8 {
+    if matches!(
+        name,
+        "authorization" | "proxy-authorization" | "cookie" | "set-cookie"
+    ) {
+        H2_NV_FLAG_NO_INDEX
+    } else {
+        H2_NV_FLAG_NONE
+    }
+}
+
+fn build_http2_request_headers(request: &RequestContext) -> Result<Vec<OwnedH2Header>, CURLcode> {
+    let parsed = crate::protocols::ParsedProtocolUrl::parse(&request.url)?;
+    let path_with_query = parsed
+        .query
+        .as_ref()
+        .map(|query| format!("{}?{query}", parsed.path))
+        .unwrap_or_else(|| parsed.path.clone());
+    let mut headers = vec![
+        OwnedH2Header {
+            name: b":method".to_vec(),
+            value: request.method.as_bytes().to_vec(),
+            flags: H2_NV_FLAG_NONE,
+        },
+        OwnedH2Header {
+            name: b":scheme".to_vec(),
+            value: request.scheme.as_bytes().to_vec(),
+            flags: H2_NV_FLAG_NONE,
+        },
+        OwnedH2Header {
+            name: b":authority".to_vec(),
+            value: request.host_header.as_bytes().to_vec(),
+            flags: H2_NV_FLAG_NONE,
+        },
+        OwnedH2Header {
+            name: b":path".to_vec(),
+            value: path_with_query.as_bytes().to_vec(),
+            flags: H2_NV_FLAG_NONE,
+        },
+    ];
+
+    let mut saw_accept = false;
+    let mut saw_content_length = false;
+    let mut saw_range = false;
+    for header in &request.request_headers {
+        let Some((name, value)) = header.split_once(':') else {
+            continue;
+        };
+        let name = name.trim().to_ascii_lowercase();
+        if matches!(
+            name.as_str(),
+            "host"
+                | "connection"
+                | "proxy-connection"
+                | "keep-alive"
+                | "upgrade"
+                | "transfer-encoding"
+                | "expect"
+        ) {
+            continue;
+        }
+        saw_accept |= name == "accept";
+        saw_content_length |= name == "content-length";
+        saw_range |= name == "range";
+        let flags = h2_header_flags(name.as_str());
+        headers.push(OwnedH2Header {
+            name: name.into_bytes(),
+            value: value.trim().as_bytes().to_vec(),
+            flags,
+        });
+    }
+    if !saw_accept {
+        headers.push(OwnedH2Header {
+            name: b"accept".to_vec(),
+            value: b"*/*".to_vec(),
+            flags: H2_NV_FLAG_NONE,
+        });
+    }
+    if !saw_range {
+        if let Some(range) = request.range_header.as_ref() {
+            headers.push(OwnedH2Header {
+                name: b"range".to_vec(),
+                value: range.as_bytes().to_vec(),
+                flags: H2_NV_FLAG_NONE,
+            });
+        }
+    }
+    if request.send_body && !saw_content_length {
+        if let Some(length) = request.body_length {
+            headers.push(OwnedH2Header {
+                name: b"content-length".to_vec(),
+                value: length.to_string().into_bytes(),
+                flags: H2_NV_FLAG_NONE,
+            });
+        }
+    }
+    Ok(headers)
+}
+
+fn record_http2_pseudo_status(handle: *mut CURL, request_index: usize, status_code: u16) {
+    let status = status_code.to_string();
+    let _ = perform::with_http_state_mut(handle, |state| {
+        state
+            .headers
+            .record(request_index, HEADER_ORIGIN_PSEUDO, ":status", &status)
+    });
+}
+
+fn process_trailer_block_bytes(
+    handle: *mut CURL,
+    callbacks: EasyCallbacks,
+    metadata: &EasyMetadata,
+    request: &RequestContext,
+    request_index: usize,
+    header_block: &[u8],
+) -> Result<(), CURLcode> {
+    for raw_line in split_header_lines(header_block) {
+        deliver_header(handle, callbacks, metadata, raw_line)?;
+        let text = String::from_utf8_lossy(raw_line);
+        let trimmed = text.trim_end_matches(['\r', '\n']);
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Some((name, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        record_received_header(
+            handle,
+            metadata,
+            request,
+            request_index,
+            HEADER_ORIGIN_TRAILER,
+            name.trim(),
+            value.trim(),
+        );
+    }
+    Ok(())
+}
+
+fn apply_http2_result_policy(state: &mut Http2TransferState<'_>) {
+    let Some(response) = state.response.as_ref() else {
+        return;
+    };
+    let resume_requested = state.metadata.resume_from > 0;
+    if resume_requested && response.status_code == 416 {
+        return;
+    }
+    if resume_requested
+        && (200..300).contains(&response.status_code)
+        && !response.has_content_range
+    {
+        state.result = CURLE_RANGE_ERROR;
+        perform::set_error_buffer(
+            state.handle,
+            "HTTP server did not provide requested range",
+        );
+        return;
+    }
+    if state.metadata.fail_on_error && response.status_code >= 400 {
+        state.result = CURLE_HTTP_RETURNED_ERROR;
+        perform::set_error_buffer(state.handle, "The requested URL returned error");
+    }
+}
+
+fn should_discard_http2_body(state: &Http2TransferState<'_>) -> bool {
+    let Some(response) = state.response.as_ref() else {
+        return false;
+    };
+    if state.metadata.nobody || state.request.method.eq_ignore_ascii_case("HEAD") {
+        return true;
+    }
+    let resume_requested = state.metadata.resume_from > 0;
+    if resume_requested && response.status_code == 416 {
+        return true;
+    }
+    if resume_requested
+        && (200..300).contains(&response.status_code)
+        && !response.has_content_range
+    {
+        return true;
+    }
+    state.metadata.fail_on_error && response.status_code >= 400
+}
+
+fn can_accept_http2_eof(state: &Http2TransferState<'_>, message: &str) -> bool {
+    if message != "unexpected EOF in HTTP/2 stream" {
+        return false;
+    }
+    if state.response_end_stream {
+        return true;
+    }
+    if should_discard_http2_body(state) {
+        return true;
+    }
+    state
+        .response
+        .as_ref()
+        .and_then(|response| response.content_length)
+        .is_some_and(|expected| state.received_body_bytes >= expected)
+}
+
+unsafe extern "C" fn http2_stream_send(
+    userp: *mut c_void,
+    data: *const u8,
+    len: usize,
+) -> isize {
+    let state = unsafe { &mut *(userp as *mut Http2TransferState<'_>) };
+    let stream = unsafe { &mut *state.stream };
+    let bytes = unsafe { std::slice::from_raw_parts(data, len) };
+    match stream.write(bytes) {
+        Ok(written) => written as isize,
+        Err(_) => -1,
+    }
+}
+
+unsafe extern "C" fn http2_stream_recv(
+    userp: *mut c_void,
+    data: *mut u8,
+    len: usize,
+) -> isize {
+    let state = unsafe { &mut *(userp as *mut Http2TransferState<'_>) };
+    let stream = unsafe { &mut *state.stream };
+    let bytes = unsafe { std::slice::from_raw_parts_mut(data, len) };
+    match stream.read(bytes) {
+        Ok(read) => read as isize,
+        Err(_) => -1,
+    }
+}
+
+unsafe extern "C" fn http2_body_read(
+    userp: *mut c_void,
+    data: *mut u8,
+    len: usize,
+    eof: *mut c_int,
+) -> isize {
+    let state = unsafe { &mut *(userp as *mut Http2TransferState<'_>) };
+    let bytes = unsafe { std::slice::from_raw_parts_mut(data, len) };
+    if let Some(body) = state.request.body_bytes.as_ref() {
+        let remaining = &body[state.body_offset.min(body.len())..];
+        let read = remaining.len().min(len);
+        bytes[..read].copy_from_slice(&remaining[..read]);
+        state.body_offset = state.body_offset.saturating_add(read);
+        if !eof.is_null() {
+            unsafe { *eof = (state.body_offset >= body.len()) as c_int };
+        }
+        return read as isize;
+    }
+    match read_request_body_chunk(state.handle, state.callbacks, bytes) {
+        Ok(read) => {
+            if !eof.is_null() {
+                unsafe { *eof = (read == 0) as c_int };
+            }
+            read as isize
+        }
+        Err(code) => {
+            state.result = code;
+            -1
+        }
+    }
+}
+
+unsafe extern "C" fn http2_header_block(
+    userp: *mut c_void,
+    kind: c_int,
+    data: *const u8,
+    len: usize,
+    end_stream: c_int,
+) -> c_int {
+    let state = unsafe { &mut *(userp as *mut Http2TransferState<'_>) };
+    let header_block = unsafe { std::slice::from_raw_parts(data, len) };
+    let result = match kind {
+        SAFE_H2_BLOCK_RESPONSE => {
+            let parsed = process_response_header_block(
+                state.handle,
+                state.callbacks,
+                state.metadata,
+                state.request,
+                state.request_index,
+                header_block,
+                HEADER_ORIGIN_HEADER,
+                true,
+                state.allow_push,
+            );
+            match parsed {
+                Ok(parsed) => {
+                    record_http2_pseudo_status(state.handle, state.request_index, parsed.status_code);
+                    if parsed.status_code >= 200 || parsed.status_code == 101 {
+                        state.info.starttransfer_time_us =
+                            elapsed_us(state.request_started.elapsed());
+                        state.response_end_stream = end_stream != 0;
+                        state.response = Some(parsed);
+                        apply_http2_result_policy(state);
+                    }
+                    Ok(())
+                }
+                Err(code) => Err(code),
+            }
+        }
+        SAFE_H2_BLOCK_TRAILER => process_trailer_block_bytes(
+            state.handle,
+            state.callbacks,
+            state.metadata,
+            state.request,
+            state.request_index,
+            header_block,
+        ),
+        _ => Ok(()),
+    };
+    match result {
+        Ok(()) => 0,
+        Err(code) => {
+            state.result = code;
+            -1
+        }
+    }
+}
+
+unsafe extern "C" fn http2_push_promise(
+    userp: *mut c_void,
+    data: *const u8,
+    len: usize,
+) -> c_int {
+    let state = unsafe { &mut *(userp as *mut Http2TransferState<'_>) };
+    let header_block = unsafe { std::slice::from_raw_parts(data, len) };
+    if let Some(push) = parse_http2_push_promise(state.request, header_block) {
+        state.promised_pushes.push(push);
+    }
+    0
+}
+
+unsafe extern "C" fn http2_data_chunk(
+    userp: *mut c_void,
+    data: *const u8,
+    len: usize,
+) -> isize {
+    let state = unsafe { &mut *(userp as *mut Http2TransferState<'_>) };
+    if state.response.is_none() {
+        state.result = CURLE_HTTP2;
+        perform::set_error_buffer(state.handle, "HTTP/2 response body arrived before headers");
+        return -1;
+    }
+    if let Err(code) = state.low_speed.observe_progress(len) {
+        state.result = code;
+        return -1;
+    }
+    state.received_body_bytes = state.received_body_bytes.saturating_add(len);
+    if should_discard_http2_body(state) {
+        return len as isize;
+    }
+    let mut body = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
+    match deliver_write(state.handle, state.callbacks, &mut body) {
+        Ok(()) => len as isize,
+        Err(code) => {
+            state.result = code;
+            -1
+        }
+    }
+}
+
+fn execute_http2_transfer(
+    stream: &mut TransportStream,
+    handle: *mut CURL,
+    request: &RequestContext,
+    metadata: &EasyMetadata,
+    callbacks: EasyCallbacks,
+    request_index: usize,
+    low_speed: LowSpeedWindow,
+    info: RecordedTransferInfo,
+    request_started: Instant,
+) -> Result<TransferOutcome, CURLcode> {
+    stream.set_read_timeout(None).map_err(|_| CURLE_COULDNT_CONNECT)?;
+    let allow_push = crate::multi::has_push_callback(handle);
+    let headers = build_http2_request_headers(request)?;
+    let nva = headers
+        .iter()
+        .map(|header| SafeH2Nv {
+            name: header.name.as_ptr(),
+            namelen: header.name.len(),
+            value: header.value.as_ptr(),
+            valuelen: header.value.len(),
+            flags: header.flags,
+        })
+        .collect::<Vec<_>>();
+    let mut state = Http2TransferState {
+        stream,
+        handle,
+        callbacks,
+        metadata,
+        allow_push,
+        request,
+        request_index,
+        request_started,
+        low_speed: LowSpeedGuard::new(low_speed),
+        response: None,
+        response_end_stream: false,
+        received_body_bytes: 0,
+        promised_pushes: Vec::new(),
+        result: CURLE_OK,
+        info,
+        body_offset: 0,
+    };
+    let mut stream_error_code = 0u32;
+    let mut errbuf = [0 as c_char; 256];
+    let rc = unsafe {
+        port_safe_http2_perform(
+            nva.as_ptr(),
+            nva.len(),
+            request.send_body as c_int,
+            allow_push as c_int,
+            Some(http2_stream_send),
+            Some(http2_stream_recv),
+            Some(http2_body_read),
+            Some(http2_header_block),
+            Some(http2_push_promise),
+            Some(http2_data_chunk),
+            (&mut state as *mut Http2TransferState<'_>).cast(),
+            &mut stream_error_code,
+            errbuf.as_mut_ptr(),
+            errbuf.len(),
+        )
+    };
+    if rc != 0 {
+        let message = unsafe { std::ffi::CStr::from_ptr(errbuf.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        if state.result == CURLE_OK && can_accept_http2_eof(&state, &message) {
+            // Some tracked fixtures close the connection immediately after a
+            // complete response and PUSH_PROMISE sequence instead of delivering
+            // a separate stream-close signal for the parent stream.
+        } else if state.result == CURLE_OK {
+            if !message.is_empty() {
+                perform::set_error_buffer(handle, &message);
+            }
+            state.result = CURLE_HTTP2;
+            return Err(state.result);
+        } else {
+            return Err(state.result);
+        }
+    }
+    if stream_error_code != 0 {
+        perform::set_error_buffer(handle, "HTTP/2 stream closed with error");
+        return Err(CURLE_HTTP2_STREAM);
+    }
+    let Some(response) = state.response.clone() else {
+        perform::set_error_buffer(handle, "HTTP/2 response ended without final headers");
+        return Err(CURLE_HTTP2);
+    };
+    let pushes = if !state.promised_pushes.is_empty() {
+        state.promised_pushes.clone()
+    } else {
+        response.pushes.clone()
+    };
+    if !pushes.is_empty() {
+        crate::multi::offer_http2_pushes(handle, pushes);
+    }
+    flush_cookie_jar(handle, metadata);
+    flush_altsvc_cache(handle, metadata);
+    state.info.http_version = CURL_HTTP_VERSION_2_0;
+    state.info.total_time_us = elapsed_us(request_started.elapsed());
+    Ok(TransferOutcome {
+        result: state.result,
+        response_code: response.status_code,
+        content_type: response.content_type,
+        retry_after: response.retry_after,
+        location: response.location,
+        info: state.info,
+    })
+}
+
 fn write_request_body(
     stream: &mut TransportStream,
     handle: *mut CURL,
     callbacks: EasyCallbacks,
     request: &RequestContext,
 ) -> Result<(), CURLcode> {
+    if let Some(body) = request.body_bytes.as_ref() {
+        stream.write_all(body).map_err(|_| CURLE_SEND_ERROR)?;
+        return Ok(());
+    }
     if request.use_chunked_upload {
         return write_chunked_request_body(stream, handle, callbacks);
     }
@@ -1998,6 +2557,7 @@ fn process_response_header_block(
     let mut retry_after = None;
     let mut location = None;
     let mut chunked = false;
+    let mut encoding_steps = 0usize;
     let mut pushes = Vec::new();
     let _ = perform::with_http_state_mut(handle, |state| {
         state.headers.set_latest_request(request_index)
@@ -2036,12 +2596,22 @@ fn process_response_header_block(
             retry_after = parse_retry_after(value);
         } else if name.eq_ignore_ascii_case("location") {
             location = Some(value.to_string());
+        } else if name.eq_ignore_ascii_case("content-encoding") {
+            encoding_steps = encoding_steps.saturating_add(count_content_encoding_steps(value));
         } else if name.eq_ignore_ascii_case("transfer-encoding") {
+            encoding_steps = encoding_steps.saturating_add(count_content_encoding_steps(value));
             chunked = value
                 .split(',')
                 .any(|part| part.trim().eq_ignore_ascii_case("chunked"));
         } else if allow_http2_push && name.eq_ignore_ascii_case("link") {
             pushes.extend(parse_http2_push_links(request, value));
+        }
+        if encoding_steps > MAX_CONTENT_ENCODING_STEPS {
+            perform::set_error_buffer(
+                handle,
+                "Reject response due to too many content encodings",
+            );
+            return Err(CURLE_BAD_CONTENT_ENCODING);
         }
     }
 
@@ -2057,6 +2627,18 @@ fn process_response_header_block(
         chunked,
         pushes,
     })
+}
+
+fn count_content_encoding_steps(value: &str) -> usize {
+    value
+        .split(',')
+        .filter(|part| {
+            let token = part.trim();
+            !token.is_empty()
+                && !token.eq_ignore_ascii_case("identity")
+                && !token.eq_ignore_ascii_case("chunked")
+        })
+        .count()
 }
 
 fn process_trailer_block(
@@ -2150,7 +2732,7 @@ fn record_received_header(
 }
 
 fn native_http2_compat_enabled(
-    handle: *mut CURL,
+    _handle: *mut CURL,
     metadata: &EasyMetadata,
     request: &RequestContext,
 ) -> bool {
@@ -2162,11 +2744,7 @@ fn native_http2_compat_enabled(
         CURL_HTTP_VERSION_1_0 | CURL_HTTP_VERSION_1_1 => false,
         CURL_HTTP_VERSION_2_0 | CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE => true,
         CURL_HTTP_VERSION_2TLS => request.scheme.eq_ignore_ascii_case("https"),
-        0 => {
-            request.scheme.eq_ignore_ascii_case("https")
-                && metadata.ssl_enable_alpn
-                && crate::easy::perform::attached_multi_for(handle).is_some()
-        }
+        0 => request.scheme.eq_ignore_ascii_case("https") && metadata.ssl_enable_alpn,
         _ => request.scheme.eq_ignore_ascii_case("https") && metadata.ssl_enable_alpn,
     }
 }
@@ -2572,6 +3150,18 @@ impl RequestContext {
         let method = effective_method(metadata, websocket_style, method_override);
         let http_version = request_http_version(metadata);
         let upload_body = send_body && metadata.upload;
+        let body_bytes = if websocket_style || upload_body || !send_body {
+            None
+        } else {
+            post_request_body_bytes(metadata)
+        };
+        let body_length = if websocket_style || !send_body {
+            None
+        } else if upload_body {
+            metadata.upload_size.map(|size| size.max(0) as usize)
+        } else {
+            body_bytes.as_ref().map(Vec::len)
+        };
 
         Ok(Self {
             url: url.to_string(),
@@ -2606,12 +3196,9 @@ impl RequestContext {
                 && metadata.upload_size.is_none()
                 && http_version != CURL_HTTP_VERSION_1_0,
             range_header: effective_range_header(metadata),
-            body_length: if websocket_style || !upload_body {
-                None
-            } else {
-                metadata.upload_size.map(|size| size.max(0) as usize)
-            },
-            send_body: upload_body,
+            body_bytes,
+            body_length,
+            send_body,
             http_version,
         })
     }
@@ -2709,7 +3296,7 @@ fn effective_method(
     if metadata.nobody {
         return "HEAD".to_string();
     }
-    if metadata.mimepost_handle.is_some() || metadata.httppost_handle.is_some() {
+    if metadata.post_request || metadata.mimepost_handle.is_some() || metadata.httppost_handle.is_some() {
         return "POST".to_string();
     }
     if metadata.upload {
@@ -2725,12 +3312,38 @@ fn request_body_enabled(metadata: &EasyMetadata, method_override: Option<&str>) 
     if metadata.nobody {
         return false;
     }
-    if let Some(method) = method_override {
-        if method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD") {
-            return false;
+    let method = method_override
+        .map(str::to_string)
+        .unwrap_or_else(|| effective_method(metadata, false, None));
+    if method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD") {
+        return false;
+    }
+    metadata.upload || (metadata.post_request && post_request_body_bytes(metadata).is_some())
+}
+
+fn post_request_body_bytes(metadata: &EasyMetadata) -> Option<Vec<u8>> {
+    let source = metadata.post_fields.as_ref()?;
+    match source {
+        PostFieldSource::Owned(body) => {
+            let size = metadata.post_field_size.unwrap_or(body.len()).min(body.len());
+            Some(body[..size].to_vec())
+        }
+        PostFieldSource::Borrowed(raw) => {
+            if *raw == 0 {
+                return Some(Vec::new());
+            }
+            let ptr = *raw as *const i8;
+            if let Some(size) = metadata.post_field_size {
+                Some(unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), size) }.to_vec())
+            } else {
+                Some(
+                    unsafe { std::ffi::CStr::from_ptr(ptr) }
+                        .to_bytes()
+                        .to_vec(),
+                )
+            }
         }
     }
-    metadata.upload
 }
 
 fn redirect_method(current_method: &str, status_code: u16, metadata: &EasyMetadata) -> String {
@@ -2835,6 +3448,52 @@ fn parse_http2_push_links(request: &RequestContext, value: &str) -> Vec<crate::m
         .split(',')
         .filter_map(|entry| parse_http2_push_link(request, parent_origin.as_ref(), entry.trim()))
         .collect()
+}
+
+fn parse_http2_push_promise(
+    request: &RequestContext,
+    header_block: &[u8],
+) -> Option<crate::multi::SyntheticPushRequest> {
+    let mut scheme = None;
+    let mut authority = None;
+    let mut path = None;
+    let mut headers = Vec::new();
+
+    for raw_line in split_header_lines(header_block) {
+        let text = String::from_utf8_lossy(raw_line);
+        let trimmed = text.trim_end_matches(['\r', '\n']).trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        headers.push(trimmed.to_string());
+        if let Some(rest) = trimmed.strip_prefix(':') {
+            let (name, value) = rest.split_once(':')?;
+            let value = value.trim();
+            match name.trim() {
+                "scheme" => scheme = Some(value.to_string()),
+                "authority" => authority = Some(value.to_string()),
+                "path" => path = Some(value.to_string()),
+                _ => {}
+            }
+        }
+    }
+
+    if headers.is_empty() {
+        return None;
+    }
+
+    let scheme = scheme.unwrap_or_else(|| request.scheme.clone());
+    let authority = authority.unwrap_or_else(|| request.host_header.clone());
+    let path = path?;
+    let url = format!("{scheme}://{authority}{path}");
+    let push_origin = Origin::from_url(&url)?;
+    let parent_origin = Origin::from_url(&request.url)?;
+    if !parent_origin.same_origin(&push_origin) {
+        return None;
+    }
+
+    Some(crate::multi::SyntheticPushRequest { url, headers })
 }
 
 fn parse_http2_push_link(
