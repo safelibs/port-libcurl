@@ -95,13 +95,17 @@ unsafe extern "C" {
         allow_push: c_int,
         send_cb: Option<unsafe extern "C" fn(*mut c_void, *const u8, usize) -> isize>,
         recv_cb: Option<unsafe extern "C" fn(*mut c_void, *mut u8, usize) -> isize>,
-        body_read_cb: Option<unsafe extern "C" fn(*mut c_void, *mut u8, usize, *mut c_int) -> isize>,
+        body_read_cb: Option<
+            unsafe extern "C" fn(*mut c_void, *mut u8, usize, *mut c_int) -> isize,
+        >,
         header_block_cb: Option<
             unsafe extern "C" fn(*mut c_void, c_int, *const u8, usize, c_int) -> c_int,
         >,
         push_promise_cb: Option<unsafe extern "C" fn(*mut c_void, *const u8, usize) -> c_int>,
         data_cb: Option<unsafe extern "C" fn(*mut c_void, *const u8, usize) -> isize>,
         userp: *mut c_void,
+        max_header_bytes: usize,
+        result_code: *mut c_int,
         stream_error_code: *mut u32,
         errbuf: *mut c_char,
         errlen: usize,
@@ -1998,6 +2002,7 @@ fn process_trailer_block_bytes(
     request_index: usize,
     header_block: &[u8],
 ) -> Result<(), CURLcode> {
+    enforce_response_header_limit(handle, header_block.len())?;
     for raw_line in split_header_lines(header_block) {
         deliver_header(handle, callbacks, metadata, raw_line)?;
         let text = String::from_utf8_lossy(raw_line);
@@ -2021,6 +2026,14 @@ fn process_trailer_block_bytes(
     Ok(())
 }
 
+fn enforce_response_header_limit(handle: *mut CURL, len: usize) -> Result<(), CURLcode> {
+    if len > response::MAX_RESPONSE_HEADERS_BYTES {
+        perform::set_error_buffer(handle, "Too large response headers");
+        return Err(CURLE_RECV_ERROR);
+    }
+    Ok(())
+}
+
 fn apply_http2_result_policy(state: &mut Http2TransferState<'_>) {
     let Some(response) = state.response.as_ref() else {
         return;
@@ -2029,15 +2042,10 @@ fn apply_http2_result_policy(state: &mut Http2TransferState<'_>) {
     if resume_requested && response.status_code == 416 {
         return;
     }
-    if resume_requested
-        && (200..300).contains(&response.status_code)
-        && !response.has_content_range
+    if resume_requested && (200..300).contains(&response.status_code) && !response.has_content_range
     {
         state.result = CURLE_RANGE_ERROR;
-        perform::set_error_buffer(
-            state.handle,
-            "HTTP server did not provide requested range",
-        );
+        perform::set_error_buffer(state.handle, "HTTP server did not provide requested range");
         return;
     }
     if state.metadata.fail_on_error && response.status_code >= 400 {
@@ -2057,9 +2065,7 @@ fn should_discard_http2_body(state: &Http2TransferState<'_>) -> bool {
     if resume_requested && response.status_code == 416 {
         return true;
     }
-    if resume_requested
-        && (200..300).contains(&response.status_code)
-        && !response.has_content_range
+    if resume_requested && (200..300).contains(&response.status_code) && !response.has_content_range
     {
         return true;
     }
@@ -2083,11 +2089,7 @@ fn can_accept_http2_eof(state: &Http2TransferState<'_>, message: &str) -> bool {
         .is_some_and(|expected| state.received_body_bytes >= expected)
 }
 
-unsafe extern "C" fn http2_stream_send(
-    userp: *mut c_void,
-    data: *const u8,
-    len: usize,
-) -> isize {
+unsafe extern "C" fn http2_stream_send(userp: *mut c_void, data: *const u8, len: usize) -> isize {
     let state = unsafe { &mut *(userp as *mut Http2TransferState<'_>) };
     let stream = unsafe { &mut *state.stream };
     let bytes = unsafe { std::slice::from_raw_parts(data, len) };
@@ -2097,11 +2099,7 @@ unsafe extern "C" fn http2_stream_send(
     }
 }
 
-unsafe extern "C" fn http2_stream_recv(
-    userp: *mut c_void,
-    data: *mut u8,
-    len: usize,
-) -> isize {
+unsafe extern "C" fn http2_stream_recv(userp: *mut c_void, data: *mut u8, len: usize) -> isize {
     let state = unsafe { &mut *(userp as *mut Http2TransferState<'_>) };
     let stream = unsafe { &mut *state.stream };
     let bytes = unsafe { std::slice::from_raw_parts_mut(data, len) };
@@ -2151,6 +2149,10 @@ unsafe extern "C" fn http2_header_block(
     end_stream: c_int,
 ) -> c_int {
     let state = unsafe { &mut *(userp as *mut Http2TransferState<'_>) };
+    if let Err(code) = enforce_response_header_limit(state.handle, len) {
+        state.result = code;
+        return -1;
+    }
     let header_block = unsafe { std::slice::from_raw_parts(data, len) };
     let result = match kind {
         SAFE_H2_BLOCK_RESPONSE => {
@@ -2167,7 +2169,11 @@ unsafe extern "C" fn http2_header_block(
             );
             match parsed {
                 Ok(parsed) => {
-                    record_http2_pseudo_status(state.handle, state.request_index, parsed.status_code);
+                    record_http2_pseudo_status(
+                        state.handle,
+                        state.request_index,
+                        parsed.status_code,
+                    );
                     if parsed.status_code >= 200 || parsed.status_code == 101 {
                         state.info.starttransfer_time_us =
                             elapsed_us(state.request_started.elapsed());
@@ -2199,12 +2205,12 @@ unsafe extern "C" fn http2_header_block(
     }
 }
 
-unsafe extern "C" fn http2_push_promise(
-    userp: *mut c_void,
-    data: *const u8,
-    len: usize,
-) -> c_int {
+unsafe extern "C" fn http2_push_promise(userp: *mut c_void, data: *const u8, len: usize) -> c_int {
     let state = unsafe { &mut *(userp as *mut Http2TransferState<'_>) };
+    if let Err(code) = enforce_response_header_limit(state.handle, len) {
+        state.result = code;
+        return -1;
+    }
     let header_block = unsafe { std::slice::from_raw_parts(data, len) };
     if let Some(push) = parse_http2_push_promise(state.request, header_block) {
         state.promised_pushes.push(push);
@@ -2212,11 +2218,7 @@ unsafe extern "C" fn http2_push_promise(
     0
 }
 
-unsafe extern "C" fn http2_data_chunk(
-    userp: *mut c_void,
-    data: *const u8,
-    len: usize,
-) -> isize {
+unsafe extern "C" fn http2_data_chunk(userp: *mut c_void, data: *const u8, len: usize) -> isize {
     let state = unsafe { &mut *(userp as *mut Http2TransferState<'_>) };
     if state.response.is_none() {
         state.result = CURLE_HTTP2;
@@ -2252,7 +2254,9 @@ fn execute_http2_transfer(
     info: RecordedTransferInfo,
     request_started: Instant,
 ) -> Result<TransferOutcome, CURLcode> {
-    stream.set_read_timeout(None).map_err(|_| CURLE_COULDNT_CONNECT)?;
+    stream
+        .set_read_timeout(None)
+        .map_err(|_| CURLE_COULDNT_CONNECT)?;
     let allow_push = crate::multi::has_push_callback(handle);
     let headers = build_http2_request_headers(request)?;
     let nva = headers
@@ -2283,6 +2287,7 @@ fn execute_http2_transfer(
         info,
         body_offset: 0,
     };
+    let mut transport_result = CURLE_OK as c_int;
     let mut stream_error_code = 0u32;
     let mut errbuf = [0 as c_char; 256];
     let rc = unsafe {
@@ -2298,6 +2303,8 @@ fn execute_http2_transfer(
             Some(http2_push_promise),
             Some(http2_data_chunk),
             (&mut state as *mut Http2TransferState<'_>).cast(),
+            response::MAX_RESPONSE_HEADERS_BYTES,
+            &mut transport_result,
             &mut stream_error_code,
             errbuf.as_mut_ptr(),
             errbuf.len(),
@@ -2307,7 +2314,13 @@ fn execute_http2_transfer(
         let message = unsafe { std::ffi::CStr::from_ptr(errbuf.as_ptr()) }
             .to_string_lossy()
             .into_owned();
-        if state.result == CURLE_OK && can_accept_http2_eof(&state, &message) {
+        if state.result == CURLE_OK && transport_result != CURLE_OK as c_int {
+            if !message.is_empty() {
+                perform::set_error_buffer(handle, &message);
+            }
+            state.result = transport_result as CURLcode;
+            return Err(state.result);
+        } else if state.result == CURLE_OK && can_accept_http2_eof(&state, &message) {
             // Some tracked fixtures close the connection immediately after a
             // complete response and PUSH_PROMISE sequence instead of delivering
             // a separate stream-close signal for the parent stream.
@@ -2540,6 +2553,7 @@ fn process_response_header_block(
     emit_headers: bool,
     allow_http2_push: bool,
 ) -> Result<ResponseMeta, CURLcode> {
+    enforce_response_header_limit(handle, header_block.len())?;
     let lines = split_header_lines(header_block);
     let status_line = lines.first().copied().ok_or(CURLE_READ_ERROR)?;
     let status_text = String::from_utf8_lossy(status_line);
@@ -2607,10 +2621,7 @@ fn process_response_header_block(
             pushes.extend(parse_http2_push_links(request, value));
         }
         if encoding_steps > MAX_CONTENT_ENCODING_STEPS {
-            perform::set_error_buffer(
-                handle,
-                "Reject response due to too many content encodings",
-            );
+            perform::set_error_buffer(handle, "Reject response due to too many content encodings");
             return Err(CURLE_BAD_CONTENT_ENCODING);
         }
     }
@@ -3296,7 +3307,10 @@ fn effective_method(
     if metadata.nobody {
         return "HEAD".to_string();
     }
-    if metadata.post_request || metadata.mimepost_handle.is_some() || metadata.httppost_handle.is_some() {
+    if metadata.post_request
+        || metadata.mimepost_handle.is_some()
+        || metadata.httppost_handle.is_some()
+    {
         return "POST".to_string();
     }
     if metadata.upload {
@@ -3325,7 +3339,10 @@ fn post_request_body_bytes(metadata: &EasyMetadata) -> Option<Vec<u8>> {
     let source = metadata.post_fields.as_ref()?;
     match source {
         PostFieldSource::Owned(body) => {
-            let size = metadata.post_field_size.unwrap_or(body.len()).min(body.len());
+            let size = metadata
+                .post_field_size
+                .unwrap_or(body.len())
+                .min(body.len());
             Some(body[..size].to_vec())
         }
         PostFieldSource::Borrowed(raw) => {
@@ -3336,11 +3353,7 @@ fn post_request_body_bytes(metadata: &EasyMetadata) -> Option<Vec<u8>> {
             if let Some(size) = metadata.post_field_size {
                 Some(unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), size) }.to_vec())
             } else {
-                Some(
-                    unsafe { std::ffi::CStr::from_ptr(ptr) }
-                        .to_bytes()
-                        .to_vec(),
-                )
+                Some(unsafe { std::ffi::CStr::from_ptr(ptr) }.to_bytes().to_vec())
             }
         }
     }
@@ -3442,7 +3455,10 @@ fn maybe_upgrade_hsts_url(handle: *mut CURL, metadata: &EasyMetadata, url: &str)
     format!("https://{authority}{}", parsed.path_and_query)
 }
 
-fn parse_http2_push_links(request: &RequestContext, value: &str) -> Vec<crate::multi::SyntheticPushRequest> {
+fn parse_http2_push_links(
+    request: &RequestContext,
+    value: &str,
+) -> Vec<crate::multi::SyntheticPushRequest> {
     let parent_origin = Origin::from_url(&request.url);
     value
         .split(',')

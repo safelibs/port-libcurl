@@ -2,7 +2,7 @@ use crate::http::request::Origin;
 use crate::http::response::split_header_line;
 use core::ffi::{c_char, c_int, c_void};
 use std::collections::HashSet;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::fs;
 use std::net::IpAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -309,23 +309,26 @@ fn is_ip_address(host: &str) -> bool {
 }
 
 fn psl_cookie_domain_acceptable(host: &str, cookie_domain: &str) -> bool {
-    let host_c = CString::new(host).ok();
-    let cookie_c = CString::new(cookie_domain).ok();
-    if let (Some(host_c), Some(cookie_c)) = (host_c, cookie_c) {
-        let psl = unsafe { psl_builtin() };
-        if !psl.is_null() {
-            return unsafe {
-                psl_is_cookie_domain_acceptable(psl, host_c.as_ptr(), cookie_c.as_ptr()) != 0
-            };
-        }
-    }
+    let Some(host_c) = CString::new(host).ok() else {
+        return false;
+    };
+    let Some(cookie_c) = CString::new(cookie_domain).ok() else {
+        return false;
+    };
+    psl_cookie_domain_acceptable_with_psl(host_c.as_c_str(), cookie_c.as_c_str(), unsafe {
+        psl_builtin()
+    })
+}
 
-    let domain = cookie_domain.to_ascii_lowercase();
-    domain.contains('.')
-        && !matches!(
-            domain.as_str(),
-            "com" | "net" | "org" | "edu" | "gov" | "co.uk" | "uk"
-        )
+fn psl_cookie_domain_acceptable_with_psl(
+    host: &CStr,
+    cookie_domain: &CStr,
+    psl: *const c_void,
+) -> bool {
+    if psl.is_null() {
+        return false;
+    }
+    unsafe { psl_is_cookie_domain_acceptable(psl, host.as_ptr(), cookie_domain.as_ptr()) != 0 }
 }
 
 fn has_control(value: &str) -> bool {
@@ -442,13 +445,26 @@ fn current_unix_time() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_set_cookie, CookieStore};
+    use super::{parse_set_cookie, psl_cookie_domain_acceptable_with_psl, CookieStore};
+    use core::ptr;
+    use std::ffi::CString;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn cookie_rejects_public_suffix_domains() {
         let cookie = parse_set_cookie("curl.co.uk", "/index", "a=b; Domain=co.uk");
         assert!(cookie.is_none());
+    }
+
+    #[test]
+    fn cookie_psl_validation_fails_closed_without_database() {
+        let host = CString::new("curl.co.uk").expect("host");
+        let domain = CString::new("co.uk").expect("domain");
+        assert!(!psl_cookie_domain_acceptable_with_psl(
+            host.as_c_str(),
+            domain.as_c_str(),
+            ptr::null(),
+        ));
     }
 
     #[test]

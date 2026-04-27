@@ -24,6 +24,7 @@ typedef ssize_t (*safe_h2_data_cb)(void *userp, const uint8_t *data, size_t len)
 
 #define SAFE_H2_BLOCK_RESPONSE 1
 #define SAFE_H2_BLOCK_TRAILER 2
+#define SAFE_H2_RECV_ERROR 56
 
 struct safe_h2_bridge {
   safe_h2_send_cb send_cb;
@@ -33,14 +34,14 @@ struct safe_h2_bridge {
   safe_h2_push_promise_cb push_promise_cb;
   safe_h2_data_cb data_cb;
   void *userp;
+  int *result_code;
   int32_t request_stream_id;
   uint32_t stream_error_code;
   int stream_closed;
   uint8_t *header_block;
   size_t header_len;
   size_t header_cap;
-  char status[4];
-  size_t status_len;
+  size_t max_header_bytes;
   int collecting_headers;
   int saw_status;
   int header_end_stream;
@@ -59,11 +60,39 @@ static void safe_h2_set_error(struct safe_h2_bridge *bridge, const char *msg) {
   snprintf(bridge->errbuf, bridge->errlen, "%s", msg);
 }
 
+static void safe_h2_set_error_if_empty(struct safe_h2_bridge *bridge, const char *msg) {
+  if(!bridge || !bridge->errbuf || bridge->errlen == 0 || bridge->errbuf[0] != '\0') {
+    return;
+  }
+  snprintf(bridge->errbuf, bridge->errlen, "%s", msg);
+}
+
+static void safe_h2_set_result(struct safe_h2_bridge *bridge, int code) {
+  if(bridge && bridge->result_code) {
+    *bridge->result_code = code;
+  }
+}
+
+static int safe_h2_limit_available(struct safe_h2_bridge *bridge, size_t used, size_t extra) {
+  if(!bridge || bridge->max_header_bytes == 0) {
+    return 0;
+  }
+  if(used > bridge->max_header_bytes || extra > bridge->max_header_bytes - used) {
+    safe_h2_set_result(bridge, SAFE_H2_RECV_ERROR);
+    safe_h2_set_error(bridge, "Too large response headers");
+    return -1;
+  }
+  return 0;
+}
+
 static int safe_h2_reserve(struct safe_h2_bridge *bridge, size_t extra) {
   size_t needed;
   uint8_t *grown;
 
   if(!bridge) {
+    return -1;
+  }
+  if(safe_h2_limit_available(bridge, bridge->header_len, extra) != 0) {
     return -1;
   }
   needed = bridge->header_len + extra;
@@ -108,6 +137,9 @@ static int safe_h2_reserve_push(struct safe_h2_bridge *bridge, size_t extra) {
   if(!bridge) {
     return -1;
   }
+  if(safe_h2_limit_available(bridge, bridge->push_len, extra) != 0) {
+    return -1;
+  }
   needed = bridge->push_len + extra;
   if(needed <= bridge->push_cap) {
     return 0;
@@ -146,8 +178,6 @@ static int safe_h2_append_push_text(struct safe_h2_bridge *bridge, const char *t
 
 static void safe_h2_reset_headers(struct safe_h2_bridge *bridge) {
   bridge->header_len = 0;
-  bridge->status_len = 0;
-  bridge->status[0] = '\0';
   bridge->collecting_headers = 1;
   bridge->saw_status = 0;
   bridge->header_end_stream = 0;
@@ -259,9 +289,11 @@ static int safe_h2_on_header(nghttp2_session *session, const nghttp2_frame *fram
   }
   if(namelen == 7 && memcmp(name, ":status", 7) == 0) {
     if(valuelen == 3) {
-      memcpy(bridge->status, value, 3);
-      bridge->status[3] = '\0';
-      bridge->status_len = 3;
+      if(safe_h2_append_text(bridge, "HTTP/2 ") != 0 ||
+         safe_h2_append_bytes(bridge, value, valuelen) != 0 ||
+         safe_h2_append_text(bridge, "\r\n") != 0) {
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
+      }
       bridge->saw_status = 1;
     }
     return 0;
@@ -303,27 +335,15 @@ static int safe_h2_on_frame_recv(nghttp2_session *session, const nghttp2_frame *
 
   bridge->header_end_stream = (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) != 0;
   if(bridge->saw_status) {
-    uint8_t prefix[32];
-    int prefix_len =
-        snprintf((char *)prefix, sizeof(prefix), "HTTP/2 %s\r\n", bridge->status_len ? bridge->status : "200");
-    uint8_t *block = malloc((size_t)prefix_len + bridge->header_len + 2);
-    if(!block) {
-      safe_h2_set_error(bridge, "out of memory building HTTP/2 response headers");
-      return NGHTTP2_ERR_NOMEM;
+    if(safe_h2_append_text(bridge, "\r\n") != 0) {
+      return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
-    memcpy(block, prefix, (size_t)prefix_len);
-    if(bridge->header_len) {
-      memcpy(block + prefix_len, bridge->header_block, bridge->header_len);
-    }
-    memcpy(block + prefix_len + bridge->header_len, "\r\n", 2);
     kind = SAFE_H2_BLOCK_RESPONSE;
-    rc = bridge->header_block_cb(bridge->userp, kind, block,
-                                 (size_t)prefix_len + bridge->header_len + 2,
+    rc = bridge->header_block_cb(bridge->userp, kind, bridge->header_block, bridge->header_len,
                                  bridge->header_end_stream);
-    free(block);
   } else {
     if(safe_h2_append_text(bridge, "\r\n") != 0) {
-      return NGHTTP2_ERR_NOMEM;
+      return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
     kind = SAFE_H2_BLOCK_TRAILER;
     rc = bridge->header_block_cb(bridge->userp, kind, bridge->header_block,
@@ -373,8 +393,9 @@ int port_safe_http2_perform(const struct safe_h2_nv *headers, size_t header_coun
                             safe_h2_body_read_cb body_read_cb,
                             safe_h2_header_block_cb header_block_cb,
                             safe_h2_push_promise_cb push_promise_cb,
-                            safe_h2_data_cb data_cb, void *userp,
-                            uint32_t *stream_error_code, char *errbuf, size_t errlen) {
+                            safe_h2_data_cb data_cb, void *userp, size_t max_header_bytes,
+                            int *result_code, uint32_t *stream_error_code, char *errbuf,
+                            size_t errlen) {
   nghttp2_session_callbacks *callbacks = NULL;
   nghttp2_session *session = NULL;
   nghttp2_settings_entry settings[1];
@@ -400,8 +421,13 @@ int port_safe_http2_perform(const struct safe_h2_nv *headers, size_t header_coun
   bridge.push_promise_cb = push_promise_cb;
   bridge.data_cb = data_cb;
   bridge.userp = userp;
+  bridge.result_code = result_code;
+  bridge.max_header_bytes = max_header_bytes;
   bridge.errbuf = errbuf;
   bridge.errlen = errlen;
+  if(result_code) {
+    *result_code = 0;
+  }
   if(errbuf && errlen) {
     errbuf[0] = '\0';
   }
@@ -476,7 +502,7 @@ int port_safe_http2_perform(const struct safe_h2_nv *headers, size_t header_coun
       continue;
     }
     if(rv != 0) {
-      safe_h2_set_error(&bridge, nghttp2_strerror(rv));
+      safe_h2_set_error_if_empty(&bridge, nghttp2_strerror(rv));
       nghttp2_session_del(session);
       nghttp2_session_callbacks_del(callbacks);
       free(bridge.header_block);
@@ -491,7 +517,7 @@ int port_safe_http2_perform(const struct safe_h2_nv *headers, size_t header_coun
       continue;
     }
     if(rv == NGHTTP2_ERR_EOF) {
-      safe_h2_set_error(&bridge, "unexpected EOF in HTTP/2 stream");
+      safe_h2_set_error_if_empty(&bridge, "unexpected EOF in HTTP/2 stream");
       nghttp2_session_del(session);
       nghttp2_session_callbacks_del(callbacks);
       free(bridge.header_block);
@@ -499,7 +525,7 @@ int port_safe_http2_perform(const struct safe_h2_nv *headers, size_t header_coun
       return -1;
     }
     if(rv != 0) {
-      safe_h2_set_error(&bridge, nghttp2_strerror(rv));
+      safe_h2_set_error_if_empty(&bridge, nghttp2_strerror(rv));
       nghttp2_session_del(session);
       nghttp2_session_callbacks_del(callbacks);
       free(bridge.header_block);
@@ -510,7 +536,7 @@ int port_safe_http2_perform(const struct safe_h2_nv *headers, size_t header_coun
 
   rv = nghttp2_session_send(session);
   if(rv != 0) {
-    safe_h2_set_error(&bridge, nghttp2_strerror(rv));
+    safe_h2_set_error_if_empty(&bridge, nghttp2_strerror(rv));
     nghttp2_session_del(session);
     nghttp2_session_callbacks_del(callbacks);
     free(bridge.header_block);
