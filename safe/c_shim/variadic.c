@@ -7,41 +7,36 @@
 #include <curl/multi.h>
 #include <curl/urlapi.h>
 
-void *curl_safe_resolve_reference_symbol(const char *name);
-CURL *curl_safe_reference_easy_handle(CURL *handle);
-char *curl_safe_url_to_string(const CURLU *handle);
+void *port_safe_resolve_reference_symbol(const char *name);
+CURL *port_safe_reference_easy_handle(CURL *handle);
 
-typedef CURLcode (*curl_easy_setopt_fn)(CURL *handle, CURLoption option, ...);
 typedef CURLcode (*curl_easy_getinfo_fn)(CURL *handle, CURLINFO info, ...);
-typedef CURLMcode (*curl_multi_setopt_fn)(CURLM *multi_handle, CURLMoption option, ...);
 
-void curl_safe_easy_setopt_observe_long(CURL *handle, CURLoption option, long value);
-void curl_safe_easy_setopt_observe_ptr(CURL *handle, CURLoption option, void *value);
-void curl_safe_easy_setopt_observe_function(CURL *handle, CURLoption option, void (*value)(void));
-void curl_safe_easy_setopt_observe_off_t(CURL *handle, CURLoption option, curl_off_t value);
-CURLcode curl_safe_reference_easy_setopt_long(CURL *handle, CURLoption option, long value);
-CURLSHcode curl_safe_share_setopt_int(CURLSH *share, CURLSHoption option, int value);
-CURLSHcode curl_safe_share_setopt_function(CURLSH *share, CURLSHoption option, void (*value)(void));
-CURLSHcode curl_safe_share_setopt_ptr(CURLSH *share, CURLSHoption option, void *value);
-int curl_safe_easy_getinfo_string(CURL *handle, CURLINFO info, char **value, CURLcode *result);
-int curl_safe_easy_getinfo_long(CURL *handle, CURLINFO info, long *value, CURLcode *result);
-int curl_safe_easy_getinfo_off_t(CURL *handle, CURLINFO info, curl_off_t *value, CURLcode *result);
-int curl_safe_easy_getinfo_socket(CURL *handle, CURLINFO info, curl_socket_t *value,
+CURLcode port_safe_easy_setopt_long(CURL *handle, CURLoption option, long value);
+CURLcode port_safe_easy_setopt_ptr(CURL *handle, CURLoption option, void *value);
+CURLcode port_safe_easy_setopt_function(CURL *handle, CURLoption option, void (*value)(void));
+CURLcode port_safe_easy_setopt_off_t(CURL *handle, CURLoption option, curl_off_t value);
+CURLSHcode port_safe_share_setopt_int(CURLSH *share, CURLSHoption option, int value);
+CURLSHcode port_safe_share_setopt_function(CURLSH *share, CURLSHoption option, void (*value)(void));
+CURLSHcode port_safe_share_setopt_ptr(CURLSH *share, CURLSHoption option, void *value);
+int port_safe_easy_getinfo_double(CURL *handle, CURLINFO info, double *value, CURLcode *result);
+int port_safe_easy_getinfo_string(CURL *handle, CURLINFO info, char **value, CURLcode *result);
+int port_safe_easy_getinfo_long(CURL *handle, CURLINFO info, long *value, CURLcode *result);
+int port_safe_easy_getinfo_slist(CURL *handle, CURLINFO info, struct curl_slist **value,
+                                 CURLcode *result);
+int port_safe_easy_getinfo_off_t(CURL *handle, CURLINFO info, curl_off_t *value, CURLcode *result);
+int port_safe_easy_getinfo_socket(CURL *handle, CURLINFO info, curl_socket_t *value,
                                   CURLcode *result);
-int curl_safe_easy_getinfo_ptr(CURL *handle, CURLINFO info, void **value, CURLcode *result);
-CURLMcode curl_safe_multi_setopt_long(CURLM *multi_handle, CURLMoption option, long value);
-CURLMcode curl_safe_multi_setopt_ptr(CURLM *multi_handle, CURLMoption option, void *value);
-CURLMcode curl_safe_multi_setopt_function(CURLM *multi_handle, CURLMoption option, void (*value)(void));
-CURLMcode curl_safe_multi_setopt_off_t(CURLM *multi_handle, CURLMoption option, curl_off_t value);
-CURLMcode curl_safe_reference_multi_setopt_long(CURLM *multi_handle, CURLMoption option, long value);
-CURLMcode curl_safe_reference_multi_setopt_ptr(CURLM *multi_handle, CURLMoption option, void *value);
-CURLMcode curl_safe_reference_multi_setopt_function(CURLM *multi_handle, CURLMoption option, void (*value)(void));
-CURLMcode curl_safe_reference_multi_setopt_off_t(CURLM *multi_handle, CURLMoption option, curl_off_t value);
-CURLFORMcode curl_safe_formadd_parsed(struct curl_httppost **httppost,
+int port_safe_easy_getinfo_ptr(CURL *handle, CURLINFO info, void **value, CURLcode *result);
+CURLMcode port_safe_multi_setopt_long(CURLM *multi_handle, CURLMoption option, long value);
+CURLMcode port_safe_multi_setopt_ptr(CURLM *multi_handle, CURLMoption option, void *value);
+CURLMcode port_safe_multi_setopt_function(CURLM *multi_handle, CURLMoption option, void (*value)(void));
+CURLMcode port_safe_multi_setopt_off_t(CURLM *multi_handle, CURLMoption option, curl_off_t value);
+CURLFORMcode port_safe_formadd_parsed(struct curl_httppost **httppost,
                                       struct curl_httppost **last_post,
                                       const void *spec);
 
-struct curl_safe_form_spec {
+struct port_safe_form_spec {
   const char *name;
   long namelength;
   const char *contents;
@@ -65,114 +60,48 @@ struct curl_safe_form_spec {
 #define FORM_FLAG_STREAM       (1u << 4)
 #define FORM_FLAG_CONTENTLEN   (1u << 5)
 
-static curl_easy_setopt_fn resolve_easy_setopt(void) {
-  static curl_easy_setopt_fn fn = NULL;
-  if(!fn)
-    fn = (curl_easy_setopt_fn)curl_safe_resolve_reference_symbol("curl_easy_setopt");
-  return fn;
-}
-
 static curl_easy_getinfo_fn resolve_easy_getinfo(void) {
   static curl_easy_getinfo_fn fn = NULL;
   if(!fn)
-    fn = (curl_easy_getinfo_fn)curl_safe_resolve_reference_symbol("curl_easy_getinfo");
+    fn = (curl_easy_getinfo_fn)port_safe_resolve_reference_symbol("curl_easy_getinfo");
   return fn;
 }
 
-CURLcode curl_safe_reference_easy_getinfo_slist(CURL *handle, CURLINFO info,
-                                                struct curl_slist **value) {
-  curl_easy_getinfo_fn fn = resolve_easy_getinfo();
-  CURL *ref_handle = curl_safe_reference_easy_handle(handle);
-  if(!ref_handle)
-    return CURLE_BAD_FUNCTION_ARGUMENT;
-  return fn(ref_handle, info, value);
-}
-
-CURLcode curl_safe_reference_easy_setopt_long(CURL *handle, CURLoption option, long value) {
-  curl_easy_setopt_fn fn = resolve_easy_setopt();
-  CURL *ref_handle = curl_safe_reference_easy_handle(handle);
-  if(!ref_handle)
-    return CURLE_BAD_FUNCTION_ARGUMENT;
-  return fn(ref_handle, option, value);
-}
-
-static curl_multi_setopt_fn resolve_reference_multi_setopt(void) {
-  static curl_multi_setopt_fn fn = NULL;
-  if(!fn)
-    fn = (curl_multi_setopt_fn)curl_safe_resolve_reference_symbol("curl_multi_setopt");
-  return fn;
-}
 
 CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...) {
   CURLcode result;
   va_list args;
   long option_class = ((long)option) / 10000L;
-  curl_easy_setopt_fn fn = resolve_easy_setopt();
-  CURL *ref_handle = curl_safe_reference_easy_handle(handle);
 
   va_start(args, option);
   switch(option_class) {
   case 0:
   {
     long value = va_arg(args, long);
-    result = ref_handle ? fn(ref_handle, option, value) : CURLE_OK;
-    if(result == CURLE_OK)
-      curl_safe_easy_setopt_observe_long(handle, option, value);
+    result = port_safe_easy_setopt_long(handle, option, value);
     break;
   }
   case 1:
   {
     void *value = va_arg(args, void *);
-    if(option == CURLOPT_SHARE ||
-       option == CURLOPT_COOKIEFILE ||
-       option == CURLOPT_COOKIEJAR ||
-       option == CURLOPT_COOKIELIST ||
-       option == CURLOPT_HTTPPOST ||
-       option == CURLOPT_MIMEPOST) {
-      result = CURLE_OK;
-      curl_safe_easy_setopt_observe_ptr(handle, option, value);
-    }
-    else if(option == CURLOPT_CURLU) {
-      if(ref_handle) {
-        char *url_text = value ? curl_safe_url_to_string((const CURLU *)value) : NULL;
-        if(value && !url_text)
-          result = CURLE_BAD_FUNCTION_ARGUMENT;
-        else
-          result = fn(ref_handle, CURLOPT_URL, url_text);
-        if(url_text)
-          curl_free(url_text);
-      }
-      else
-        result = CURLE_OK;
-      if(result == CURLE_OK)
-        curl_safe_easy_setopt_observe_ptr(handle, option, value);
-    }
-    else {
-      result = ref_handle ? fn(ref_handle, option, value) : CURLE_OK;
-      if(result == CURLE_OK)
-        curl_safe_easy_setopt_observe_ptr(handle, option, value);
-    }
+    result = port_safe_easy_setopt_ptr(handle, option, value);
     break;
   }
   case 2:
   {
     void (*value)(void) = va_arg(args, void (*)(void));
-    result = ref_handle ? fn(ref_handle, option, value) : CURLE_OK;
-    if(result == CURLE_OK)
-      curl_safe_easy_setopt_observe_function(handle, option, value);
+    result = port_safe_easy_setopt_function(handle, option, value);
     break;
   }
   case 3:
   {
     curl_off_t value = va_arg(args, curl_off_t);
-    result = ref_handle ? fn(ref_handle, option, value) : CURLE_OK;
-    if(result == CURLE_OK)
-      curl_safe_easy_setopt_observe_off_t(handle, option, value);
+    result = port_safe_easy_setopt_off_t(handle, option, value);
     break;
   }
   case 4:
-    result = ref_handle ? fn(ref_handle, option, va_arg(args, struct curl_blob *))
-                        : CURLE_OK;
+    (void)va_arg(args, struct curl_blob *);
+    result = CURLE_UNKNOWN_OPTION;
     break;
   default:
     result = CURLE_UNKNOWN_OPTION;
@@ -188,46 +117,56 @@ CURLcode curl_easy_getinfo(CURL *handle, CURLINFO info, ...) {
   va_list args;
   unsigned int type_mask = info & CURLINFO_TYPEMASK;
   curl_easy_getinfo_fn fn = resolve_easy_getinfo();
-  CURL *ref_handle = curl_safe_reference_easy_handle(handle);
+  CURL *ref_handle = port_safe_reference_easy_handle(handle);
 
   va_start(args, info);
   switch(type_mask) {
   case CURLINFO_STRING:
   {
     char **value = va_arg(args, char **);
-    if(!curl_safe_easy_getinfo_string(handle, info, value, &result))
+    if(!port_safe_easy_getinfo_string(handle, info, value, &result))
       result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
     break;
   }
   case CURLINFO_SLIST:
   {
-    void **value = va_arg(args, void **);
-    if(!curl_safe_easy_getinfo_ptr(handle, info, value, &result))
-      result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
+    if(info == CURLINFO_COOKIELIST) {
+      struct curl_slist **value = va_arg(args, struct curl_slist **);
+      if(!port_safe_easy_getinfo_slist(handle, info, value, &result))
+        result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
+    }
+    else {
+      void **value = va_arg(args, void **);
+      if(!port_safe_easy_getinfo_ptr(handle, info, value, &result))
+        result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
+    }
     break;
   }
   case CURLINFO_LONG:
   {
     long *value = va_arg(args, long *);
-    if(!curl_safe_easy_getinfo_long(handle, info, value, &result))
+    if(!port_safe_easy_getinfo_long(handle, info, value, &result))
       result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
     break;
   }
   case CURLINFO_DOUBLE:
-    result = ref_handle ? fn(ref_handle, info, va_arg(args, double *))
-                        : CURLE_UNKNOWN_OPTION;
+  {
+    double *value = va_arg(args, double *);
+    if(!port_safe_easy_getinfo_double(handle, info, value, &result))
+      result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
     break;
+  }
   case CURLINFO_SOCKET:
   {
     curl_socket_t *value = va_arg(args, curl_socket_t *);
-    if(!curl_safe_easy_getinfo_socket(handle, info, value, &result))
+    if(!port_safe_easy_getinfo_socket(handle, info, value, &result))
       result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
     break;
   }
   case CURLINFO_OFF_T:
   {
     curl_off_t *value = va_arg(args, curl_off_t *);
-    if(!curl_safe_easy_getinfo_off_t(handle, info, value, &result))
+    if(!port_safe_easy_getinfo_off_t(handle, info, value, &result))
       result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
     break;
   }
@@ -248,16 +187,16 @@ CURLMcode curl_multi_setopt(CURLM *multi_handle, CURLMoption option, ...) {
   va_start(args, option);
   switch(option_class) {
   case 0:
-    result = curl_safe_multi_setopt_long(multi_handle, option, va_arg(args, long));
+    result = port_safe_multi_setopt_long(multi_handle, option, va_arg(args, long));
     break;
   case 1:
-    result = curl_safe_multi_setopt_ptr(multi_handle, option, va_arg(args, void *));
+    result = port_safe_multi_setopt_ptr(multi_handle, option, va_arg(args, void *));
     break;
   case 2:
-    result = curl_safe_multi_setopt_function(multi_handle, option, va_arg(args, void (*)(void)));
+    result = port_safe_multi_setopt_function(multi_handle, option, va_arg(args, void (*)(void)));
     break;
   case 3:
-    result = curl_safe_multi_setopt_off_t(multi_handle, option, va_arg(args, curl_off_t));
+    result = port_safe_multi_setopt_off_t(multi_handle, option, va_arg(args, curl_off_t));
     break;
   default:
     result = CURLM_UNKNOWN_OPTION;
@@ -266,34 +205,6 @@ CURLMcode curl_multi_setopt(CURLM *multi_handle, CURLMoption option, ...) {
   va_end(args);
 
   return result;
-}
-
-CURLMcode curl_safe_reference_multi_setopt_long(CURLM *multi_handle,
-                                                CURLMoption option,
-                                                long value) {
-  curl_multi_setopt_fn fn = resolve_reference_multi_setopt();
-  return fn(multi_handle, option, value);
-}
-
-CURLMcode curl_safe_reference_multi_setopt_ptr(CURLM *multi_handle,
-                                               CURLMoption option,
-                                               void *value) {
-  curl_multi_setopt_fn fn = resolve_reference_multi_setopt();
-  return fn(multi_handle, option, value);
-}
-
-CURLMcode curl_safe_reference_multi_setopt_function(CURLM *multi_handle,
-                                                    CURLMoption option,
-                                                    void (*value)(void)) {
-  curl_multi_setopt_fn fn = resolve_reference_multi_setopt();
-  return fn(multi_handle, option, value);
-}
-
-CURLMcode curl_safe_reference_multi_setopt_off_t(CURLM *multi_handle,
-                                                 CURLMoption option,
-                                                 curl_off_t value) {
-  curl_multi_setopt_fn fn = resolve_reference_multi_setopt();
-  return fn(multi_handle, option, value);
 }
 
 CURLSHcode curl_share_setopt(CURLSH *share, CURLSHoption option, ...) {
@@ -306,20 +217,20 @@ CURLSHcode curl_share_setopt(CURLSH *share, CURLSHoption option, ...) {
   case CURLSHOPT_UNSHARE:
   {
     int value = va_arg(args, int);
-    result = curl_safe_share_setopt_int(share, option, value);
+    result = port_safe_share_setopt_int(share, option, value);
     break;
   }
   case CURLSHOPT_LOCKFUNC:
   case CURLSHOPT_UNLOCKFUNC:
   {
     void (*value)(void) = va_arg(args, void (*)(void));
-    result = curl_safe_share_setopt_function(share, option, value);
+    result = port_safe_share_setopt_function(share, option, value);
     break;
   }
   case CURLSHOPT_USERDATA:
   {
     void *value = va_arg(args, void *);
-    result = curl_safe_share_setopt_ptr(share, option, value);
+    result = port_safe_share_setopt_ptr(share, option, value);
     break;
   }
   default:
@@ -334,7 +245,7 @@ CURLSHcode curl_share_setopt(CURLSH *share, CURLSHoption option, ...) {
 CURLFORMcode curl_formadd(struct curl_httppost **httppost,
                           struct curl_httppost **last_post,
                           ...) {
-  struct curl_safe_form_spec spec;
+  struct port_safe_form_spec spec;
   va_list args;
 
   memset(&spec, 0, sizeof(spec));
@@ -348,7 +259,7 @@ CURLFORMcode curl_formadd(struct curl_httppost **httppost,
     switch(option) {
     case CURLFORM_END:
       va_end(args);
-      return curl_safe_formadd_parsed(httppost, last_post, &spec);
+      return port_safe_formadd_parsed(httppost, last_post, &spec);
     case CURLFORM_COPYNAME:
     case CURLFORM_PTRNAME:
       if(spec.name) {

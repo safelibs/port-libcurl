@@ -132,26 +132,26 @@ pub unsafe extern "C" fn curl_free(ptr: *mut c_void) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_malloc(size: size_t) -> *mut c_void {
+pub unsafe extern "C" fn port_safe_malloc(size: size_t) -> *mut c_void {
     unsafe { malloc_bytes(size) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_calloc(nmemb: size_t, size: size_t) -> *mut c_void {
+pub unsafe extern "C" fn port_safe_calloc(nmemb: size_t, size: size_t) -> *mut c_void {
     unsafe { calloc_bytes(nmemb, size) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_realloc(ptr: *mut c_void, size: size_t) -> *mut c_void {
+pub unsafe extern "C" fn port_safe_realloc(ptr: *mut c_void, size: size_t) -> *mut c_void {
     unsafe { realloc_bytes(ptr, size) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_strdup(ptr: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn port_safe_strdup(ptr: *const c_char) -> *mut c_char {
     unsafe { strdup_bytes(ptr) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_free(ptr: *mut c_void) {
+pub unsafe extern "C" fn port_safe_free(ptr: *mut c_void) {
     unsafe { free_ptr(ptr) };
 }

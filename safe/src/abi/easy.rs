@@ -12,7 +12,7 @@ pub unsafe extern "C" fn curl_easy_cleanup(handle: *mut CURL) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_reference_easy_handle(handle: *mut CURL) -> *mut CURL {
+pub unsafe extern "C" fn port_safe_reference_easy_handle(handle: *mut CURL) -> *mut CURL {
     crate::easy::reference::active_handle(handle)
 }
 

@@ -14,6 +14,11 @@ use std::ptr;
 use std::sync::{Mutex, OnceLock};
 
 const CURLOPT_MIMEPOST: CURLoption = 10269;
+const CURLOPT_URL: CURLoption = 10002;
+const CURLOPT_COOKIELIST: CURLoption = 10135;
+const CURLOPT_CURLU: CURLoption = 10282;
+const CURLINFO_COOKIELIST: u32 = 0x400000 + 28;
+const CURLINFO_SCHEME: u32 = 0x100000 + 49;
 const CURL_ZERO_TERMINATED: usize = usize::MAX;
 
 unsafe extern "C" {
@@ -51,6 +56,7 @@ unsafe extern "C" {
     fn curl_easy_duphandle(handle: *mut CURL) -> *mut CURL;
     fn curl_easy_reset(handle: *mut CURL);
     fn curl_easy_setopt(handle: *mut CURL, option: CURLoption, ...) -> CURLcode;
+    fn curl_easy_getinfo(handle: *mut CURL, info: u32, ...) -> CURLcode;
     fn curl_easy_escape(handle: *mut CURL, input: *const c_char, len: c_int) -> *mut c_char;
     fn curl_easy_unescape(
         handle: *mut CURL,
@@ -343,6 +349,39 @@ fn public_abi_smoke_and_allocator_contract() {
             curl_url_set(url, CURLUPART_URL, full_url.as_ptr(), 0),
             CURLUE_OK
         );
+        assert_eq!(curl_easy_setopt(easy, CURLOPT_CURLU, url), CURLE_OK);
+
+        let mut scheme = ptr::null_mut();
+        assert_eq!(curl_easy_getinfo(easy, CURLINFO_SCHEME, &mut scheme), CURLE_OK);
+        assert_eq!(CStr::from_ptr(scheme).to_bytes(), b"https");
+
+        assert_eq!(
+            curl_easy_setopt(easy, CURLOPT_URL, c_ptr(b"http://example.test/plain\0")),
+            CURLE_OK
+        );
+        assert_eq!(curl_easy_getinfo(easy, CURLINFO_SCHEME, &mut scheme), CURLE_OK);
+        assert_eq!(CStr::from_ptr(scheme).to_bytes(), b"http");
+
+        assert_eq!(
+            curl_easy_setopt(
+                easy,
+                CURLOPT_COOKIELIST,
+                c_ptr(b"Set-Cookie: session=one; Path=/\0"),
+            ),
+            CURLE_OK
+        );
+        let mut cookie_list: *mut curl_slist = ptr::null_mut();
+        assert_eq!(
+            curl_easy_getinfo(easy, CURLINFO_COOKIELIST, &mut cookie_list),
+            CURLE_OK
+        );
+        assert!(!cookie_list.is_null());
+        assert!(is_tracked(cookie_list.cast()));
+        assert_eq!(
+            CStr::from_ptr((*cookie_list).data).to_bytes(),
+            b"example.test\tFALSE\t/\tFALSE\t0\tsession\tone"
+        );
+        curl_slist_free_all(cookie_list);
 
         let mut host = ptr::null_mut();
         assert_eq!(curl_url_get(url, CURLUPART_HOST, &mut host, 0), CURLUE_OK);

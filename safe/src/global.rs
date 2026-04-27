@@ -10,7 +10,7 @@ use std::mem;
 use std::sync::Mutex;
 
 unsafe extern "C" {
-    fn curl_safe_resolve_reference_symbol(name: *const c_char) -> *mut c_void;
+    fn port_safe_resolve_reference_symbol(name: *const c_char) -> *mut c_void;
 }
 
 #[derive(Clone, Copy)]
@@ -31,7 +31,7 @@ struct SyncBackendList([*const curl_ssl_backend; 2]);
 unsafe impl Sync for SyncBackendList {}
 
 pub(crate) unsafe fn load_reference<T: Copy>(symbol: &'static [u8]) -> T {
-    let ptr = unsafe { curl_safe_resolve_reference_symbol(symbol.as_ptr().cast()) };
+    let ptr = unsafe { port_safe_resolve_reference_symbol(symbol.as_ptr().cast()) };
     if ptr.is_null() {
         std::process::abort();
     }

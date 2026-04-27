@@ -14,6 +14,8 @@ pub(crate) struct ConnectionCacheKey {
     pub port: u16,
     pub proxy_host: Option<String>,
     pub proxy_port: Option<u16>,
+    pub pre_proxy_host: Option<String>,
+    pub pre_proxy_port: Option<u16>,
     pub tunnel_proxy: bool,
     pub conn_to_host: Option<String>,
     pub conn_to_port: Option<u16>,

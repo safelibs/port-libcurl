@@ -4,7 +4,7 @@
 #include <libssh2.h>
 #include <libssh2_sftp.h>
 
-typedef ssize_t (*curl_safe_ssh_write_callback)(const char *buf, size_t len,
+typedef ssize_t (*port_safe_ssh_write_callback)(const char *buf, size_t len,
                                                 void *ctx);
 
 enum {
@@ -98,7 +98,7 @@ static int map_sftp_error(unsigned long code, char *errbuf, size_t errlen)
 }
 
 static int scp_download(LIBSSH2_SESSION *session, const char *path,
-                        curl_safe_ssh_write_callback write_cb, void *write_ctx,
+                        port_safe_ssh_write_callback write_cb, void *write_ctx,
                         unsigned long long *transferred, char *errbuf,
                         size_t errlen)
 {
@@ -174,7 +174,7 @@ static int scp_upload(LIBSSH2_SESSION *session, const char *path,
 }
 
 static int sftp_download(LIBSSH2_SESSION *session, const char *path,
-                         curl_safe_ssh_write_callback write_cb, void *write_ctx,
+                         port_safe_ssh_write_callback write_cb, void *write_ctx,
                          unsigned long long *transferred, char *errbuf,
                          size_t errlen)
 {
@@ -273,10 +273,10 @@ static int sftp_upload(LIBSSH2_SESSION *session, const char *path,
   return result;
 }
 
-int curl_safe_ssh_transfer(int fd, const char *scheme, const char *username,
+int port_safe_ssh_transfer(int fd, const char *scheme, const char *username,
                            const char *password, const char *path, int upload,
                            const unsigned char *upload_data, size_t upload_len,
-                           curl_safe_ssh_write_callback write_cb,
+                           port_safe_ssh_write_callback write_cb,
                            void *write_ctx,
                            unsigned long long *transferred, char *errbuf,
                            size_t errlen)

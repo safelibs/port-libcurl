@@ -42,7 +42,7 @@ pub unsafe extern "C" fn curl_url_strerror(code: CURLUcode) -> *const c_char {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_url_to_string(handle: *const CURLU) -> *mut c_char {
+pub unsafe extern "C" fn port_safe_url_to_string(handle: *const CURLU) -> *mut c_char {
     let mut part = core::ptr::null_mut();
     let code = unsafe { crate::urlapi::url_get(handle, crate::abi::CURLUPART_URL, &mut part, 0) };
     if code == crate::abi::CURLUE_OK {

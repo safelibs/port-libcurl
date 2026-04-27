@@ -3,6 +3,7 @@ set -euo pipefail
 
 expected=""
 flavor=""
+artifact=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --expected)
@@ -11,6 +12,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --flavor)
       flavor="${2:-}"
+      shift 2
+      ;;
+    --artifact)
+      artifact="${2:-}"
       shift 2
       ;;
     *)
@@ -27,10 +32,50 @@ fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 safe_dir="$(cd "${script_dir}/.." && pwd)"
-artifact="${safe_dir}/target/foundation/${flavor}/libcurl-safe-${flavor}-bridge.so"
+
+case "${flavor}" in
+  openssl)
+    soname="libcurl.so.4"
+    ;;
+  gnutls)
+    soname="libcurl-gnutls.so.4"
+    ;;
+  *)
+    echo "unknown flavor: ${flavor}" >&2
+    exit 2
+    ;;
+esac
+
+resolve_artifact() {
+  local candidates=(
+    "${safe_dir}/target/public-abi/${flavor}/stage/lib/${soname}"
+    "${safe_dir}/target/public-abi/${flavor}/package/${soname}"
+    "${safe_dir}/target/public-abi/${flavor}/debug/libport_libcurl_safe.so"
+    "${safe_dir}/target/check-public-abi-${flavor}/debug/deps/libport_libcurl_safe.so"
+    "${safe_dir}/target/impl-public-abi-${flavor}/debug/deps/libport_libcurl_safe.so"
+    "${safe_dir}/target/check-foundation-${flavor}/debug/deps/libport_libcurl_safe.so"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "${candidate}" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  candidate="$(find "${safe_dir}/target/public-abi/${flavor}/package" -type f -name "${soname}" 2>/dev/null | sort | head -n 1 || true)"
+  if [[ -n "${candidate}" && -f "${candidate}" ]]; then
+    printf '%s\n' "${candidate}"
+    return 0
+  fi
+  return 1
+}
+
+if [[ -z "${artifact}" ]]; then
+  artifact="$(resolve_artifact || true)"
+fi
 
 if [[ ! -f "${artifact}" ]]; then
-  echo "missing bridge artifact: ${artifact}" >&2
+  echo "missing ABI artifact for ${flavor}: ${artifact:-<unresolved>}" >&2
   exit 1
 fi
 
@@ -38,8 +83,8 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT
 
 awk 'NF && $1 != "EXPORTS" { print $1 }' "${expected}" | sort -u > "${tmpdir}/expected.txt"
-readelf -Ws "${artifact}" \
-  | awk '$4 ~ /FUNC|IFUNC/ && $7 != "UND" && $8 ~ /^curl_/ { print $8 }' \
+nm -D --defined-only "${artifact}" \
+  | awk '$3 ~ /^curl_/ { print $3 }' \
   | sed 's/@.*$//' \
   | sort -u > "${tmpdir}/actual.txt"
 

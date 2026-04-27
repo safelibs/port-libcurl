@@ -97,40 +97,13 @@ type RefMultiPollFn = unsafe extern "C" fn(
     *mut c_int,
 ) -> CURLMcode;
 type RefMultiPerformFn = unsafe extern "C" fn(*mut CURLM, *mut c_int) -> CURLMcode;
+type RefMultiSetoptFn = unsafe extern "C" fn(*mut CURLM, CURLMoption, ...) -> CURLMcode;
 type RefMultiTimeoutFn = unsafe extern "C" fn(*mut CURLM, *mut c_long) -> CURLMcode;
 type RefMultiInfoReadFn = unsafe extern "C" fn(*mut CURLM, *mut c_int) -> *mut CURLMsg;
 type RefMultiSocketActionFn =
     unsafe extern "C" fn(*mut CURLM, curl_socket_t, c_int, *mut c_int) -> CURLMcode;
 type RefMultiAssignFn = unsafe extern "C" fn(*mut CURLM, curl_socket_t, *mut c_void) -> CURLMcode;
 type RefMultiWakeupFn = unsafe extern "C" fn(*mut CURLM) -> CURLMcode;
-
-unsafe extern "C" {
-    fn curl_safe_reference_easy_setopt_long(
-        handle: *mut CURL,
-        option: c_long,
-        value: c_long,
-    ) -> CURLcode;
-    fn curl_safe_reference_multi_setopt_long(
-        multi_handle: *mut CURLM,
-        option: CURLMoption,
-        value: c_long,
-    ) -> CURLMcode;
-    fn curl_safe_reference_multi_setopt_ptr(
-        multi_handle: *mut CURLM,
-        option: CURLMoption,
-        value: *mut c_void,
-    ) -> CURLMcode;
-    fn curl_safe_reference_multi_setopt_function(
-        multi_handle: *mut CURLM,
-        option: CURLMoption,
-        value: Option<unsafe extern "C" fn()>,
-    ) -> CURLMcode;
-    fn curl_safe_reference_multi_setopt_off_t(
-        multi_handle: *mut CURLM,
-        option: CURLMoption,
-        value: curl_off_t,
-    ) -> CURLMcode;
-}
 
 #[repr(C)]
 pub(crate) struct libc_fd_set {
@@ -306,6 +279,11 @@ fn ref_multi_perform() -> RefMultiPerformFn {
     *FN.get_or_init(|| unsafe { global::load_reference(b"curl_multi_perform\0") })
 }
 
+fn ref_multi_setopt() -> RefMultiSetoptFn {
+    static FN: std::sync::OnceLock<RefMultiSetoptFn> = std::sync::OnceLock::new();
+    *FN.get_or_init(|| unsafe { global::load_reference(b"curl_multi_setopt\0") })
+}
+
 fn ref_multi_timeout() -> RefMultiTimeoutFn {
     static FN: std::sync::OnceLock<RefMultiTimeoutFn> = std::sync::OnceLock::new();
     *FN.get_or_init(|| unsafe { global::load_reference(b"curl_multi_timeout\0") })
@@ -329,6 +307,38 @@ fn ref_multi_assign() -> RefMultiAssignFn {
 fn ref_multi_wakeup() -> RefMultiWakeupFn {
     static FN: std::sync::OnceLock<RefMultiWakeupFn> = std::sync::OnceLock::new();
     *FN.get_or_init(|| unsafe { global::load_reference(b"curl_multi_wakeup\0") })
+}
+
+unsafe fn reference_multi_setopt_long(
+    multi_handle: *mut CURLM,
+    option: CURLMoption,
+    value: c_long,
+) -> CURLMcode {
+    unsafe { ref_multi_setopt()(multi_handle, option, value) }
+}
+
+unsafe fn reference_multi_setopt_ptr(
+    multi_handle: *mut CURLM,
+    option: CURLMoption,
+    value: *mut c_void,
+) -> CURLMcode {
+    unsafe { ref_multi_setopt()(multi_handle, option, value) }
+}
+
+unsafe fn reference_multi_setopt_function(
+    multi_handle: *mut CURLM,
+    option: CURLMoption,
+    value: Option<unsafe extern "C" fn()>,
+) -> CURLMcode {
+    unsafe { ref_multi_setopt()(multi_handle, option, value) }
+}
+
+unsafe fn reference_multi_setopt_off_t(
+    multi_handle: *mut CURLM,
+    option: CURLMoption,
+    value: curl_off_t,
+) -> CURLMcode {
+    unsafe { ref_multi_setopt()(multi_handle, option, value) }
 }
 
 unsafe extern "C" fn reference_socket_callback(
@@ -461,6 +471,8 @@ fn enqueue_completed_event(multi: *mut CURLM, easy_handle: *mut CURL, result: CU
     });
 }
 
+// Phase 5 removal point: this is the only remaining HTTP/2 compatibility bridge.
+// Public easy/multi option ownership and callback state stay in Rust above this boundary.
 pub(crate) fn run_reference_http2_session(parent_easy: *mut CURL) -> CURLcode {
     let multi_ptr = easy::perform::attached_multi_for(parent_easy)
         .map(|value| value as *mut CURLM)
@@ -496,7 +508,7 @@ pub(crate) fn run_reference_http2_session(parent_easy: *mut CURL) -> CURLcode {
             }
         };
         if configure(unsafe {
-            curl_safe_reference_multi_setopt_function(
+            reference_multi_setopt_function(
                 reference_multi,
                 CURLMOPT_PUSHFUNCTION,
                 reference_push,
@@ -504,7 +516,7 @@ pub(crate) fn run_reference_http2_session(parent_easy: *mut CURL) -> CURLcode {
         })
         .and_then(|_| {
             configure(unsafe {
-                curl_safe_reference_multi_setopt_ptr(
+                reference_multi_setopt_ptr(
                     reference_multi,
                     CURLMOPT_PUSHDATA,
                     multi_ptr.cast(),
@@ -954,24 +966,9 @@ pub(crate) unsafe fn timeout_handle(multi: *mut CURLM, milliseconds: *mut c_long
     }
 
     drain_events(wrapper);
-    let native_timeout = {
-        let guard = wrapper.inner.lock().expect("multi mutex poisoned");
-        if guard.dead {
-            0
-        } else if !guard.messages.is_empty()
-            || guard
-                .records
-                .values()
-                .any(|record| !record.started && !record.completed)
-        {
-            0
-        } else if guard.records.values().any(|record| !record.completed) {
-            transfer::EASY_PERFORM_WAIT_TIMEOUT_MS as c_long
-        } else {
-            -1
-        }
+    unsafe {
+        *milliseconds = combine_timeouts(native_timeout_ms(wrapper), reference_timeout_ms(wrapper))
     };
-    unsafe { *milliseconds = combine_timeouts(native_timeout, reference_timeout_ms(wrapper)) };
     crate::abi::CURLM_OK
 }
 
@@ -1203,7 +1200,7 @@ pub(crate) unsafe fn dispatch_setopt_long(
     let reference_multi = guard.reference_multi;
     drop(guard);
     if !reference_multi.is_null() {
-        let rc = unsafe { curl_safe_reference_multi_setopt_long(reference_multi, option, value) };
+        let rc = unsafe { reference_multi_setopt_long(reference_multi, option, value) };
         if rc != crate::abi::CURLM_OK {
             return rc;
         }
@@ -1323,6 +1320,28 @@ fn reference_timeout_ms(wrapper: &MultiHandle) -> c_long {
     timeout_ms
 }
 
+fn native_timeout_from_inner(inner: &MultiInner) -> c_long {
+    if inner.dead {
+        0
+    } else if !inner.messages.is_empty()
+        || inner
+            .records
+            .values()
+            .any(|record| !record.started && !record.completed)
+    {
+        0
+    } else if inner.records.values().any(|record| !record.completed) {
+        transfer::EASY_PERFORM_WAIT_TIMEOUT_MS as c_long
+    } else {
+        -1
+    }
+}
+
+fn native_timeout_ms(wrapper: &MultiHandle) -> c_long {
+    let guard = wrapper.inner.lock().expect("multi mutex poisoned");
+    native_timeout_from_inner(&guard)
+}
+
 fn combine_timeouts(native_timeout: c_long, reference_timeout: c_long) -> c_long {
     match (native_timeout, reference_timeout) {
         (-1, other) => other,
@@ -1336,7 +1355,7 @@ fn suppress_reference_verbose(easy_handle: *mut CURL) -> bool {
     if !verbose {
         return false;
     }
-    (unsafe { curl_safe_reference_easy_setopt_long(easy_handle, CURLOPT_VERBOSE, 0) })
+    (unsafe { easy::reference::setopt_long_on_active(easy_handle, CURLOPT_VERBOSE as u32, 0) })
         == crate::abi::CURLE_OK
 }
 
@@ -1344,9 +1363,11 @@ fn restore_reference_verbose(easy_handle: *mut CURL, suppressed: bool) {
     if !suppressed {
         return;
     }
-    let _ = unsafe { curl_safe_reference_easy_setopt_long(easy_handle, CURLOPT_VERBOSE, 1) };
+    let _ = unsafe { easy::reference::setopt_long_on_active(easy_handle, CURLOPT_VERBOSE as u32, 1) };
 }
 
+// Phase 5 removal point: reference multi orchestration only exists for the
+// transitional HTTP/2 backend, not for public multi-handle ownership.
 fn ensure_reference_multi(
     wrapper: &MultiHandle,
     multi_ptr: *mut CURLM,
@@ -1423,7 +1444,7 @@ fn ensure_reference_multi(
     });
 
     if configure(unsafe {
-        curl_safe_reference_multi_setopt_function(
+        reference_multi_setopt_function(
             reference_multi,
             CURLMOPT_SOCKETFUNCTION,
             reference_socket,
@@ -1431,7 +1452,7 @@ fn ensure_reference_multi(
     })
     .and_then(|_| {
         configure(unsafe {
-            curl_safe_reference_multi_setopt_ptr(
+            reference_multi_setopt_ptr(
                 reference_multi,
                 CURLMOPT_SOCKETDATA,
                 multi_ptr.cast(),
@@ -1440,7 +1461,7 @@ fn ensure_reference_multi(
     })
     .and_then(|_| {
         configure(unsafe {
-            curl_safe_reference_multi_setopt_function(
+            reference_multi_setopt_function(
                 reference_multi,
                 CURLMOPT_TIMERFUNCTION,
                 reference_timer,
@@ -1449,7 +1470,7 @@ fn ensure_reference_multi(
     })
     .and_then(|_| {
         configure(unsafe {
-            curl_safe_reference_multi_setopt_ptr(
+            reference_multi_setopt_ptr(
                 reference_multi,
                 CURLMOPT_TIMERDATA,
                 multi_ptr.cast(),
@@ -1458,7 +1479,7 @@ fn ensure_reference_multi(
     })
     .and_then(|_| {
         configure(unsafe {
-            curl_safe_reference_multi_setopt_function(
+            reference_multi_setopt_function(
                 reference_multi,
                 CURLMOPT_PUSHFUNCTION,
                 reference_push,
@@ -1467,7 +1488,7 @@ fn ensure_reference_multi(
     })
     .and_then(|_| {
         configure(unsafe {
-            curl_safe_reference_multi_setopt_ptr(
+            reference_multi_setopt_ptr(
                 reference_multi,
                 CURLMOPT_PUSHDATA,
                 multi_ptr.cast(),
@@ -1476,7 +1497,7 @@ fn ensure_reference_multi(
     })
     .and_then(|_| {
         configure(unsafe {
-            curl_safe_reference_multi_setopt_long(
+            reference_multi_setopt_long(
                 reference_multi,
                 CURLMOPT_PIPELINING,
                 multiplexing as c_long,
@@ -1485,7 +1506,7 @@ fn ensure_reference_multi(
     })
     .and_then(|_| {
         configure(unsafe {
-            curl_safe_reference_multi_setopt_long(
+            reference_multi_setopt_long(
                 reference_multi,
                 CURLMOPT_MAXCONNECTS,
                 maxconnects,
@@ -1494,7 +1515,7 @@ fn ensure_reference_multi(
     })
     .and_then(|_| {
         configure(unsafe {
-            curl_safe_reference_multi_setopt_long(
+            reference_multi_setopt_long(
                 reference_multi,
                 CURLMOPT_MAX_HOST_CONNECTIONS,
                 max_host_connections,
@@ -1503,7 +1524,7 @@ fn ensure_reference_multi(
     })
     .and_then(|_| {
         configure(unsafe {
-            curl_safe_reference_multi_setopt_long(
+            reference_multi_setopt_long(
                 reference_multi,
                 CURLMOPT_MAX_TOTAL_CONNECTIONS,
                 max_total_connections,
@@ -1512,7 +1533,7 @@ fn ensure_reference_multi(
     })
     .and_then(|_| {
         configure(unsafe {
-            curl_safe_reference_multi_setopt_long(
+            reference_multi_setopt_long(
                 reference_multi,
                 CURLMOPT_MAX_CONCURRENT_STREAMS,
                 max_concurrent_streams,
@@ -1702,6 +1723,10 @@ fn wait_common(
         Ok(timeout_ms) => timeout_ms,
         Err(code) => return code,
     };
+    let timeout_ms = poll::clamp_timeout(
+        timeout_ms,
+        combine_timeouts(native_timeout_ms(wrapper), reference_timeout_ms(wrapper)),
+    );
     zero_extra_fds(extra_fds, extra_nfds);
 
     let mut activity = drain_events(wrapper);
@@ -1870,21 +1895,8 @@ fn process_event(wrapper: &MultiHandle, event: TransferEvent) -> c_int {
 fn update_timer(wrapper: &MultiHandle, multi_ptr: *mut CURLM) -> CURLMcode {
     let (callback, userp, timeout_ms) = {
         let guard = wrapper.inner.lock().expect("multi mutex poisoned");
-        let native_timeout = if guard.dead {
-            0
-        } else if !guard.messages.is_empty()
-            || guard
-                .records
-                .values()
-                .any(|record| !record.started && !record.completed)
-        {
-            0
-        } else if guard.records.values().any(|record| !record.completed) {
-            transfer::EASY_PERFORM_WAIT_TIMEOUT_MS as c_long
-        } else {
-            -1
-        };
-        let timeout_ms = combine_timeouts(native_timeout, guard.reference_timeout_ms);
+        let timeout_ms =
+            combine_timeouts(native_timeout_from_inner(&guard), guard.reference_timeout_ms);
         (
             guard.callbacks.timer_cb,
             guard.callbacks.timer_userp,

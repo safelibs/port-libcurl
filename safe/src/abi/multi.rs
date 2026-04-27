@@ -139,7 +139,7 @@ pub unsafe extern "C" fn curl_multi_strerror(code: CURLMcode) -> *const c_char {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_multi_setopt_long(
+pub unsafe extern "C" fn port_safe_multi_setopt_long(
     multi_handle: *mut CURLM,
     option: CURLMoption,
     value: c_long,
@@ -148,7 +148,7 @@ pub unsafe extern "C" fn curl_safe_multi_setopt_long(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_multi_setopt_ptr(
+pub unsafe extern "C" fn port_safe_multi_setopt_ptr(
     multi_handle: *mut CURLM,
     option: CURLMoption,
     value: *mut c_void,
@@ -157,7 +157,7 @@ pub unsafe extern "C" fn curl_safe_multi_setopt_ptr(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_multi_setopt_function(
+pub unsafe extern "C" fn port_safe_multi_setopt_function(
     multi_handle: *mut CURLM,
     option: CURLMoption,
     value: Option<unsafe extern "C" fn()>,
@@ -166,7 +166,7 @@ pub unsafe extern "C" fn curl_safe_multi_setopt_function(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_multi_setopt_off_t(
+pub unsafe extern "C" fn port_safe_multi_setopt_off_t(
     multi_handle: *mut CURLM,
     option: CURLMoption,
     value: curl_off_t,

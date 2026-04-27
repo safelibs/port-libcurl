@@ -8,6 +8,9 @@ pub(crate) enum ConnectionFilterStep {
     ConnectTo {
         target: String,
     },
+    PreProxy {
+        authority: String,
+    },
     Proxy {
         authority: String,
         tunnel: bool,
@@ -29,6 +32,7 @@ impl ConnectionFilterStep {
         match self {
             Self::ResolveOverrides { .. } => "resolve-overrides",
             Self::ConnectTo { .. } => "connect-to",
+            Self::PreProxy { .. } => "pre-proxy",
             Self::Proxy { .. } => "proxy",
             Self::ShareLock { .. } => "share-lock",
             Self::LowSpeedGuard { .. } => "low-speed-guard",

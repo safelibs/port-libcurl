@@ -37,43 +37,43 @@ pub unsafe extern "C" fn curl_easy_upkeep(curl: *mut CURL) -> CURLcode {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_easy_setopt_observe_long(
+pub unsafe extern "C" fn port_safe_easy_setopt_long(
     handle: *mut CURL,
     option: crate::abi::CURLoption,
     value: core::ffi::c_long,
-) {
-    crate::easy::perform::observe_easy_setopt_long(handle, option, value);
+) -> CURLcode {
+    crate::easy::perform::easy_setopt_long(handle, option, value)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_easy_setopt_observe_ptr(
+pub unsafe extern "C" fn port_safe_easy_setopt_ptr(
     handle: *mut CURL,
     option: CURLoption,
     value: *mut c_void,
-) {
-    crate::easy::perform::observe_easy_setopt_ptr(handle, option, value);
+) -> CURLcode {
+    crate::easy::perform::easy_setopt_ptr(handle, option, value)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_easy_setopt_observe_function(
+pub unsafe extern "C" fn port_safe_easy_setopt_function(
     handle: *mut CURL,
     option: CURLoption,
     value: Option<unsafe extern "C" fn()>,
-) {
-    crate::easy::perform::observe_easy_setopt_function(handle, option, value);
+) -> CURLcode {
+    crate::easy::perform::easy_setopt_function(handle, option, value)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_easy_setopt_observe_off_t(
+pub unsafe extern "C" fn port_safe_easy_setopt_off_t(
     handle: *mut CURL,
     option: CURLoption,
     value: curl_off_t,
-) {
-    crate::easy::perform::observe_easy_setopt_off_t(handle, option, value);
+) -> CURLcode {
+    crate::easy::perform::easy_setopt_off_t(handle, option, value)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_easy_getinfo_long(
+pub unsafe extern "C" fn port_safe_easy_getinfo_long(
     handle: *mut CURL,
     info: CURLINFO,
     value: *mut c_long,
@@ -89,7 +89,23 @@ pub unsafe extern "C" fn curl_safe_easy_getinfo_long(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_easy_getinfo_string(
+pub unsafe extern "C" fn port_safe_easy_getinfo_double(
+    handle: *mut CURL,
+    info: CURLINFO,
+    value: *mut f64,
+    result: *mut CURLcode,
+) -> c_int {
+    let Some(code) = crate::easy::perform::easy_getinfo_double(handle, info, value) else {
+        return 0;
+    };
+    if !result.is_null() {
+        unsafe { *result = code };
+    }
+    1
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn port_safe_easy_getinfo_string(
     handle: *mut CURL,
     info: CURLINFO,
     value: *mut *mut c_char,
@@ -105,7 +121,23 @@ pub unsafe extern "C" fn curl_safe_easy_getinfo_string(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_easy_getinfo_off_t(
+pub unsafe extern "C" fn port_safe_easy_getinfo_slist(
+    handle: *mut CURL,
+    info: CURLINFO,
+    value: *mut *mut crate::abi::curl_slist,
+    result: *mut CURLcode,
+) -> c_int {
+    let Some(code) = crate::easy::perform::easy_getinfo_slist(handle, info, value) else {
+        return 0;
+    };
+    if !result.is_null() {
+        unsafe { *result = code };
+    }
+    1
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn port_safe_easy_getinfo_off_t(
     handle: *mut CURL,
     info: CURLINFO,
     value: *mut curl_off_t,
@@ -121,7 +153,7 @@ pub unsafe extern "C" fn curl_safe_easy_getinfo_off_t(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_easy_getinfo_socket(
+pub unsafe extern "C" fn port_safe_easy_getinfo_socket(
     handle: *mut CURL,
     info: CURLINFO,
     value: *mut curl_socket_t,
@@ -137,7 +169,7 @@ pub unsafe extern "C" fn curl_safe_easy_getinfo_socket(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_easy_getinfo_ptr(
+pub unsafe extern "C" fn port_safe_easy_getinfo_ptr(
     handle: *mut CURL,
     info: CURLINFO,
     value: *mut *mut c_void,

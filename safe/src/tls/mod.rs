@@ -35,7 +35,7 @@ struct SafeTlsConnection {
 }
 
 unsafe extern "C" {
-    fn curl_safe_tls_connect(
+    fn port_safe_tls_connect(
         fd: c_int,
         host: *const c_char,
         verify_peer: c_int,
@@ -50,23 +50,23 @@ unsafe extern "C" {
         errbuf: *mut c_char,
         errlen: usize,
     ) -> c_int;
-    fn curl_safe_tls_read(
+    fn port_safe_tls_read(
         conn: *mut SafeTlsConnection,
         buf: *mut core::ffi::c_void,
         len: usize,
     ) -> isize;
-    fn curl_safe_tls_write(
+    fn port_safe_tls_write(
         conn: *mut SafeTlsConnection,
         buf: *const core::ffi::c_void,
         len: usize,
     ) -> isize;
-    fn curl_safe_tls_export_session(
+    fn port_safe_tls_export_session(
         conn: *mut SafeTlsConnection,
         out_session_data: *mut *mut u8,
         out_session_len: *mut usize,
     ) -> c_int;
-    fn curl_safe_tls_close(conn: *mut SafeTlsConnection);
-    fn curl_safe_tls_free_bytes(ptr: *mut u8);
+    fn port_safe_tls_close(conn: *mut SafeTlsConnection);
+    fn port_safe_tls_free_bytes(ptr: *mut u8);
 }
 
 trait TlsBackendAdapter {
@@ -111,18 +111,18 @@ impl TlsConnection {
         let mut session_bytes = core::ptr::null_mut();
         let mut session_len = 0usize;
         let rc =
-            unsafe { curl_safe_tls_export_session(self.raw, &mut session_bytes, &mut session_len) };
+            unsafe { port_safe_tls_export_session(self.raw, &mut session_bytes, &mut session_len) };
         if rc == 0 && !session_bytes.is_null() && session_len != 0 {
             let bytes = unsafe { std::slice::from_raw_parts(session_bytes, session_len) }.to_vec();
             store_cached_session(self.share_handle, session_key.clone(), bytes);
-            unsafe { curl_safe_tls_free_bytes(session_bytes) };
+            unsafe { port_safe_tls_free_bytes(session_bytes) };
         }
     }
 
     pub(crate) fn into_plain_stream(mut self) -> TcpStream {
         if !self.raw.is_null() {
             self.cache_live_session();
-            unsafe { curl_safe_tls_close(self.raw) };
+            unsafe { port_safe_tls_close(self.raw) };
             self.raw = core::ptr::null_mut();
         }
         let stream = unsafe { core::ptr::read(&self.stream) };
@@ -135,7 +135,7 @@ impl Drop for TlsConnection {
     fn drop(&mut self) {
         if !self.raw.is_null() {
             self.cache_live_session();
-            unsafe { curl_safe_tls_close(self.raw) };
+            unsafe { port_safe_tls_close(self.raw) };
             self.raw = core::ptr::null_mut();
         }
     }
@@ -143,7 +143,7 @@ impl Drop for TlsConnection {
 
 impl Read for TlsConnection {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let rc = unsafe { curl_safe_tls_read(self.raw, buf.as_mut_ptr().cast(), buf.len()) };
+        let rc = unsafe { port_safe_tls_read(self.raw, buf.as_mut_ptr().cast(), buf.len()) };
         if rc >= 0 {
             Ok(rc as usize)
         } else {
@@ -154,7 +154,7 @@ impl Read for TlsConnection {
 
 impl Write for TlsConnection {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let rc = unsafe { curl_safe_tls_write(self.raw, buf.as_ptr().cast(), buf.len()) };
+        let rc = unsafe { port_safe_tls_write(self.raw, buf.as_ptr().cast(), buf.len()) };
         if rc >= 0 {
             Ok(rc as usize)
         } else {
@@ -268,7 +268,7 @@ pub(crate) fn connect(
     let mut errbuf = [0i8; 256];
     let fd = std::os::fd::AsRawFd::as_raw_fd(&stream);
     let rc = unsafe {
-        curl_safe_tls_connect(
+        port_safe_tls_connect(
             fd,
             host_c.as_ptr(),
             policy.verify_peer as c_int,
@@ -298,7 +298,7 @@ pub(crate) fn connect(
     if !new_session.is_null() && new_session_len != 0 {
         let bytes = unsafe { std::slice::from_raw_parts(new_session, new_session_len) }.to_vec();
         store_cached_session(metadata.share_handle, session_key.clone(), bytes);
-        unsafe { curl_safe_tls_free_bytes(new_session) };
+        unsafe { port_safe_tls_free_bytes(new_session) };
     }
 
     Ok(TlsConnection {

@@ -17,7 +17,7 @@ pub unsafe extern "C" fn curl_share_strerror(code: CURLSHcode) -> *const c_char 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_share_setopt_int(
+pub unsafe extern "C" fn port_safe_share_setopt_int(
     handle: *mut CURLSH,
     option: CURLSHoption,
     value: c_int,
@@ -26,7 +26,7 @@ pub unsafe extern "C" fn curl_safe_share_setopt_int(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_share_setopt_function(
+pub unsafe extern "C" fn port_safe_share_setopt_function(
     handle: *mut CURLSH,
     option: CURLSHoption,
     value: Option<unsafe extern "C" fn()>,
@@ -35,7 +35,7 @@ pub unsafe extern "C" fn curl_safe_share_setopt_function(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_share_setopt_ptr(
+pub unsafe extern "C" fn port_safe_share_setopt_ptr(
     handle: *mut CURLSH,
     option: CURLSHoption,
     value: *mut c_void,

@@ -479,7 +479,7 @@ static char *openssl_time_string(const ASN1_TIME *time_value)
   return out;
 }
 
-unsigned char *curl_safe_tls_certinfo(struct safe_tls_connection *conn,
+unsigned char *port_safe_tls_certinfo(struct safe_tls_connection *conn,
                                       size_t *out_len)
 {
   struct certinfo_builder builder = { 0 };
@@ -543,7 +543,7 @@ unsigned char *curl_safe_tls_certinfo(struct safe_tls_connection *conn,
   return certinfo_take(&builder, out_len);
 }
 
-int curl_safe_tls_connect(int fd,
+int port_safe_tls_connect(int fd,
                           const char *host,
                           int verify_peer,
                           int verify_host,
@@ -631,7 +631,7 @@ int curl_safe_tls_connect(int fd,
   return 0;
 }
 
-ssize_t curl_safe_tls_read(struct safe_tls_connection *conn, void *buf, size_t len)
+ssize_t port_safe_tls_read(struct safe_tls_connection *conn, void *buf, size_t len)
 {
   int rc;
   int err;
@@ -651,7 +651,7 @@ ssize_t curl_safe_tls_read(struct safe_tls_connection *conn, void *buf, size_t l
   return -1;
 }
 
-ssize_t curl_safe_tls_write(struct safe_tls_connection *conn, const void *buf, size_t len)
+ssize_t port_safe_tls_write(struct safe_tls_connection *conn, const void *buf, size_t len)
 {
   int rc;
   int err;
@@ -671,7 +671,7 @@ ssize_t curl_safe_tls_write(struct safe_tls_connection *conn, const void *buf, s
   return -1;
 }
 
-int curl_safe_tls_export_session(struct safe_tls_connection *conn,
+int port_safe_tls_export_session(struct safe_tls_connection *conn,
                                  unsigned char **out_session_data,
                                  size_t *out_session_len)
 {
@@ -682,7 +682,7 @@ int curl_safe_tls_export_session(struct safe_tls_connection *conn,
                                 out_session_len);
 }
 
-void curl_safe_tls_close(struct safe_tls_connection *conn)
+void port_safe_tls_close(struct safe_tls_connection *conn)
 {
   if(!conn)
     return;
@@ -917,7 +917,7 @@ static int gnutls_verify_hostname_only(gnutls_session_t session, const char *hos
   return ok;
 }
 
-unsigned char *curl_safe_tls_certinfo(struct safe_tls_connection *conn,
+unsigned char *port_safe_tls_certinfo(struct safe_tls_connection *conn,
                                       size_t *out_len)
 {
   struct certinfo_builder builder = { 0 };
@@ -996,7 +996,7 @@ unsigned char *curl_safe_tls_certinfo(struct safe_tls_connection *conn,
   return certinfo_take(&builder, out_len);
 }
 
-int curl_safe_tls_connect(int fd,
+int port_safe_tls_connect(int fd,
                           const char *host,
                           int verify_peer,
                           int verify_host,
@@ -1111,7 +1111,7 @@ int curl_safe_tls_connect(int fd,
   return 0;
 }
 
-ssize_t curl_safe_tls_read(struct safe_tls_connection *conn, void *buf, size_t len)
+ssize_t port_safe_tls_read(struct safe_tls_connection *conn, void *buf, size_t len)
 {
   ssize_t rc;
   if(!conn || !buf)
@@ -1129,7 +1129,7 @@ ssize_t curl_safe_tls_read(struct safe_tls_connection *conn, void *buf, size_t l
   return -1;
 }
 
-ssize_t curl_safe_tls_write(struct safe_tls_connection *conn, const void *buf, size_t len)
+ssize_t port_safe_tls_write(struct safe_tls_connection *conn, const void *buf, size_t len)
 {
   ssize_t rc;
   if(!conn || !buf)
@@ -1147,7 +1147,7 @@ ssize_t curl_safe_tls_write(struct safe_tls_connection *conn, const void *buf, s
   return -1;
 }
 
-int curl_safe_tls_export_session(struct safe_tls_connection *conn,
+int port_safe_tls_export_session(struct safe_tls_connection *conn,
                                  unsigned char **out_session_data,
                                  size_t *out_session_len)
 {
@@ -1156,7 +1156,7 @@ int curl_safe_tls_export_session(struct safe_tls_connection *conn,
   return gnutls_export_session(conn, out_session_data, out_session_len);
 }
 
-void curl_safe_tls_close(struct safe_tls_connection *conn)
+void port_safe_tls_close(struct safe_tls_connection *conn)
 {
   if(!conn)
     return;
@@ -1168,7 +1168,7 @@ void curl_safe_tls_close(struct safe_tls_connection *conn)
 
 #endif
 
-void curl_safe_tls_free_bytes(unsigned char *ptr)
+void port_safe_tls_free_bytes(unsigned char *ptr)
 {
   free(ptr);
 }

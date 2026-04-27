@@ -218,7 +218,7 @@ fn render_part(node: &FormNode) -> Vec<u8> {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn curl_safe_formadd_parsed(
+pub unsafe extern "C" fn port_safe_formadd_parsed(
     httppost: *mut *mut curl_httppost,
     last_post: *mut *mut curl_httppost,
     spec: *const CurlSafeFormSpec,

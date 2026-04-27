@@ -102,6 +102,7 @@ const CURLOPT_CLOSESOCKETDATA: CURLoption = 10209;
 type CurlEasyInitFn = unsafe extern "C" fn() -> *mut CURL;
 type CurlEasyCleanupFn = unsafe extern "C" fn(*mut CURL);
 type CurlEasyPauseFn = unsafe extern "C" fn(*mut CURL, c_int) -> CURLcode;
+type CurlEasySetoptFn = unsafe extern "C" fn(*mut CURL, CURLoption, ...) -> CURLcode;
 type CurlGlobalInitMemFn = unsafe extern "C" fn(
     c_long,
     curl_malloc_callback,
@@ -111,10 +112,6 @@ type CurlGlobalInitMemFn = unsafe extern "C" fn(
     curl_calloc_callback,
 ) -> CURLcode;
 type CurlGlobalCleanupFn = unsafe extern "C" fn();
-
-unsafe extern "C" {
-    fn curl_easy_setopt(handle: *mut CURL, option: CURLoption, ...) -> CURLcode;
-}
 
 struct ActiveReference {
     raw: usize,
@@ -146,6 +143,11 @@ fn ref_easy_cleanup() -> CurlEasyCleanupFn {
 fn ref_easy_pause() -> CurlEasyPauseFn {
     static FN: OnceLock<CurlEasyPauseFn> = OnceLock::new();
     *FN.get_or_init(|| unsafe { crate::global::load_reference(b"curl_easy_pause\0") })
+}
+
+fn ref_easy_setopt() -> CurlEasySetoptFn {
+    static FN: OnceLock<CurlEasySetoptFn> = OnceLock::new();
+    *FN.get_or_init(|| unsafe { crate::global::load_reference(b"curl_easy_setopt\0") })
 }
 
 fn ref_global_init_mem() -> CurlGlobalInitMemFn {
@@ -262,7 +264,7 @@ unsafe fn setopt_long(
     option: CURLoption,
     value: c_long,
 ) -> Result<(), CURLcode> {
-    let code = unsafe { curl_easy_setopt(reference, option, value) };
+    let code = unsafe { ref_easy_setopt()(reference, option, value) };
     if code == CURLE_OK {
         Ok(())
     } else {
@@ -275,7 +277,7 @@ unsafe fn setopt_off_t(
     option: CURLoption,
     value: curl_off_t,
 ) -> Result<(), CURLcode> {
-    let code = unsafe { curl_easy_setopt(reference, option, value) };
+    let code = unsafe { ref_easy_setopt()(reference, option, value) };
     if code == CURLE_OK {
         Ok(())
     } else {
@@ -288,7 +290,7 @@ unsafe fn setopt_ptr(
     option: CURLoption,
     value: *mut c_void,
 ) -> Result<(), CURLcode> {
-    let code = unsafe { curl_easy_setopt(reference, option, value) };
+    let code = unsafe { ref_easy_setopt()(reference, option, value) };
     if code == CURLE_OK {
         Ok(())
     } else {
@@ -301,7 +303,7 @@ unsafe fn setopt_fn(
     option: CURLoption,
     value: Option<unsafe extern "C" fn()>,
 ) -> Result<(), CURLcode> {
-    let code = unsafe { curl_easy_setopt(reference, option, value) };
+    let code = unsafe { ref_easy_setopt()(reference, option, value) };
     if code == CURLE_OK {
         Ok(())
     } else {
@@ -821,6 +823,18 @@ pub(crate) fn active_handle(handle: *mut CURL) -> *mut CURL {
         .get(&(handle as usize))
         .map(|active| active.raw as *mut CURL)
         .unwrap_or(ptr::null_mut())
+}
+
+pub(crate) unsafe fn setopt_long_on_active(
+    handle: *mut CURL,
+    option: CURLoption,
+    value: c_long,
+) -> CURLcode {
+    let reference = active_handle(handle);
+    if reference.is_null() {
+        return CURLE_BAD_FUNCTION_ARGUMENT;
+    }
+    unsafe { ref_easy_setopt()(reference, option, value) }
 }
 
 pub(crate) fn public_from_reference(reference: *mut CURL) -> *mut CURL {

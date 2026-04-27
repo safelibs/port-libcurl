@@ -3,10 +3,10 @@
 
 #include <curl/mprintf.h>
 
-void *curl_safe_malloc(size_t size);
-void curl_safe_free(void *ptr);
+void *port_safe_malloc(size_t size);
+void port_safe_free(void *ptr);
 
-static char *curl_vaprintf_alloc(const char *format, va_list args) {
+static char *port_vaprintf_alloc(const char *format, va_list args) {
   va_list measure;
   va_list render;
   int needed;
@@ -18,14 +18,14 @@ static char *curl_vaprintf_alloc(const char *format, va_list args) {
   if(needed < 0)
     return NULL;
 
-  buffer = curl_safe_malloc((size_t)needed + 1);
+  buffer = port_safe_malloc((size_t)needed + 1);
   if(!buffer)
     return NULL;
 
   va_copy(render, args);
   if(vsnprintf(buffer, (size_t)needed + 1, format, render) < 0) {
     va_end(render);
-    curl_safe_free(buffer);
+    port_safe_free(buffer);
     return NULL;
   }
   va_end(render);
@@ -89,11 +89,11 @@ char *curl_maprintf(const char *format, ...) {
   char *buffer;
   va_list args;
   va_start(args, format);
-  buffer = curl_vaprintf_alloc(format, args);
+  buffer = port_vaprintf_alloc(format, args);
   va_end(args);
   return buffer;
 }
 
 char *curl_mvaprintf(const char *format, va_list args) {
-  return curl_vaprintf_alloc(format, args);
+  return port_vaprintf_alloc(format, args);
 }

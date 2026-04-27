@@ -36,7 +36,7 @@ const IO_TIMEOUT: Duration = Duration::from_secs(30);
 const UPLOAD_CHUNK_SIZE: usize = 16 * 1024;
 
 unsafe extern "C" {
-    fn curl_safe_ssh_transfer(
+    fn port_safe_ssh_transfer(
         fd: c_int,
         scheme: *const c_char,
         username: *const c_char,
@@ -175,7 +175,7 @@ pub(crate) fn perform_transfer(
     let mut transferred = 0u64;
     let mut errbuf = [0i8; 256];
     let rc = unsafe {
-        curl_safe_ssh_transfer(
+        port_safe_ssh_transfer(
             stream.as_raw_fd(),
             scheme_c.as_ptr(),
             user_c

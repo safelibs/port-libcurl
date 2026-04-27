@@ -13,9 +13,11 @@ type CurlShareUnlockFn = Option<unsafe extern "C" fn(*mut CURL, curl_lock_data, 
 
 const CURLSHE_INVALID: CURLSHcode = 3;
 const CURLSHE_NOT_BUILT_IN: CURLSHcode = 5;
+const SHARE_HANDLE_MAGIC: usize = 0x4355_524c_5348_4152;
 
 #[repr(C)]
 struct ShareHandle {
+    magic: usize,
     state: ShareState,
     cookies: crate::http::cookies::CookieStore,
     hsts: crate::http::hsts::HstsStore,
@@ -50,10 +52,14 @@ impl ShareState {
 
 unsafe fn handle_mut(handle: *mut CURLSH) -> Option<&'static mut ShareHandle> {
     if handle.is_null() {
-        None
-    } else {
-        Some(unsafe { &mut *handle.cast::<ShareHandle>() })
+        return None;
     }
+    let handle = unsafe { &mut *handle.cast::<ShareHandle>() };
+    (handle.magic == SHARE_HANDLE_MAGIC).then_some(handle)
+}
+
+pub(crate) fn is_public_handle(handle: *mut CURLSH) -> bool {
+    unsafe { handle_mut(handle) }.is_some()
 }
 
 fn share_strerror_message(code: CURLSHcode) -> &'static [u8] {
@@ -82,6 +88,7 @@ fn is_supported_shared_data(data: curl_lock_data) -> bool {
 
 pub(crate) unsafe fn share_init() -> *mut CURLSH {
     Box::into_raw(Box::new(ShareHandle {
+        magic: SHARE_HANDLE_MAGIC,
         state: ShareState::default(),
         cookies: crate::http::cookies::CookieStore::default(),
         hsts: crate::http::hsts::HstsStore::default(),
@@ -102,6 +109,7 @@ pub(crate) unsafe fn share_cleanup(handle: *mut CURLSH) -> CURLSHcode {
         CURL_LOCK_ACCESS_SINGLE,
         5,
     );
+    handle.magic = 0;
     drop(unsafe { Box::from_raw(handle as *mut ShareHandle) });
     CURLSHE_OK
 }
@@ -217,6 +225,17 @@ pub(crate) fn with_shared_cookies_mut<R>(
         return None;
     }
     Some(f(&mut share.cookies))
+}
+
+pub(crate) fn with_shared_cookies<R>(
+    share_handle: Option<usize>,
+    f: impl FnOnce(&crate::http::cookies::CookieStore) -> R,
+) -> Option<R> {
+    let share = unsafe { handle_mut(share_handle? as *mut CURLSH) }?;
+    if !share.state.is_shared(CURL_LOCK_DATA_COOKIE) {
+        return None;
+    }
+    Some(f(&share.cookies))
 }
 
 pub(crate) fn with_shared_hsts_mut<R>(

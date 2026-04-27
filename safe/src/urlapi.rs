@@ -22,6 +22,7 @@ const CURLUE_NO_PORT: CURLUcode = 15;
 const CURLUE_NO_QUERY: CURLUcode = 16;
 const CURLUE_NO_FRAGMENT: CURLUcode = 17;
 const CURLUE_NO_ZONEID: CURLUcode = 18;
+const URL_HANDLE_MAGIC: usize = 0x4355_524c_5552_4c48;
 
 const CURLU_DEFAULT_PORT: u32 = 1 << 0;
 const CURLU_NO_DEFAULT_PORT: u32 = 1 << 1;
@@ -48,23 +49,24 @@ struct UrlState {
 #[repr(C)]
 #[derive(Clone, Default)]
 struct UrlHandle {
+    magic: usize,
     state: UrlState,
 }
 
 fn handle_ref(handle: *const CURLU) -> Option<&'static UrlHandle> {
     if handle.is_null() {
-        None
-    } else {
-        Some(unsafe { &*(handle as *const UrlHandle) })
+        return None;
     }
+    let handle = unsafe { &*(handle as *const UrlHandle) };
+    (handle.magic == URL_HANDLE_MAGIC).then_some(handle)
 }
 
 fn handle_mut(handle: *mut CURLU) -> Option<&'static mut UrlHandle> {
     if handle.is_null() {
-        None
-    } else {
-        Some(unsafe { &mut *(handle as *mut UrlHandle) })
+        return None;
     }
+    let handle = unsafe { &mut *(handle as *mut UrlHandle) };
+    (handle.magic == URL_HANDLE_MAGIC).then_some(handle)
 }
 
 fn read_part(part: *const c_char) -> Result<Option<String>, CURLUcode> {
@@ -337,16 +339,19 @@ fn url_error_string(code: CURLUcode) -> *const c_char {
 }
 
 pub(crate) unsafe fn url() -> *mut CURLU {
-    Box::into_raw(Box::new(UrlHandle::default())).cast()
+    Box::into_raw(Box::new(UrlHandle {
+        magic: URL_HANDLE_MAGIC,
+        state: UrlState::default(),
+    }))
+    .cast()
 }
 
 pub(crate) unsafe fn url_cleanup(handle: *mut CURLU) {
-    if handle.is_null() {
+    let Some(handle) = handle_mut(handle) else {
         return;
-    }
-    unsafe {
-        drop(Box::from_raw(handle as *mut UrlHandle));
-    }
+    };
+    handle.magic = 0;
+    unsafe { drop(Box::from_raw(handle as *mut UrlHandle)) };
 }
 
 pub(crate) unsafe fn url_dup(handle: *const CURLU) -> *mut CURLU {

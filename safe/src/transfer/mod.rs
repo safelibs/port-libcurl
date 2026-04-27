@@ -389,16 +389,12 @@ pub(crate) fn build_plan(metadata: &EasyMetadata, resolver_owner: ResolverOwner)
         .iter()
         .find(|candidate| candidate.matches(&authority.host, authority.port))
         .cloned();
-    let target_host = connect_override
-        .as_ref()
-        .and_then(|candidate| candidate.target_host.clone())
-        .unwrap_or_else(|| authority.host.clone());
-    let target_port = connect_override
-        .as_ref()
-        .and_then(|candidate| candidate.target_port)
-        .unwrap_or(authority.port);
     let proxy = metadata
         .proxy
+        .as_deref()
+        .and_then(|proxy| parse_proxy_authority(proxy, &authority.scheme));
+    let pre_proxy = metadata
+        .pre_proxy
         .as_deref()
         .and_then(|proxy| parse_proxy_authority(proxy, &authority.scheme));
     let resolver = ResolverLease::for_share(metadata.share_handle, resolver_owner);
@@ -420,6 +416,11 @@ pub(crate) fn build_plan(metadata: &EasyMetadata, resolver_owner: ResolverOwner)
         if !target.is_empty() {
             filters.push(ConnectionFilterStep::ConnectTo { target });
         }
+    }
+    if let Some((proxy_host, proxy_port)) = pre_proxy.as_ref() {
+        filters.push(ConnectionFilterStep::PreProxy {
+            authority: format!("{proxy_host}:{proxy_port}"),
+        });
     }
     if let Some((proxy_host, proxy_port)) = proxy.as_ref() {
         filters.push(ConnectionFilterStep::Proxy {
@@ -444,15 +445,17 @@ pub(crate) fn build_plan(metadata: &EasyMetadata, resolver_owner: ResolverOwner)
     if metadata.follow_location {
         filters.push(ConnectionFilterStep::FollowRedirects);
     }
-    filters.push(ConnectionFilterStep::TransferLoop);
+        filters.push(ConnectionFilterStep::TransferLoop);
 
     TransferPlan {
         cache_key: ConnectionCacheKey {
             scheme: authority.scheme,
-            host: target_host,
-            port: target_port,
+            host: authority.host,
+            port: authority.port,
             proxy_host: proxy.as_ref().map(|(host, _)| host.clone()),
             proxy_port: proxy.as_ref().map(|(_, port)| *port),
+            pre_proxy_host: pre_proxy.as_ref().map(|(host, _)| host.clone()),
+            pre_proxy_port: pre_proxy.as_ref().map(|(_, port)| *port),
             tunnel_proxy: metadata.tunnel_proxy,
             conn_to_host: connect_override
                 .as_ref()

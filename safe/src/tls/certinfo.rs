@@ -64,7 +64,7 @@ impl Drop for StoredCertInfo {
 }
 
 unsafe extern "C" {
-    fn curl_safe_tls_certinfo(conn: *mut super::SafeTlsConnection, out_len: *mut usize) -> *mut u8;
+    fn port_safe_tls_certinfo(conn: *mut super::SafeTlsConnection, out_len: *mut usize) -> *mut u8;
 }
 
 fn registry() -> &'static Mutex<HashMap<usize, StoredCertInfo>> {
@@ -78,17 +78,17 @@ pub(crate) const fn requested(enabled: bool) -> bool {
 
 pub(crate) fn capture(connection: &super::TlsConnection) -> Option<OwnedCertInfo> {
     let mut len = 0usize;
-    let bytes = unsafe { curl_safe_tls_certinfo(connection.raw, &mut len) };
+    let bytes = unsafe { port_safe_tls_certinfo(connection.raw, &mut len) };
     if bytes.is_null() || len == 0 {
         if !bytes.is_null() {
-            unsafe { super::curl_safe_tls_free_bytes(bytes) };
+            unsafe { super::port_safe_tls_free_bytes(bytes) };
         }
         return None;
     }
 
     let serialized = unsafe { std::slice::from_raw_parts(bytes, len) };
     let parsed = parse(serialized);
-    unsafe { super::curl_safe_tls_free_bytes(bytes) };
+    unsafe { super::port_safe_tls_free_bytes(bytes) };
     parsed
 }
 

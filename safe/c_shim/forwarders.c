@@ -84,7 +84,7 @@ static void *bridge_resolve_symbol(const char *name) {
   return symbol;
 }
 
-void *curl_safe_resolve_reference_symbol(const char *name) {
+void *port_safe_resolve_reference_symbol(const char *name) {
   return bridge_resolve_symbol(name);
 }
 
