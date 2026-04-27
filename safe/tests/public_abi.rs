@@ -1,19 +1,18 @@
 use port_libcurl_safe::abi::{
-    curl_blob, curl_calloc_callback, curl_easyoption, curl_free_callback,
-    curl_httppost, curl_malloc_callback, curl_mime, curl_mimepart, curl_off_t,
-    curl_read_callback, curl_realloc_callback, curl_seek_callback, curl_slist, curl_ssl_backend,
-    curl_sslbackend, curl_strdup_callback, curl_version_info_data, CURLFORMcode, CURLMcode,
-    CURLSHcode, CURLSHoption, CURLUcode, CURLcode, CURLoption, CURLsslset, CURLversion, CURL,
-    CURLE_OK, CURLM, CURLM_OK, CURLOT_STRING, CURLSH, CURLSHE_OK, CURLSHOPT_SHARE,
-    CURLSSLBACKEND_GNUTLS, CURLSSLBACKEND_OPENSSL, CURLSSLSET_OK, CURLSSLSET_TOO_LATE, CURLU,
-    CURLUE_OK, CURLUPART_HOST, CURLUPART_URL, CURLVERSION_NOW, CURL_GLOBAL_DEFAULT,
-    CURL_LOCK_DATA_COOKIE,
+    curl_blob, curl_calloc_callback, curl_easyoption, curl_free_callback, curl_httppost,
+    curl_malloc_callback, curl_mime, curl_mimepart, curl_off_t, curl_read_callback,
+    curl_realloc_callback, curl_seek_callback, curl_slist, curl_ssl_backend, curl_sslbackend,
+    curl_strdup_callback, curl_version_info_data, CURLFORMcode, CURLMcode, CURLSHcode,
+    CURLSHoption, CURLUcode, CURLcode, CURLoption, CURLsslset, CURLversion, CURL, CURLE_OK, CURLM,
+    CURLM_OK, CURLOT_STRING, CURLSH, CURLSHE_OK, CURLSHOPT_SHARE, CURLSSLBACKEND_GNUTLS,
+    CURLSSLBACKEND_OPENSSL, CURLSSLSET_OK, CURLSSLSET_TOO_LATE, CURLU, CURLUE_OK, CURLUPART_HOST,
+    CURLUPART_URL, CURLVERSION_NOW, CURL_GLOBAL_DEFAULT, CURL_LOCK_DATA_COOKIE,
 };
 use port_libcurl_safe::BUILD_FLAVOR;
 use std::collections::HashSet;
 use std::ffi::{c_char, c_int, c_long, c_void, CStr, CString};
 use std::io::{Read, Write};
-use std::net::{Shutdown, TcpListener};
+use std::net::{Ipv4Addr, Shutdown, TcpListener, TcpStream};
 use std::ptr;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Mutex, OnceLock};
@@ -22,6 +21,7 @@ use std::thread;
 const CURLOPT_MIMEPOST: CURLoption = 10269;
 const CURLOPT_HTTPPOST: CURLoption = 10024;
 const CURLOPT_URL: CURLoption = 10002;
+const CURLOPT_DOH_URL: CURLoption = 10279;
 const CURLOPT_COOKIELIST: CURLoption = 10135;
 const CURLOPT_CURLU: CURLoption = 10282;
 const CURLOPT_FOLLOWLOCATION: CURLoption = 52;
@@ -267,7 +267,9 @@ fn c_ptr(bytes: &'static [u8]) -> *const c_char {
 }
 
 fn c_string_value(ptr: *const c_char) -> String {
-    unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned()
+    unsafe { CStr::from_ptr(ptr) }
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn c_string_list(mut values: *const *const c_char) -> Vec<String> {
@@ -283,7 +285,42 @@ fn c_string_list(mut values: *const *const c_char) -> Vec<String> {
     out
 }
 
-fn spawn_capture_fixture(expected_requests: usize) -> (String, Receiver<Vec<u8>>, thread::JoinHandle<()>) {
+fn read_http_request(stream: &mut TcpStream) -> Vec<u8> {
+    let mut request = Vec::new();
+    let mut scratch = [0u8; 2048];
+    let header_end = loop {
+        let read = stream.read(&mut scratch).expect("read request");
+        if read == 0 {
+            panic!("fixture closed before headers");
+        }
+        request.extend_from_slice(&scratch[..read]);
+        if let Some(index) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+            break index + 4;
+        }
+    };
+    let header_text = String::from_utf8_lossy(&request[..header_end]);
+    let content_length = header_text
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("Content-Length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
+        })
+        .unwrap_or(0);
+    while request.len() < header_end + content_length {
+        let read = stream.read(&mut scratch).expect("read body");
+        if read == 0 {
+            break;
+        }
+        request.extend_from_slice(&scratch[..read]);
+    }
+    request
+}
+
+fn spawn_capture_fixture(
+    expected_requests: usize,
+) -> (String, Receiver<Vec<u8>>, thread::JoinHandle<()>) {
     let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind fixture");
     let port = listener.local_addr().expect("fixture addr").port();
     let base_url = format!("http://127.0.0.1:{port}");
@@ -291,40 +328,70 @@ fn spawn_capture_fixture(expected_requests: usize) -> (String, Receiver<Vec<u8>>
     let join = thread::spawn(move || {
         for _ in 0..expected_requests {
             let (mut stream, _) = listener.accept().expect("accept fixture");
-            let mut request = Vec::new();
-            let mut scratch = [0u8; 2048];
-            let header_end = loop {
-                let read = stream.read(&mut scratch).expect("read request");
-                if read == 0 {
-                    panic!("fixture closed before headers");
-                }
-                request.extend_from_slice(&scratch[..read]);
-                if let Some(index) = request.windows(4).position(|window| window == b"\r\n\r\n") {
-                    break index + 4;
-                }
-            };
-            let header_text = String::from_utf8_lossy(&request[..header_end]);
-            let content_length = header_text
-                .lines()
-                .find_map(|line| {
-                    let (name, value) = line.split_once(':')?;
-                    name.eq_ignore_ascii_case("Content-Length")
-                        .then(|| value.trim().parse::<usize>().ok())
-                        .flatten()
-                })
-                .unwrap_or(0);
-            while request.len() < header_end + content_length {
-                let read = stream.read(&mut scratch).expect("read body");
-                if read == 0 {
-                    break;
-                }
-                request.extend_from_slice(&scratch[..read]);
-            }
+            let request = read_http_request(&mut stream);
             tx.send(request).expect("send capture");
             stream
-                .write_all(
-                    b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                )
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .expect("write response");
+            let _ = stream.shutdown(Shutdown::Both);
+        }
+    });
+    (base_url, rx, join)
+}
+
+fn build_doh_response(query: &[u8], answer: Option<Ipv4Addr>) -> Vec<u8> {
+    let mut response = Vec::with_capacity(query.len() + 16);
+    response.extend_from_slice(&query[..2]);
+    response.extend_from_slice(&0x8180u16.to_be_bytes());
+    response.extend_from_slice(&1u16.to_be_bytes());
+    response.extend_from_slice(&(answer.is_some() as u16).to_be_bytes());
+    response.extend_from_slice(&0u16.to_be_bytes());
+    response.extend_from_slice(&0u16.to_be_bytes());
+    response.extend_from_slice(&query[12..]);
+    if let Some(ip) = answer {
+        response.extend_from_slice(&0xc00cu16.to_be_bytes());
+        response.extend_from_slice(&1u16.to_be_bytes());
+        response.extend_from_slice(&1u16.to_be_bytes());
+        response.extend_from_slice(&30u32.to_be_bytes());
+        response.extend_from_slice(&4u16.to_be_bytes());
+        response.extend_from_slice(&ip.octets());
+    }
+    response
+}
+
+fn spawn_doh_fixture() -> (String, Receiver<Vec<u8>>, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind fixture");
+    let port = listener.local_addr().expect("fixture addr").port();
+    let base_url = format!("http://127.0.0.1:{port}/dns-query");
+    let (tx, rx) = mpsc::channel();
+    let join = thread::spawn(move || {
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().expect("accept fixture");
+            let request = read_http_request(&mut stream);
+            let header_end = request
+                .windows(4)
+                .position(|window| window == b"\r\n\r\n")
+                .expect("header end")
+                + 4;
+            let body = request[header_end..].to_vec();
+            tx.send(body.clone()).expect("send capture");
+            let qtype = if body.len() >= 4 {
+                u16::from_be_bytes([body[body.len() - 4], body[body.len() - 3]])
+            } else {
+                0
+            };
+            let dns_response = if qtype == 1 {
+                build_doh_response(&body, Some(Ipv4Addr::new(127, 0, 0, 1)))
+            } else {
+                build_doh_response(&body, None)
+            };
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/dns-message\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                dns_response.len()
+            );
+            stream
+                .write_all(response.as_bytes())
+                .and_then(|_| stream.write_all(&dns_response))
                 .expect("write response");
             let _ = stream.shutdown(Shutdown::Both);
         }
@@ -352,7 +419,9 @@ unsafe extern "C" fn mime_read_callback(
     let copied = remaining.min(capacity);
     unsafe {
         ptr::copy_nonoverlapping(
-            body.bytes[body.offset..body.offset + copied].as_ptr().cast(),
+            body.bytes[body.offset..body.offset + copied]
+                .as_ptr()
+                .cast(),
             buffer,
             copied,
         );
@@ -361,7 +430,11 @@ unsafe extern "C" fn mime_read_callback(
     copied
 }
 
-unsafe extern "C" fn mime_seek_callback(userp: *mut c_void, offset: curl_off_t, origin: c_int) -> c_int {
+unsafe extern "C" fn mime_seek_callback(
+    userp: *mut c_void,
+    offset: curl_off_t,
+    origin: c_int,
+) -> c_int {
     let body = unsafe { &mut *(userp as *mut CallbackBody) };
     if origin != 0 || offset != 0 {
         return 1;
@@ -490,9 +563,9 @@ fn public_abi_smoke_and_allocator_contract() {
         assert!(!info.version.is_null());
         let ssl_version = c_string_value(info.ssl_version);
         let expected_protocols = vec![
-            "dict", "file", "ftp", "ftps", "gopher", "gophers", "http", "https", "imap",
-            "imaps", "mqtt", "pop3", "pop3s", "rtsp", "scp", "sftp", "smb", "smbs", "smtp",
-            "smtps", "telnet", "tftp",
+            "dict", "file", "ftp", "ftps", "gopher", "gophers", "http", "https", "imap", "imaps",
+            "mqtt", "pop3", "pop3s", "rtsp", "scp", "sftp", "smb", "smbs", "smtp", "smtps",
+            "telnet", "tftp",
         ];
         let expected_features = vec![
             "alt-svc",
@@ -512,7 +585,10 @@ fn public_abi_smoke_and_allocator_contract() {
             "libcurl/8.5.0 {} zlib/1.3 libssh2/1.11.0 nghttp2/1.59.0",
             ssl_version
         );
-        assert_eq!(CStr::from_ptr(version).to_bytes(), expected_version.as_bytes());
+        assert_eq!(
+            CStr::from_ptr(version).to_bytes(),
+            expected_version.as_bytes()
+        );
         assert_eq!(c_string_value(info.version), "8.5.0");
         assert_eq!(c_string_value(info.host), "x86_64-pc-linux-gnu");
         assert_eq!(info.features, 1_361_658_524);
@@ -685,14 +761,22 @@ fn public_abi_smoke_and_allocator_contract() {
             curl_url_get(puny_url, CURLUPART_HOST, &mut idn_host, CURLU_PUNY2IDN),
             CURLUE_OK
         );
-        assert_eq!(CStr::from_ptr(idn_host).to_str().expect("utf8"), "räksmörgås.se");
+        assert_eq!(
+            CStr::from_ptr(idn_host).to_str().expect("utf8"),
+            "räksmörgås.se"
+        );
         curl_free(idn_host.cast());
 
         let query_url = curl_url();
         assert!(!query_url.is_null());
         let default_scheme_url = CString::new("https://example.com/").expect("cstring");
         assert_eq!(
-            curl_url_set(query_url, CURLUPART_URL, default_scheme_url.as_ptr(), CURLU_DEFAULT_SCHEME),
+            curl_url_set(
+                query_url,
+                CURLUPART_URL,
+                default_scheme_url.as_ptr(),
+                CURLU_DEFAULT_SCHEME
+            ),
             CURLUE_OK
         );
         let query_text = CString::new("first value").expect("cstring");
@@ -836,11 +920,54 @@ fn public_abi_smoke_and_allocator_contract() {
         assert_eq!(redirect_count, 0);
         fixture_join.join().expect("fixture join");
 
+        let (doh_url, doh_rx, doh_join) = spawn_doh_fixture();
+        let (doh_target_base_url, doh_target_rx, doh_target_join) = spawn_capture_fixture(1);
+        let doh_target_port = doh_target_base_url.rsplit(':').next().expect("target port");
+        let doh_target_url =
+            CString::new(format!("http://native-doh.test:{doh_target_port}/doh")).expect("cstring");
+        let doh_url = CString::new(doh_url).expect("cstring");
+        let expected_qname = b"\x0anative-doh\x04test\x00";
+
+        curl_easy_reset(easy);
+        assert_eq!(
+            curl_easy_setopt(easy, CURLOPT_URL, doh_target_url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(easy, CURLOPT_DOH_URL, doh_url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(easy, CURLOPT_NOBODY, 1 as c_long),
+            CURLE_OK
+        );
+        assert_eq!(curl_easy_perform(easy), CURLE_OK);
+
+        let first_doh = doh_rx.recv().expect("first doh request");
+        let second_doh = doh_rx.recv().expect("second doh request");
+        assert!(
+            first_doh
+                .windows(expected_qname.len())
+                .any(|window| window == expected_qname)
+                || second_doh
+                    .windows(expected_qname.len())
+                    .any(|window| window == expected_qname)
+        );
+        let target_request =
+            String::from_utf8(doh_target_rx.recv().expect("doh target request")).expect("utf8");
+        assert!(target_request.starts_with("HEAD /doh HTTP/1.1\r\n"));
+        assert!(target_request.contains(&format!("Host: native-doh.test:{doh_target_port}\r\n")));
+        doh_join.join().expect("doh fixture join");
+        doh_target_join.join().expect("doh target fixture join");
+
         let (post_base_url, post_rx, post_join) = spawn_capture_fixture(2);
 
         curl_easy_reset(easy);
         let mime_url = CString::new(format!("{post_base_url}/mime")).expect("cstring");
-        assert_eq!(curl_easy_setopt(easy, CURLOPT_URL, mime_url.as_ptr()), CURLE_OK);
+        assert_eq!(
+            curl_easy_setopt(easy, CURLOPT_URL, mime_url.as_ptr()),
+            CURLE_OK
+        );
         let mime_headers_text = CString::new("X-Test: native-mime").expect("cstring");
         let mime_upload_headers = curl_slist_append(ptr::null_mut(), mime_headers_text.as_ptr());
         assert!(!mime_upload_headers.is_null());
@@ -849,7 +976,10 @@ fn public_abi_smoke_and_allocator_contract() {
         let mime_part = curl_mime_addpart(mime_upload);
         assert!(!mime_part.is_null());
         assert_eq!(curl_mime_name(mime_part, c_ptr(b"field\0")), CURLE_OK);
-        assert_eq!(curl_mime_filename(mime_part, c_ptr(b"value.txt\0")), CURLE_OK);
+        assert_eq!(
+            curl_mime_filename(mime_part, c_ptr(b"value.txt\0")),
+            CURLE_OK
+        );
         assert_eq!(curl_mime_type(mime_part, c_ptr(b"text/plain\0")), CURLE_OK);
         assert_eq!(curl_mime_encoder(mime_part, c_ptr(b"binary\0")), CURLE_OK);
         let callback_body = Box::new(CallbackBody {
@@ -867,13 +997,20 @@ fn public_abi_smoke_and_allocator_contract() {
             ),
             CURLE_OK
         );
-        assert_eq!(curl_mime_headers(mime_part, mime_upload_headers, 0), CURLE_OK);
-        assert_eq!(curl_easy_setopt(easy, CURLOPT_MIMEPOST, mime_upload), CURLE_OK);
+        assert_eq!(
+            curl_mime_headers(mime_part, mime_upload_headers, 0),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(easy, CURLOPT_MIMEPOST, mime_upload),
+            CURLE_OK
+        );
         assert_eq!(curl_easy_perform(easy), CURLE_OK);
         let mime_request = String::from_utf8(post_rx.recv().expect("mime request")).expect("utf8");
         assert!(mime_request.starts_with("POST /mime HTTP/1.1\r\n"));
         assert!(mime_request.contains("Content-Type: multipart/form-data; boundary=------------------------port-libcurl-safe-mime-"));
-        assert!(mime_request.contains("Content-Disposition: form-data; name=\"field\"; filename=\"value.txt\""));
+        assert!(mime_request
+            .contains("Content-Disposition: form-data; name=\"field\"; filename=\"value.txt\""));
         assert!(mime_request.contains("Content-Type: text/plain"));
         assert!(mime_request.contains("Content-Transfer-Encoding: binary"));
         assert!(mime_request.contains("X-Test: native-mime"));
@@ -887,7 +1024,10 @@ fn public_abi_smoke_and_allocator_contract() {
 
         curl_easy_reset(easy);
         let form_url = CString::new(format!("{post_base_url}/form")).expect("cstring");
-        assert_eq!(curl_easy_setopt(easy, CURLOPT_URL, form_url.as_ptr()), CURLE_OK);
+        assert_eq!(
+            curl_easy_setopt(easy, CURLOPT_URL, form_url.as_ptr()),
+            CURLE_OK
+        );
         let mut form = ptr::null_mut();
         let mut last = ptr::null_mut();
         let form_name = CString::new("legacy").expect("cstring");
@@ -917,7 +1057,9 @@ fn public_abi_smoke_and_allocator_contract() {
         assert_eq!(curl_easy_perform(easy), CURLE_OK);
         let form_request = String::from_utf8(post_rx.recv().expect("form request")).expect("utf8");
         assert!(form_request.starts_with("POST /form HTTP/1.1\r\n"));
-        assert!(form_request.contains("Content-Type: multipart/form-data; boundary=------------------------port-libcurl-safe"));
+        assert!(form_request.contains(
+            "Content-Type: multipart/form-data; boundary=------------------------port-libcurl-safe"
+        ));
         assert!(form_request.contains("Content-Disposition: form-data; name=\"legacy\""));
         assert!(form_request.contains("Content-Type: text/plain"));
         assert!(form_request.contains("\r\n\r\nvalue\r\n"));

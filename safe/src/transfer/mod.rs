@@ -1,7 +1,6 @@
 use crate::abi::{
-    curl_hstsentry, curl_httppost, curl_index, curl_mime, curl_off_t, curl_slist,
-    curl_socket_t, CURLMcode, CURLSTScode, CURLcode, CURL, CURLE_BAD_FUNCTION_ARGUMENT,
-    CURLE_OK, CURLINFO,
+    curl_hstsentry, curl_httppost, curl_index, curl_mime, curl_off_t, curl_slist, curl_socket_t,
+    CURLMcode, CURLSTScode, CURLcode, CURL, CURLE_BAD_FUNCTION_ARGUMENT, CURLE_OK, CURLINFO,
 };
 use crate::conn::cache::{parse_proxy_authority, parse_url_authority, ConnectionCacheKey};
 use crate::conn::filter::{ConnectionFilterChain, ConnectionFilterStep};
@@ -1136,7 +1135,7 @@ fn connect_only_transfer(
     let ConnectedStream {
         mut stream,
         mut info,
-    } = connect_stream(request, metadata, &[], callbacks)?;
+    } = connect_stream(handle, request, metadata, &[], callbacks)?;
     let websocket = if request.websocket_style {
         Some(crate::ws::WebSocketSession::handshake(
             &mut stream,
@@ -1204,7 +1203,13 @@ fn execute_http_transfer(
     let ConnectedStream {
         mut stream,
         mut info,
-    } = connect_stream(request, metadata, &plan.resolve_overrides, callbacks)?;
+    } = connect_stream(
+        handle,
+        request,
+        metadata,
+        &plan.resolve_overrides,
+        callbacks,
+    )?;
     let tls_policy = tls_policy_for_request(request, metadata);
     stream
         .set_read_timeout(Some(IO_POLL_INTERVAL))
@@ -1527,6 +1532,7 @@ fn read_more_body_data(
 }
 
 fn connect_stream(
+    handle: *mut CURL,
     request: &RequestContext,
     metadata: &EasyMetadata,
     resolve_overrides: &[ResolveOverride],
@@ -1538,7 +1544,12 @@ fn connect_stream(
         .map(|(host, port)| (host.as_str(), *port))
         .unwrap_or((&request.target_host, request.target_port));
     let resolve_started = Instant::now();
-    let addrs = resolve_addresses(host, port, resolve_overrides)?;
+    let addrs = resolve_addresses(host, port, resolve_overrides, metadata).map_err(|code| {
+        if code == CURLE_URL_MALFORMAT {
+            perform::set_error_buffer(handle, "DoH URL is malformed");
+        }
+        code
+    })?;
     let namelookup_time_us = elapsed_us(resolve_started.elapsed());
 
     let mut last_error = None;
@@ -1568,7 +1579,13 @@ pub(crate) fn connect_protocol_transport(
     callbacks: EasyCallbacks,
 ) -> Result<ConnectedTransport, CURLcode> {
     let resolve_started = Instant::now();
-    let addrs = resolve_addresses(host, port, &plan.resolve_overrides)?;
+    let addrs =
+        resolve_addresses(host, port, &plan.resolve_overrides, metadata).map_err(|code| {
+            if code == CURLE_URL_MALFORMAT {
+                perform::set_error_buffer(handle, "DoH URL is malformed");
+            }
+            code
+        })?;
     let namelookup_time_us = elapsed_us(resolve_started.elapsed());
 
     let mut last_error = None;
@@ -2771,6 +2788,7 @@ fn resolve_addresses(
     host: &str,
     port: u16,
     resolve_overrides: &[ResolveOverride],
+    metadata: &EasyMetadata,
 ) -> Result<Vec<SocketAddr>, CURLcode> {
     if let Some(entry) = resolve_overrides
         .iter()
@@ -2795,6 +2813,18 @@ fn resolve_addresses(
 
     if let Ok(ip) = host.parse::<IpAddr>() {
         return Ok(vec![SocketAddr::new(ip, port)]);
+    }
+
+    if let Some(doh_url) = metadata.doh_url.as_deref() {
+        let resolved = crate::doh::resolve_host(host, doh_url, metadata)?;
+        let addrs: Vec<_> = resolved
+            .into_iter()
+            .map(|ip| SocketAddr::new(ip, port))
+            .collect();
+        if addrs.is_empty() {
+            return Err(CURLE_COULDNT_RESOLVE_HOST);
+        }
+        return Ok(addrs);
     }
 
     let resolved = (host, port)
@@ -3378,10 +3408,12 @@ fn post_request_body_bytes(metadata: &EasyMetadata) -> Option<Vec<u8>> {
     }
 }
 
-fn prepare_post_request_body(metadata: &EasyMetadata) -> Result<Option<PreparedRequestBody>, CURLcode> {
+fn prepare_post_request_body(
+    metadata: &EasyMetadata,
+) -> Result<Option<PreparedRequestBody>, CURLcode> {
     if let Some(mime_handle) = metadata.mimepost_handle {
-        let (bytes, content_type) = crate::mime::mime_post_bytes(mime_handle as *mut curl_mime)
-            .ok_or(CURLE_READ_ERROR)?;
+        let (bytes, content_type) =
+            crate::mime::mime_post_bytes(mime_handle as *mut curl_mime).ok_or(CURLE_READ_ERROR)?;
         return Ok(Some(PreparedRequestBody {
             bytes,
             content_type: Some(content_type),

@@ -220,6 +220,10 @@ pub(crate) fn is_tls_scheme(scheme: &str) -> bool {
     )
 }
 
+pub(crate) fn policy_for_scheme(scheme: &'static str, metadata: &EasyMetadata) -> TlsPolicy {
+    current_backend().build_policy(scheme, metadata)
+}
+
 pub(crate) fn policy_for_route(route: TransferRoute, metadata: &EasyMetadata) -> Option<TlsPolicy> {
     if !route.tls {
         return None;
@@ -242,7 +246,7 @@ pub(crate) fn policy_for_route(route: TransferRoute, metadata: &EasyMetadata) ->
         _ => "https",
     };
 
-    Some(current_backend().build_policy(scheme, metadata))
+    Some(policy_for_scheme(scheme, metadata))
 }
 
 pub(crate) fn peer_identity(metadata: &EasyMetadata) -> Option<String> {
