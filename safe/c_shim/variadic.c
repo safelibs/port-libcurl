@@ -89,9 +89,11 @@ CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...) {
     break;
   }
   case 4:
-    (void)va_arg(args, struct curl_blob *);
-    result = CURLE_UNKNOWN_OPTION;
+  {
+    void *value = va_arg(args, void *);
+    result = port_safe_easy_setopt_ptr(handle, option, value);
     break;
+  }
   default:
     result = CURLE_UNKNOWN_OPTION;
     break;

@@ -1,6 +1,6 @@
 use port_libcurl_safe::abi::{
-    curl_calloc_callback, curl_easyoption, curl_free_callback, curl_malloc_callback, curl_mime,
-    curl_mimepart, curl_off_t, curl_realloc_callback, curl_slist, curl_ssl_backend,
+    curl_blob, curl_calloc_callback, curl_easyoption, curl_free_callback, curl_malloc_callback,
+    curl_mime, curl_mimepart, curl_off_t, curl_realloc_callback, curl_slist, curl_ssl_backend,
     curl_sslbackend, curl_strdup_callback, curl_version_info_data, CURLMcode, CURLSHcode,
     CURLSHoption, CURLUcode, CURLcode, CURLoption, CURLsslset, CURLversion, CURL, CURLE_OK, CURLM,
     CURLM_OK, CURLOT_STRING, CURLSH, CURLSHE_OK, CURLSHOPT_SHARE, CURLSSLBACKEND_GNUTLS,
@@ -22,6 +22,7 @@ const CURLOPT_COOKIELIST: CURLoption = 10135;
 const CURLOPT_CURLU: CURLoption = 10282;
 const CURLOPT_FOLLOWLOCATION: CURLoption = 52;
 const CURLOPT_NOBODY: CURLoption = 44;
+const CURLOPT_CAINFO_BLOB: CURLoption = 40309;
 const CURLINFO_EFFECTIVE_URL: u32 = 0x100000 + 1;
 const CURLINFO_CONTENT_TYPE: u32 = 0x100000 + 18;
 const CURLINFO_REDIRECT_COUNT: u32 = 0x200000 + 20;
@@ -332,6 +333,16 @@ fn public_abi_smoke_and_allocator_contract() {
 
         let easy = curl_easy_init();
         assert!(!easy.is_null());
+        let mut cainfo_bytes = *b"dummy-ca";
+        let cainfo_blob = curl_blob {
+            data: cainfo_bytes.as_mut_ptr().cast(),
+            len: cainfo_bytes.len(),
+            flags: 1,
+        };
+        assert_eq!(
+            curl_easy_setopt(easy, CURLOPT_CAINFO_BLOB, &cainfo_blob),
+            CURLE_OK
+        );
         let header_text = CString::new("X-Test: native-mime").expect("cstring");
         let mime_headers = curl_slist_append(ptr::null_mut(), header_text.as_ptr());
         assert!(!mime_headers.is_null());
@@ -555,6 +566,19 @@ fn public_abi_smoke_and_allocator_contract() {
             CStr::from_ptr(redirect_target).to_bytes(),
             target_url.as_bytes()
         );
+        assert_eq!(
+            curl_easy_getinfo(easy, CURLINFO_EFFECTIVE_URL, &mut effective_url),
+            CURLE_OK
+        );
+        assert_eq!(
+            CStr::from_ptr(effective_url).to_bytes(),
+            redirect_url.as_bytes()
+        );
+        assert_eq!(
+            curl_easy_getinfo(easy, CURLINFO_REDIRECT_COUNT, &mut redirect_count),
+            CURLE_OK
+        );
+        assert_eq!(redirect_count, 0);
         fixture_join.join().expect("fixture join");
 
         let fmt = CString::new("hello %s %d").expect("cstring");

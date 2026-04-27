@@ -1,7 +1,8 @@
 use crate::abi::{
-    curl_hstsread_callback, curl_hstswrite_callback, curl_off_t, curl_slist, curl_sockaddr,
-    curl_socket_t, CURLcode, CURLoption, CURL, CURLE_BAD_FUNCTION_ARGUMENT, CURLE_FAILED_INIT,
-    CURLE_OK, CURLE_OUT_OF_MEMORY, CURLE_UNKNOWN_OPTION, CURLINFO, CURLM, CURLU, CURLUPART_URL,
+    curl_blob, curl_hstsread_callback, curl_hstswrite_callback, curl_off_t, curl_slist,
+    curl_sockaddr, curl_socket_t, CURLcode, CURLoption, CURL, CURLE_BAD_FUNCTION_ARGUMENT,
+    CURLE_FAILED_INIT, CURLE_OK, CURLE_OUT_OF_MEMORY, CURLE_UNKNOWN_OPTION, CURLINFO, CURLM, CURLU,
+    CURLUPART_URL,
 };
 use crate::dns::{self, ConnectOverride, ResolveOverride, ResolverOwner};
 use crate::multi::state::MultiState;
@@ -132,6 +133,14 @@ const CURLOPT_RTSP_REQUEST: CURLoption = 189;
 const CURLOPT_CLOSESOCKETFUNCTION: CURLoption = 20208;
 const CURLOPT_CLOSESOCKETDATA: CURLoption = 10209;
 const CURLOPT_QUICK_EXIT: CURLoption = 322;
+const CURLOPT_SSLCERT_BLOB: CURLoption = 40291;
+const CURLOPT_SSLKEY_BLOB: CURLoption = 40292;
+const CURLOPT_PROXY_SSLCERT_BLOB: CURLoption = 40293;
+const CURLOPT_PROXY_SSLKEY_BLOB: CURLoption = 40294;
+const CURLOPT_ISSUERCERT_BLOB: CURLoption = 40295;
+const CURLOPT_PROXY_ISSUERCERT_BLOB: CURLoption = 40297;
+const CURLOPT_CAINFO_BLOB: CURLoption = 40309;
+const CURLOPT_PROXY_CAINFO_BLOB: CURLoption = 40310;
 
 const CURLINFO_EFFECTIVE_URL: u32 = 0x100000 + 1;
 const CURLINFO_RESPONSE_CODE: u32 = 0x200000 + 2;
@@ -267,6 +276,14 @@ pub(crate) struct EasyMetadata {
     pub altsvc_ctrl: c_long,
     pub doh_url: Option<String>,
     pub pinned_public_key: Option<String>,
+    pub sslcert_blob: Option<Vec<u8>>,
+    pub sslkey_blob: Option<Vec<u8>>,
+    pub proxy_sslcert_blob: Option<Vec<u8>>,
+    pub proxy_sslkey_blob: Option<Vec<u8>>,
+    pub issuercert_blob: Option<Vec<u8>>,
+    pub proxy_issuercert_blob: Option<Vec<u8>>,
+    pub cainfo_blob: Option<Vec<u8>>,
+    pub proxy_cainfo_blob: Option<Vec<u8>>,
     pub ssl_verify_peer: bool,
     pub ssl_verify_host: c_long,
     pub ssl_enable_alpn: bool,
@@ -362,6 +379,14 @@ impl Default for EasyMetadata {
             altsvc_ctrl: 0,
             doh_url: None,
             pinned_public_key: None,
+            sslcert_blob: None,
+            sslkey_blob: None,
+            proxy_sslcert_blob: None,
+            proxy_sslkey_blob: None,
+            issuercert_blob: None,
+            proxy_issuercert_blob: None,
+            cainfo_blob: None,
+            proxy_cainfo_blob: None,
             ssl_verify_peer: true,
             ssl_verify_host: 2,
             ssl_enable_alpn: true,
@@ -657,6 +682,7 @@ pub(crate) fn reset_handle(handle: *mut CURL) {
         .get_mut(&(handle as usize))
     {
         shadow.metadata = EasyMetadata::default();
+        shadow.cached_multi_plan = None;
         shadow.callbacks = EasyCallbacks::default();
         shadow.info = EasyInfo::default();
         shadow.http_state = crate::http::HandleHttpState::default();
@@ -1148,6 +1174,62 @@ pub(crate) fn easy_setopt_ptr(
             shadow.callbacks.close_socket_data = value as usize;
             CURLE_OK
         }
+        CURLOPT_SSLCERT_BLOB => match copy_blob(value.cast()) {
+            Ok(blob) => {
+                shadow.metadata.sslcert_blob = blob;
+                CURLE_OK
+            }
+            Err(code) => code,
+        },
+        CURLOPT_SSLKEY_BLOB => match copy_blob(value.cast()) {
+            Ok(blob) => {
+                shadow.metadata.sslkey_blob = blob;
+                CURLE_OK
+            }
+            Err(code) => code,
+        },
+        CURLOPT_PROXY_SSLCERT_BLOB => match copy_blob(value.cast()) {
+            Ok(blob) => {
+                shadow.metadata.proxy_sslcert_blob = blob;
+                CURLE_OK
+            }
+            Err(code) => code,
+        },
+        CURLOPT_PROXY_SSLKEY_BLOB => match copy_blob(value.cast()) {
+            Ok(blob) => {
+                shadow.metadata.proxy_sslkey_blob = blob;
+                CURLE_OK
+            }
+            Err(code) => code,
+        },
+        CURLOPT_ISSUERCERT_BLOB => match copy_blob(value.cast()) {
+            Ok(blob) => {
+                shadow.metadata.issuercert_blob = blob;
+                CURLE_OK
+            }
+            Err(code) => code,
+        },
+        CURLOPT_PROXY_ISSUERCERT_BLOB => match copy_blob(value.cast()) {
+            Ok(blob) => {
+                shadow.metadata.proxy_issuercert_blob = blob;
+                CURLE_OK
+            }
+            Err(code) => code,
+        },
+        CURLOPT_CAINFO_BLOB => match copy_blob(value.cast()) {
+            Ok(blob) => {
+                shadow.metadata.cainfo_blob = blob;
+                CURLE_OK
+            }
+            Err(code) => code,
+        },
+        CURLOPT_PROXY_CAINFO_BLOB => match copy_blob(value.cast()) {
+            Ok(blob) => {
+                shadow.metadata.proxy_cainfo_blob = blob;
+                CURLE_OK
+            }
+            Err(code) => code,
+        },
         _ => CURLE_UNKNOWN_OPTION,
     }) {
         Ok(code) => code,
@@ -2045,6 +2127,24 @@ fn copy_c_string(value: *const c_char) -> Option<String> {
                 .into_owned(),
         )
     }
+}
+
+fn copy_blob(value: *const curl_blob) -> Result<Option<Vec<u8>>, CURLcode> {
+    if value.is_null() {
+        return Ok(None);
+    }
+
+    let blob = unsafe { &*value };
+    if blob.data.is_null() {
+        if blob.len == 0 {
+            return Ok(Some(Vec::new()));
+        }
+        return Err(CURLE_BAD_FUNCTION_ARGUMENT);
+    }
+
+    Ok(Some(
+        unsafe { std::slice::from_raw_parts(blob.data.cast::<u8>(), blob.len) }.to_vec(),
+    ))
 }
 
 fn copy_url_from_curlu(value: *mut CURLU) -> Option<String> {
