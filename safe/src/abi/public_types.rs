@@ -253,6 +253,7 @@ pub struct curl_certinfo {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct curl_tlssessioninfo {
     pub backend: curl_sslbackend,
     pub internals: *mut c_void,

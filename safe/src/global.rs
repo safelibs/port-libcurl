@@ -38,7 +38,7 @@ pub(crate) unsafe fn load_reference<T: Copy>(symbol: &'static [u8]) -> T {
     unsafe { mem::transmute_copy(&ptr) }
 }
 
-fn compiled_ssl_backend_id() -> curl_sslbackend {
+pub(crate) fn compiled_ssl_backend_id() -> curl_sslbackend {
     if BUILD_FLAVOR == "openssl" {
         CURLSSLBACKEND_OPENSSL
     } else {

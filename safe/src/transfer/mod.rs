@@ -2191,11 +2191,13 @@ impl RequestContext {
             target_host,
             target_port,
             proxy,
-            request_target: if has_proxy && !metadata.tunnel_proxy {
-                format!("{}://{}{}", parsed.scheme, host_header, path_and_query)
-            } else {
-                parsed.path_and_query
-            },
+            request_target: metadata.request_target.clone().unwrap_or_else(|| {
+                if has_proxy && !metadata.tunnel_proxy {
+                    format!("{}://{}{}", parsed.scheme, host_header, path_and_query)
+                } else {
+                    parsed.path_and_query
+                }
+            }),
             method: effective_method(metadata, websocket_style),
             request_headers: metadata.http_headers.clone(),
             proxy_headers: if has_proxy {

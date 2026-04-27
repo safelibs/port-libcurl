@@ -16,6 +16,7 @@ pub(crate) type CurlWriteCallback =
     Option<unsafe extern "C" fn(*mut c_char, usize, usize, *mut c_void) -> usize>;
 pub(crate) type CurlReadCallback =
     Option<unsafe extern "C" fn(*mut c_char, usize, usize, *mut c_void) -> usize>;
+pub(crate) type CurlSeekCallback = crate::abi::curl_seek_callback;
 pub(crate) type CurlTrailerCallback =
     Option<unsafe extern "C" fn(*mut *mut curl_slist, *mut c_void) -> c_int>;
 pub(crate) type CurlXferInfoCallback = Option<
@@ -38,6 +39,10 @@ const CURLOPT_REFERER: CURLoption = 10016;
 const CURLOPT_USERAGENT: CURLoption = 10018;
 const CURLOPT_WRITEFUNCTION: CURLoption = 20011;
 const CURLOPT_READFUNCTION: CURLoption = 20012;
+const CURLOPT_APPEND: CURLoption = 50;
+const CURLOPT_INTERLEAVEDATA: CURLoption = 10195;
+const CURLOPT_SEEKFUNCTION: CURLoption = 20167;
+const CURLOPT_SEEKDATA: CURLoption = 10168;
 const CURLOPT_COOKIE: CURLoption = 10022;
 const CURLOPT_HTTPPOST: CURLoption = 10024;
 const CURLOPT_HTTPHEADER: CURLoption = 10023;
@@ -55,6 +60,7 @@ const CURLOPT_NOPROGRESS: CURLoption = 43;
 const CURLOPT_NOBODY: CURLoption = 44;
 const CURLOPT_FAILONERROR: CURLoption = 45;
 const CURLOPT_UPLOAD: CURLoption = 46;
+const CURLOPT_DIRLISTONLY: CURLoption = 48;
 const CURLOPT_NETRC: CURLoption = 51;
 const CURLOPT_FOLLOWLOCATION: CURLoption = 52;
 const CURLOPT_TRANSFERTEXT: CURLoption = 53;
@@ -63,9 +69,12 @@ const CURLOPT_XFERINFODATA: CURLoption = 10057;
 const CURLOPT_PROXYPORT: CURLoption = 59;
 const CURLOPT_HTTPPROXYTUNNEL: CURLoption = 61;
 const CURLOPT_HTTP_VERSION: CURLoption = 84;
+const CURLOPT_TIMEOUT_MS: CURLoption = 155;
+const CURLOPT_POSTREDIR: CURLoption = 161;
 const CURLOPT_SSL_VERIFYPEER: CURLoption = 64;
 const CURLOPT_MAXREDIRS: CURLoption = 68;
 const CURLOPT_MAXCONNECTS: CURLoption = 71;
+const CURLOPT_BUFFERSIZE: CURLoption = 98;
 const CURLOPT_CERTINFO: CURLoption = 172;
 const CURLOPT_HEADERFUNCTION: CURLoption = 20079;
 const CURLOPT_HTTPGET: CURLoption = 80;
@@ -88,6 +97,7 @@ const CURLOPT_USERNAME: CURLoption = 10173;
 const CURLOPT_PASSWORD: CURLoption = 10174;
 const CURLOPT_PROXYUSERNAME: CURLoption = 10175;
 const CURLOPT_PROXYPASSWORD: CURLoption = 10176;
+const CURLOPT_NOPROXY: CURLoption = 10177;
 const CURLOPT_RESOLVE: CURLoption = 10203;
 const CURLOPT_RTSP_SESSION_ID: CURLoption = 10190;
 const CURLOPT_RTSP_STREAM_URI: CURLoption = 10191;
@@ -98,6 +108,8 @@ const CURLOPT_PINNEDPUBLICKEY: CURLoption = 10230;
 const CURLOPT_CONNECT_TO: CURLoption = 10243;
 const CURLOPT_PRE_PROXY: CURLoption = 10262;
 const CURLOPT_HEADEROPT: CURLoption = 229;
+const CURLOPT_SUPPRESS_CONNECT_HEADERS: CURLoption = 265;
+const CURLOPT_REQUEST_TARGET: CURLoption = 10266;
 const CURLOPT_ALTSVC_CTRL: CURLoption = 286;
 const CURLOPT_ALTSVC: CURLoption = 10287;
 const CURLOPT_HSTS_CTRL: CURLoption = 299;
@@ -112,11 +124,14 @@ const CURLOPT_TRAILERFUNCTION: CURLoption = 20283;
 const CURLOPT_TRAILERDATA: CURLoption = 10284;
 const CURLOPT_SSL_ENABLE_ALPN: CURLoption = 226;
 const CURLOPT_DOH_URL: CURLoption = 10279;
+const CURLOPT_AWS_SIGV4: CURLoption = 10305;
+const CURLOPT_HTTP09_ALLOWED: CURLoption = 285;
 const CURLOPT_MIMEPOST: CURLoption = 10269;
 const CURLOPT_OPENSOCKETFUNCTION: CURLoption = 20163;
 const CURLOPT_RTSP_REQUEST: CURLoption = 189;
 const CURLOPT_CLOSESOCKETFUNCTION: CURLoption = 20208;
 const CURLOPT_CLOSESOCKETDATA: CURLoption = 10209;
+const CURLOPT_QUICK_EXIT: CURLoption = 322;
 
 const CURLINFO_RESPONSE_CODE: u32 = 0x200000 + 2;
 const CURLINFO_TOTAL_TIME: u32 = 0x300000 + 3;
@@ -130,7 +145,9 @@ const CURLINFO_LOCAL_IP: u32 = 0x100000 + 41;
 const CURLINFO_LOCAL_PORT: u32 = 0x200000 + 42;
 const CURLINFO_COOKIELIST: u32 = 0x400000 + 28;
 const CURLINFO_CERTINFO: u32 = 0x400000 + 34;
+const CURLINFO_TLS_SESSION: u32 = 0x400000 + 43;
 const CURLINFO_PRIVATE: u32 = 0x100000 + 21;
+const CURLINFO_TLS_SSL_PTR: u32 = 0x400000 + 45;
 const CURLINFO_SCHEME: u32 = 0x100000 + 49;
 const CURLINFO_RTSP_SESSION_ID: u32 = 0x100000 + 36;
 const CURLINFO_TOTAL_TIME_T: u32 = 0x600000 + 50;
@@ -150,12 +167,15 @@ pub(crate) struct EasyMetadata {
     pub user_agent: Option<String>,
     pub referer: Option<String>,
     pub range: Option<String>,
+    pub request_target: Option<String>,
     pub resolve_overrides: Vec<ResolveOverride>,
     pub connect_overrides: Vec<ConnectOverride>,
     pub proxy: Option<String>,
+    pub no_proxy: Option<String>,
     pub pre_proxy: Option<String>,
     pub proxy_port: Option<u16>,
     pub tunnel_proxy: bool,
+    pub suppress_connect_headers: bool,
     pub share_handle: Option<usize>,
     pub userpwd: Option<String>,
     pub proxy_userpwd: Option<String>,
@@ -165,6 +185,7 @@ pub(crate) struct EasyMetadata {
     pub proxy_username: Option<String>,
     pub proxy_password: Option<String>,
     pub xoauth2_bearer: Option<String>,
+    pub aws_sigv4: Option<String>,
     pub cookie: Option<String>,
     pub cookie_file: Option<String>,
     pub cookie_jar: Option<String>,
@@ -175,12 +196,16 @@ pub(crate) struct EasyMetadata {
     pub unrestricted_auth: bool,
     pub auto_referer: bool,
     pub max_redirs: Option<c_long>,
+    pub postredir: c_long,
     pub httpauth: c_long,
     pub proxyauth: c_long,
     pub transfer_text: bool,
+    pub dirlistonly: bool,
+    pub append: bool,
     pub headeropt: c_long,
     pub connect_mode: c_long,
     pub ws_options: c_long,
+    pub quick_exit: bool,
     pub curlu_handle: Option<usize>,
     pub mimepost_handle: Option<usize>,
     pub httppost_handle: Option<usize>,
@@ -207,8 +232,11 @@ pub(crate) struct EasyMetadata {
     pub upload_size: Option<curl_off_t>,
     pub http_get: bool,
     pub http_version: c_long,
+    pub http09_allowed: bool,
     pub verbose: bool,
     pub fail_on_error: bool,
+    pub timeout_ms: c_long,
+    pub buffer_size: c_long,
     pub resume_from: i64,
     pub low_speed: LowSpeedWindow,
     pub maxconnects: Option<c_long>,
@@ -234,12 +262,15 @@ impl Default for EasyMetadata {
             user_agent: None,
             referer: None,
             range: None,
+            request_target: None,
             resolve_overrides: Vec::new(),
             connect_overrides: Vec::new(),
             proxy: None,
+            no_proxy: None,
             pre_proxy: None,
             proxy_port: None,
             tunnel_proxy: false,
+            suppress_connect_headers: false,
             share_handle: None,
             userpwd: None,
             proxy_userpwd: None,
@@ -249,6 +280,7 @@ impl Default for EasyMetadata {
             proxy_username: None,
             proxy_password: None,
             xoauth2_bearer: None,
+            aws_sigv4: None,
             cookie: None,
             cookie_file: None,
             cookie_jar: None,
@@ -259,12 +291,16 @@ impl Default for EasyMetadata {
             unrestricted_auth: false,
             auto_referer: false,
             max_redirs: None,
+            postredir: 0,
             httpauth: 0,
             proxyauth: 0,
             transfer_text: false,
+            dirlistonly: false,
+            append: false,
             headeropt: 0,
             connect_mode: 0,
             ws_options: 0,
+            quick_exit: false,
             curlu_handle: None,
             mimepost_handle: None,
             httppost_handle: None,
@@ -291,8 +327,11 @@ impl Default for EasyMetadata {
             upload_size: None,
             http_get: false,
             http_version: 0,
+            http09_allowed: false,
             verbose: false,
             fail_on_error: false,
+            timeout_ms: 0,
+            buffer_size: 0,
             resume_from: 0,
             low_speed: LowSpeedWindow::default(),
             maxconnects: None,
@@ -308,6 +347,9 @@ pub(crate) struct EasyCallbacks {
     pub trailer_data: usize,
     pub write_function: CurlWriteCallback,
     pub write_data: usize,
+    pub interleave_data: usize,
+    pub seek_function: CurlSeekCallback,
+    pub seek_data: usize,
     pub header_function: CurlWriteCallback,
     pub header_data: usize,
     pub xferinfo_function: CurlXferInfoCallback,
@@ -341,6 +383,15 @@ struct EasyInfo {
     retry_after_set: bool,
 }
 
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct StoredTlsSessionInfo {
+    backend: crate::abi::curl_sslbackend,
+    internals: *mut c_void,
+}
+
+unsafe impl Send for StoredTlsSessionInfo {}
+
 #[derive(Clone, Default)]
 pub(crate) struct RecordedTransferInfo {
     pub response_code: c_long,
@@ -364,6 +415,7 @@ struct EasyShadow {
     cached_multi_plan: Option<crate::transfer::TransferPlan>,
     callbacks: EasyCallbacks,
     info: EasyInfo,
+    tls_session_info: Box<StoredTlsSessionInfo>,
     http_state: crate::http::HandleHttpState,
     state: MultiState,
 }
@@ -377,9 +429,17 @@ impl Default for EasyShadow {
             cached_multi_plan: None,
             callbacks: EasyCallbacks::default(),
             info: EasyInfo::default(),
+            tls_session_info: Box::new(default_tls_session_info()),
             http_state: crate::http::HandleHttpState::default(),
             state: MultiState::Init,
         }
+    }
+}
+
+fn default_tls_session_info() -> StoredTlsSessionInfo {
+    StoredTlsSessionInfo {
+        backend: crate::global::compiled_ssl_backend_id(),
+        internals: ptr::null_mut(),
     }
 }
 
@@ -429,6 +489,7 @@ pub(crate) fn register_duplicate(source: *mut CURL, duplicate: *mut CURL) {
                 cached_multi_plan: None,
                 callbacks: shadow.callbacks,
                 info: EasyInfo::default(),
+                tls_session_info: shadow.tls_session_info,
                 http_state: shadow.http_state,
                 state: MultiState::Init,
             },
@@ -578,6 +639,14 @@ pub(crate) fn easy_setopt_long(handle: *mut CURL, option: CURLoption, value: c_l
             shadow.metadata.upload = value != 0;
             CURLE_OK
         }
+        CURLOPT_DIRLISTONLY => {
+            shadow.metadata.dirlistonly = value != 0;
+            CURLE_OK
+        }
+        CURLOPT_APPEND => {
+            shadow.metadata.append = value != 0;
+            CURLE_OK
+        }
         CURLOPT_NETRC => {
             shadow.metadata.netrc_mode = value;
             CURLE_OK
@@ -610,8 +679,16 @@ pub(crate) fn easy_setopt_long(handle: *mut CURL, option: CURLoption, value: c_l
             shadow.metadata.tunnel_proxy = value != 0;
             CURLE_OK
         }
+        CURLOPT_BUFFERSIZE => {
+            shadow.metadata.buffer_size = value;
+            CURLE_OK
+        }
         CURLOPT_MAXREDIRS => {
             shadow.metadata.max_redirs = Some(value);
+            CURLE_OK
+        }
+        CURLOPT_POSTREDIR => {
+            shadow.metadata.postredir = value;
             CURLE_OK
         }
         CURLOPT_COOKIESESSION => {
@@ -654,6 +731,18 @@ pub(crate) fn easy_setopt_long(handle: *mut CURL, option: CURLoption, value: c_l
             shadow.metadata.headeropt = value;
             CURLE_OK
         }
+        CURLOPT_TIMEOUT_MS => {
+            shadow.metadata.timeout_ms = value;
+            CURLE_OK
+        }
+        CURLOPT_SUPPRESS_CONNECT_HEADERS => {
+            shadow.metadata.suppress_connect_headers = value != 0;
+            CURLE_OK
+        }
+        CURLOPT_HTTP09_ALLOWED => {
+            shadow.metadata.http09_allowed = value != 0;
+            CURLE_OK
+        }
         CURLOPT_ALTSVC_CTRL => {
             shadow.metadata.altsvc_ctrl = value;
             shadow.http_state.altsvc.ctrl_bits = value;
@@ -666,6 +755,10 @@ pub(crate) fn easy_setopt_long(handle: *mut CURL, option: CURLoption, value: c_l
         }
         CURLOPT_WS_OPTIONS => {
             shadow.metadata.ws_options = value;
+            CURLE_OK
+        }
+        CURLOPT_QUICK_EXIT => {
+            shadow.metadata.quick_exit = value != 0;
             CURLE_OK
         }
         _ => CURLE_UNKNOWN_OPTION,
@@ -685,6 +778,10 @@ pub(crate) fn easy_setopt_ptr(handle: *mut CURL, option: CURLoption, value: *mut
             shadow.callbacks.write_data = value as usize;
             CURLE_OK
         }
+        CURLOPT_INTERLEAVEDATA => {
+            shadow.callbacks.interleave_data = value as usize;
+            CURLE_OK
+        }
         CURLOPT_URL => {
             shadow.metadata.url = copy_c_string(value.cast());
             shadow.metadata.curlu_handle = None;
@@ -692,6 +789,10 @@ pub(crate) fn easy_setopt_ptr(handle: *mut CURL, option: CURLoption, value: *mut
         }
         CURLOPT_PROXY => {
             shadow.metadata.proxy = copy_c_string(value.cast());
+            CURLE_OK
+        }
+        CURLOPT_NOPROXY => {
+            shadow.metadata.no_proxy = copy_c_string(value.cast());
             CURLE_OK
         }
         CURLOPT_USERPWD => {
@@ -704,6 +805,10 @@ pub(crate) fn easy_setopt_ptr(handle: *mut CURL, option: CURLoption, value: *mut
         }
         CURLOPT_RANGE => {
             shadow.metadata.range = copy_c_string(value.cast());
+            CURLE_OK
+        }
+        CURLOPT_REQUEST_TARGET => {
+            shadow.metadata.request_target = copy_c_string(value.cast());
             CURLE_OK
         }
         CURLOPT_REFERER => {
@@ -748,6 +853,10 @@ pub(crate) fn easy_setopt_ptr(handle: *mut CURL, option: CURLoption, value: *mut
         }
         CURLOPT_TRAILERDATA => {
             shadow.callbacks.trailer_data = value as usize;
+            CURLE_OK
+        }
+        CURLOPT_SEEKDATA => {
+            shadow.callbacks.seek_data = value as usize;
             CURLE_OK
         }
         CURLOPT_XFERINFODATA => {
@@ -805,6 +914,10 @@ pub(crate) fn easy_setopt_ptr(handle: *mut CURL, option: CURLoption, value: *mut
         }
         CURLOPT_XOAUTH2_BEARER => {
             shadow.metadata.xoauth2_bearer = copy_c_string(value.cast());
+            CURLE_OK
+        }
+        CURLOPT_AWS_SIGV4 => {
+            shadow.metadata.aws_sigv4 = copy_c_string(value.cast());
             CURLE_OK
         }
         CURLOPT_PINNEDPUBLICKEY => {
@@ -889,6 +1002,10 @@ pub(crate) fn easy_setopt_function(
     match with_shadow_mut(handle, |shadow| match option {
         CURLOPT_READFUNCTION => {
             shadow.callbacks.read_function = unsafe { core::mem::transmute(value) };
+            CURLE_OK
+        }
+        CURLOPT_SEEKFUNCTION => {
+            shadow.callbacks.seek_function = unsafe { core::mem::transmute(value) };
             CURLE_OK
         }
         CURLOPT_TRAILERFUNCTION => {
@@ -1365,26 +1482,38 @@ pub(crate) fn easy_getinfo_ptr(
     if handle.is_null() || value.is_null() {
         return Some(CURLE_BAD_FUNCTION_ARGUMENT);
     }
-    if info == CURLINFO_PRIVATE {
-        unsafe {
-            *value = registry()
-                .lock()
-                .expect("easy registry mutex poisoned")
-                .get(&(handle as usize))
-                .map(|shadow| shadow.metadata.private_data as *mut c_void)
-                .unwrap_or(ptr::null_mut());
+    match info {
+        CURLINFO_PRIVATE => {
+            unsafe {
+                *value = registry()
+                    .lock()
+                    .expect("easy registry mutex poisoned")
+                    .get(&(handle as usize))
+                    .map(|shadow| shadow.metadata.private_data as *mut c_void)
+                    .unwrap_or(ptr::null_mut());
+            }
+            Some(CURLE_OK)
         }
-        return Some(CURLE_OK);
+        CURLINFO_TLS_SESSION | CURLINFO_TLS_SSL_PTR => {
+            unsafe {
+                *value = registry()
+                    .lock()
+                    .expect("easy registry mutex poisoned")
+                    .get(&(handle as usize))
+                    .map(|shadow| shadow.tls_session_info.as_ref() as *const _ as *mut c_void)
+                    .unwrap_or(ptr::null_mut());
+            }
+            Some(CURLE_OK)
+        }
+        CURLINFO_CERTINFO => {
+            unsafe {
+                *value = crate::tls::certinfo::lookup(handle)
+                    .map_or(ptr::null_mut(), |certinfo| certinfo.cast::<c_void>());
+            }
+            Some(CURLE_OK)
+        }
+        _ => None,
     }
-    if info != CURLINFO_CERTINFO {
-        return None;
-    }
-
-    unsafe {
-        *value = crate::tls::certinfo::lookup(handle)
-            .map_or(ptr::null_mut(), |certinfo| certinfo.cast::<c_void>());
-    }
-    Some(CURLE_OK)
 }
 
 pub(crate) fn clear_error_buffer(handle: *mut CURL) {

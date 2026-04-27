@@ -21,6 +21,10 @@ const CURLOPT_REFERER: CURLoption = 10016;
 const CURLOPT_USERAGENT: CURLoption = 10018;
 const CURLOPT_WRITEFUNCTION: CURLoption = 20011;
 const CURLOPT_READFUNCTION: CURLoption = 20012;
+const CURLOPT_APPEND: CURLoption = 50;
+const CURLOPT_INTERLEAVEDATA: CURLoption = 10195;
+const CURLOPT_SEEKFUNCTION: CURLoption = 20167;
+const CURLOPT_SEEKDATA: CURLoption = 10168;
 const CURLOPT_COOKIE: CURLoption = 10022;
 const CURLOPT_HTTPPOST: CURLoption = 10024;
 const CURLOPT_HTTPHEADER: CURLoption = 10023;
@@ -32,12 +36,14 @@ const CURLOPT_LOW_SPEED_LIMIT: CURLoption = 19;
 const CURLOPT_LOW_SPEED_TIME: CURLoption = 20;
 const CURLOPT_RESUME_FROM: CURLoption = 21;
 const CURLOPT_HEADERDATA: CURLoption = 10029;
+const CURLOPT_BUFFERSIZE: CURLoption = 98;
 const CURLOPT_VERBOSE: CURLoption = 41;
 const CURLOPT_HEADER: CURLoption = 42;
 const CURLOPT_NOPROGRESS: CURLoption = 43;
 const CURLOPT_NOBODY: CURLoption = 44;
 const CURLOPT_FAILONERROR: CURLoption = 45;
 const CURLOPT_UPLOAD: CURLoption = 46;
+const CURLOPT_DIRLISTONLY: CURLoption = 48;
 const CURLOPT_NETRC: CURLoption = 51;
 const CURLOPT_FOLLOWLOCATION: CURLoption = 52;
 const CURLOPT_TRANSFERTEXT: CURLoption = 53;
@@ -46,6 +52,8 @@ const CURLOPT_XFERINFODATA: CURLoption = 10057;
 const CURLOPT_PROXYPORT: CURLoption = 59;
 const CURLOPT_HTTPPROXYTUNNEL: CURLoption = 61;
 const CURLOPT_HTTP_VERSION: CURLoption = 84;
+const CURLOPT_TIMEOUT_MS: CURLoption = 155;
+const CURLOPT_POSTREDIR: CURLoption = 161;
 const CURLOPT_SSL_VERIFYPEER: CURLoption = 64;
 const CURLOPT_MAXREDIRS: CURLoption = 68;
 const CURLOPT_MAXCONNECTS: CURLoption = 71;
@@ -71,18 +79,23 @@ const CURLOPT_USERNAME: CURLoption = 10173;
 const CURLOPT_PASSWORD: CURLoption = 10174;
 const CURLOPT_PROXYUSERNAME: CURLoption = 10175;
 const CURLOPT_PROXYPASSWORD: CURLoption = 10176;
+const CURLOPT_NOPROXY: CURLoption = 10177;
 const CURLOPT_RESOLVE: CURLoption = 10203;
 const CURLOPT_RTSP_SESSION_ID: CURLoption = 10190;
 const CURLOPT_RTSP_STREAM_URI: CURLoption = 10191;
 const CURLOPT_RTSP_TRANSPORT: CURLoption = 10192;
 const CURLOPT_XFERINFOFUNCTION: CURLoption = 20219;
 const CURLOPT_XOAUTH2_BEARER: CURLoption = 10220;
+const CURLOPT_AWS_SIGV4: CURLoption = 10305;
 const CURLOPT_PINNEDPUBLICKEY: CURLoption = 10230;
 const CURLOPT_CONNECT_TO: CURLoption = 10243;
 const CURLOPT_PRE_PROXY: CURLoption = 10262;
 const CURLOPT_HEADEROPT: CURLoption = 229;
+const CURLOPT_SUPPRESS_CONNECT_HEADERS: CURLoption = 265;
+const CURLOPT_REQUEST_TARGET: CURLoption = 10266;
 const CURLOPT_ALTSVC_CTRL: CURLoption = 286;
 const CURLOPT_ALTSVC: CURLoption = 10287;
+const CURLOPT_HTTP09_ALLOWED: CURLoption = 285;
 const CURLOPT_HSTS_CTRL: CURLoption = 299;
 const CURLOPT_HSTS: CURLoption = 10300;
 const CURLOPT_HSTSREADFUNCTION: CURLoption = 20301;
@@ -90,6 +103,7 @@ const CURLOPT_HSTSREADDATA: CURLoption = 10302;
 const CURLOPT_HSTSWRITEFUNCTION: CURLoption = 20303;
 const CURLOPT_HSTSWRITEDATA: CURLoption = 10304;
 const CURLOPT_WS_OPTIONS: CURLoption = 320;
+const CURLOPT_QUICK_EXIT: CURLoption = 322;
 const CURLOPT_TRAILERFUNCTION: CURLoption = 20283;
 const CURLOPT_TRAILERDATA: CURLoption = 10284;
 const CURLOPT_SSL_ENABLE_ALPN: CURLoption = 226;
@@ -349,6 +363,7 @@ unsafe fn configure_reference_handle(
 
     unsafe { setopt_string(reference, CURLOPT_URL, metadata.url.as_deref())? };
     unsafe { setopt_string(reference, CURLOPT_PROXY, metadata.proxy.as_deref())? };
+    unsafe { setopt_string(reference, CURLOPT_NOPROXY, metadata.no_proxy.as_deref())? };
     unsafe { setopt_string(reference, CURLOPT_PRE_PROXY, metadata.pre_proxy.as_deref())? };
     unsafe { setopt_string(reference, CURLOPT_USERPWD, metadata.userpwd.as_deref())? };
     unsafe {
@@ -359,6 +374,13 @@ unsafe fn configure_reference_handle(
         )?
     };
     unsafe { setopt_string(reference, CURLOPT_RANGE, metadata.range.as_deref())? };
+    unsafe {
+        setopt_string(
+            reference,
+            CURLOPT_REQUEST_TARGET,
+            metadata.request_target.as_deref(),
+        )?
+    };
     unsafe { setopt_string(reference, CURLOPT_REFERER, metadata.referer.as_deref())? };
     unsafe { setopt_string(reference, CURLOPT_USERAGENT, metadata.user_agent.as_deref())? };
     unsafe { setopt_string(reference, CURLOPT_COOKIE, metadata.cookie.as_deref())? };
@@ -407,6 +429,7 @@ unsafe fn configure_reference_handle(
             metadata.xoauth2_bearer.as_deref(),
         )?
     };
+    unsafe { setopt_string(reference, CURLOPT_AWS_SIGV4, metadata.aws_sigv4.as_deref())? };
     unsafe {
         setopt_string(
             reference,
@@ -497,6 +520,24 @@ unsafe fn configure_reference_handle(
                 reference,
                 CURLOPT_WRITEDATA,
                 callbacks.write_data as *mut c_void,
+            )?
+        };
+    }
+    if callbacks.interleave_data != 0 {
+        unsafe {
+            setopt_ptr(
+                reference,
+                CURLOPT_INTERLEAVEDATA,
+                callbacks.interleave_data as *mut c_void,
+            )?
+        };
+    }
+    if callbacks.seek_data != 0 {
+        unsafe {
+            setopt_ptr(
+                reference,
+                CURLOPT_SEEKDATA,
+                callbacks.seek_data as *mut c_void,
             )?
         };
     }
@@ -603,6 +644,13 @@ unsafe fn configure_reference_handle(
     unsafe {
         setopt_fn(
             reference,
+            CURLOPT_SEEKFUNCTION,
+            mem::transmute(callbacks.seek_function),
+        )?
+    };
+    unsafe {
+        setopt_fn(
+            reference,
             CURLOPT_HEADERFUNCTION,
             mem::transmute(callbacks.header_function),
         )?
@@ -682,6 +730,8 @@ unsafe fn configure_reference_handle(
         )?
     };
     unsafe { setopt_long(reference, CURLOPT_UPLOAD, metadata.upload as c_long)? };
+    unsafe { setopt_long(reference, CURLOPT_DIRLISTONLY, metadata.dirlistonly as c_long)? };
+    unsafe { setopt_long(reference, CURLOPT_APPEND, metadata.append as c_long)? };
     unsafe { setopt_long(reference, CURLOPT_NETRC, metadata.netrc_mode)? };
     unsafe {
         setopt_long(
@@ -720,6 +770,7 @@ unsafe fn configure_reference_handle(
             metadata.tunnel_proxy as c_long,
         )?
     };
+    unsafe { setopt_long(reference, CURLOPT_BUFFERSIZE, metadata.buffer_size)? };
     unsafe {
         setopt_long(
             reference,
@@ -727,6 +778,8 @@ unsafe fn configure_reference_handle(
             metadata.max_redirs.unwrap_or(-1),
         )?
     };
+    unsafe { setopt_long(reference, CURLOPT_POSTREDIR, metadata.postredir)? };
+    unsafe { setopt_long(reference, CURLOPT_TIMEOUT_MS, metadata.timeout_ms)? };
     unsafe {
         setopt_long(
             reference,
@@ -761,9 +814,30 @@ unsafe fn configure_reference_handle(
     unsafe { setopt_long(reference, CURLOPT_PROXYAUTH, metadata.proxyauth)? };
     unsafe { setopt_long(reference, CURLOPT_RTSP_REQUEST, metadata.rtsp_request)? };
     unsafe { setopt_long(reference, CURLOPT_HEADEROPT, metadata.headeropt)? };
+    unsafe {
+        setopt_long(
+            reference,
+            CURLOPT_SUPPRESS_CONNECT_HEADERS,
+            metadata.suppress_connect_headers as c_long,
+        )?
+    };
+    unsafe {
+        setopt_long(
+            reference,
+            CURLOPT_HTTP09_ALLOWED,
+            metadata.http09_allowed as c_long,
+        )?
+    };
     unsafe { setopt_long(reference, CURLOPT_ALTSVC_CTRL, metadata.altsvc_ctrl)? };
     unsafe { setopt_long(reference, CURLOPT_HSTS_CTRL, metadata.hsts_ctrl)? };
     unsafe { setopt_long(reference, CURLOPT_WS_OPTIONS, metadata.ws_options)? };
+    unsafe {
+        setopt_long(
+            reference,
+            CURLOPT_QUICK_EXIT,
+            metadata.quick_exit as c_long,
+        )?
+    };
     unsafe { setopt_long(reference, CURLOPT_CONNECT_ONLY, metadata.connect_mode)? };
     unsafe {
         setopt_long(
