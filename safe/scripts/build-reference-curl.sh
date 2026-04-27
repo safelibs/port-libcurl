@@ -182,6 +182,9 @@ if [[ "${flavor}" == "openssl" ]]; then
   done < <(find "${worktree}/.pc/90_gnutls.patch" -type f | sort)
 fi
 
+touch_epoch="${SOURCE_DATE_EPOCH:-$(date +%s)}"
+find "${worktree}" -exec touch -d "@${touch_epoch}" {} +
+
 actual_backend="${flavor}"
 ssl_args=()
 if [[ "${flavor}" == "openssl" ]]; then

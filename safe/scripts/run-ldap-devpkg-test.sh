@@ -53,6 +53,22 @@ tmp_root="$(mktemp -d)"
 trap 'rm -rf "${tmp_root}"' EXIT
 out_bin="${binary:-${tmp_root}/ldap-bindata}"
 
+have_ldap_devpkg() {
+  pkgconf --exists ldap >/dev/null 2>&1 || return 1
+  local cflags
+  cflags="$(pkgconf --cflags ldap 2>/dev/null || true)"
+  printf '#include <ldap.h>\n' | gcc -E ${cflags} - >/dev/null 2>&1
+}
+
+if ! have_ldap_devpkg; then
+  if (( compile_only )); then
+    echo "skipping LDAP compile-only coverage: pkg-config ldap and ldap.h are unavailable" >&2
+    exit 0
+  fi
+  echo "missing LDAP development headers; install the ldap dev package to run this check" >&2
+  exit 1
+fi
+
 if [[ "${implementation}" == "compat" ]]; then
   if [[ -z "${build_state}" ]]; then
     build_state="${safe_dir}/.compat/${flavor}/build-state.json"

@@ -1514,7 +1514,6 @@ fn write_request(stream: &mut TransportStream, request: &RequestContext) -> Resu
     encoded.push_str("Host: ");
     encoded.push_str(&request.host_header);
     encoded.push_str("\r\n");
-    encoded.push_str("Accept: */*\r\n");
     if request.proxy.is_some()
         && !request.tunnel_proxy
         && !has_header(&request.request_headers, "Proxy-Connection")
@@ -1522,6 +1521,9 @@ fn write_request(stream: &mut TransportStream, request: &RequestContext) -> Resu
         encoded.push_str("Proxy-Connection: Keep-Alive\r\n");
     }
     append_headers(&mut encoded, &request.request_headers);
+    if !has_header(&request.request_headers, "Accept") {
+        encoded.push_str("Accept: */*\r\n");
+    }
     if request.use_chunked_upload {
         encoded.push_str("Transfer-Encoding: chunked\r\n");
     } else if let Some(body_length) = request.body_length {
