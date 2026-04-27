@@ -445,7 +445,7 @@ pub(crate) fn build_plan(metadata: &EasyMetadata, resolver_owner: ResolverOwner)
     if metadata.follow_location {
         filters.push(ConnectionFilterStep::FollowRedirects);
     }
-        filters.push(ConnectionFilterStep::TransferLoop);
+    filters.push(ConnectionFilterStep::TransferLoop);
 
     TransferPlan {
         cache_key: ConnectionCacheKey {
@@ -1866,46 +1866,12 @@ pub(crate) fn elapsed_us(duration: Duration) -> curl_off_t {
 }
 
 fn requires_reference_backend(
-    metadata: &EasyMetadata,
-    route: crate::protocols::TransferRoute,
+    _metadata: &EasyMetadata,
+    _route: crate::protocols::TransferRoute,
 ) -> bool {
-    let Some(url) = metadata.url.as_deref() else {
-        return false;
-    };
-    if crate::doh::requires_reference_backend(metadata.doh_url.as_deref()) {
-        return true;
-    }
-    if crate::idn::requires_reference_backend(url) {
-        return true;
-    }
-    let Some(authority) = parse_url_authority(url) else {
-        return false;
-    };
-    let _ = authority;
-    if route.requires_reference_multi(metadata.http_version) {
-        return true;
-    }
-
-    match route.handler {
-        crate::protocols::SchemeHandler::Http => false,
-        crate::protocols::SchemeHandler::WebSocket => route.tls,
-        crate::protocols::SchemeHandler::File => false,
-        crate::protocols::SchemeHandler::Ftp
-        | crate::protocols::SchemeHandler::Imap
-        | crate::protocols::SchemeHandler::Pop3
-        | crate::protocols::SchemeHandler::Smtp
-        | crate::protocols::SchemeHandler::Ldap
-        | crate::protocols::SchemeHandler::Smb
-        | crate::protocols::SchemeHandler::Telnet
-        | crate::protocols::SchemeHandler::Tftp
-        | crate::protocols::SchemeHandler::Dict
-        | crate::protocols::SchemeHandler::Gopher
-        | crate::protocols::SchemeHandler::Rtsp
-        | crate::protocols::SchemeHandler::Mqtt
-        | crate::protocols::SchemeHandler::Scp
-        | crate::protocols::SchemeHandler::Sftp
-        | crate::protocols::SchemeHandler::Unknown => false,
-    }
+    // Only the explicit HTTP/2 transport compatibility path may execute through the
+    // reference backend. Public feature/state selection stays on the Rust-owned path.
+    false
 }
 
 pub(crate) fn read_request_body_chunk(

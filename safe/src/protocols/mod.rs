@@ -68,10 +68,6 @@ impl TransferRoute {
     pub(crate) const fn is_http_family(self) -> bool {
         matches!(self.handler, SchemeHandler::Http | SchemeHandler::WebSocket)
     }
-
-    pub(crate) fn requires_reference_multi(self, http_version: c_long) -> bool {
-        crate::vquic::requires_reference_backend(http_version)
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
