@@ -1,6 +1,8 @@
 use crate::http::request::Origin;
 use crate::http::response::split_header_line;
+use std::collections::HashSet;
 use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Cookie {
@@ -10,24 +12,42 @@ pub(crate) struct Cookie {
     pub path: String,
     pub secure: bool,
     pub host_only: bool,
+    pub expires_at: Option<i64>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct CookieStore {
     cookies: Vec<Cookie>,
+    loaded_paths: HashSet<String>,
+}
+
+impl Default for CookieStore {
+    fn default() -> Self {
+        Self {
+            cookies: Vec::new(),
+            loaded_paths: HashSet::new(),
+        }
+    }
 }
 
 impl CookieStore {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.cookies.is_empty()
+    }
+
     pub(crate) fn apply_request(&self, url: &str, manual_cookie: Option<&str>) -> Option<String> {
         if let Some(cookie) = manual_cookie.filter(|value| !value.trim().is_empty()) {
             return Some(cookie.to_string());
         }
         let origin = Origin::from_url(url)?;
         let path = path_for_url(url);
+        let now = current_unix_time();
         let matched = self
             .cookies
             .iter()
-            .filter(|cookie| cookie_matches(cookie, &origin.host, &path, origin.scheme == "https"))
+            .filter(|cookie| {
+                cookie_matches(cookie, &origin.host, &path, origin.scheme == "https", now)
+            })
             .map(|cookie| format!("{}={}", cookie.name, cookie.value))
             .collect::<Vec<_>>();
         (!matched.is_empty()).then(|| matched.join("; "))
@@ -40,12 +60,41 @@ impl CookieStore {
         let Some(cookie) = parse_set_cookie(&origin.host, &path_for_url(url), header_value) else {
             return;
         };
-        self.cookies.retain(|existing| {
-            !(existing.name == cookie.name
-                && existing.domain.eq_ignore_ascii_case(&cookie.domain)
-                && existing.path == cookie.path)
-        });
-        self.cookies.push(cookie);
+        self.remove_matching(&cookie);
+        if !cookie
+            .expires_at
+            .is_some_and(|expires_at| expires_at <= current_unix_time())
+        {
+            self.cookies.push(cookie);
+        }
+    }
+
+    pub(crate) fn load_from_path(&mut self, path: &str, skip_session: bool) -> std::io::Result<()> {
+        if path.trim().is_empty() || !self.loaded_paths.insert(path.to_string()) {
+            return Ok(());
+        }
+        let text = match fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        let now = current_unix_time();
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            let Some(cookie) = parse_netscape_cookie_line(trimmed, skip_session, now) else {
+                continue;
+            };
+            self.remove_matching(&cookie);
+            self.cookies.push(cookie);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn clear_session(&mut self) {
+        self.cookies.retain(|cookie| cookie.expires_at.is_some());
     }
 
     pub(crate) fn flush_to_path(&self, path: &str) -> std::io::Result<()> {
@@ -59,17 +108,26 @@ impl CookieStore {
             .rev()
             .map(|cookie| {
                 format!(
-                    "{}\t{}\t{}\t{}\t0\t{}\t{}",
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{}",
                     cookie.domain,
                     if cookie.host_only { "FALSE" } else { "TRUE" },
                     cookie.path,
                     if cookie.secure { "TRUE" } else { "FALSE" },
+                    cookie.expires_at.unwrap_or(0).max(0),
                     cookie.name,
                     cookie.value
                 )
             })
             .collect::<Vec<_>>();
         render_netscape_lines(&lines)
+    }
+
+    fn remove_matching(&mut self, cookie: &Cookie) {
+        self.cookies.retain(|existing| {
+            !(existing.name == cookie.name
+                && existing.domain.eq_ignore_ascii_case(&cookie.domain)
+                && existing.path == cookie.path)
+        });
     }
 }
 
@@ -102,6 +160,7 @@ pub(crate) fn parse_set_cookie(
         path: default_cookie_path(request_path),
         secure: false,
         host_only: true,
+        expires_at: None,
     };
 
     for segment in segments {
@@ -134,6 +193,18 @@ pub(crate) fn parse_set_cookie(
                     cookie.path = attr_value.trim().to_string();
                 }
             }
+            "max-age" => {
+                let seconds = attr_value.trim().parse::<i64>().ok()?;
+                let now = current_unix_time();
+                cookie.expires_at = if seconds <= 0 {
+                    Some(now.saturating_sub(1))
+                } else {
+                    Some(now.saturating_add(seconds))
+                };
+            }
+            "expires" => {
+                cookie.expires_at = parse_cookie_date(attr_value.trim());
+            }
             _ => {}
         }
     }
@@ -149,7 +220,13 @@ pub(crate) fn record_from_header(store: &mut CookieStore, url: &str, line: &str)
     }
 }
 
-fn cookie_matches(cookie: &Cookie, host: &str, path: &str, secure_request: bool) -> bool {
+fn cookie_matches(cookie: &Cookie, host: &str, path: &str, secure_request: bool, now: i64) -> bool {
+    if cookie
+        .expires_at
+        .is_some_and(|expires_at| expires_at <= now)
+    {
+        return false;
+    }
     if cookie.secure && !secure_request {
         return false;
     }
@@ -212,9 +289,118 @@ fn has_control(value: &str) -> bool {
     value.bytes().any(|byte| byte < 0x20 || byte == 0x7f)
 }
 
+fn parse_netscape_cookie_line(line: &str, skip_session: bool, now: i64) -> Option<Cookie> {
+    let line = line.strip_prefix("#HttpOnly_").unwrap_or(line);
+    let mut fields = line.split('\t');
+    let domain = fields.next()?.trim();
+    let include_subdomains = fields.next()?.trim();
+    let path = fields.next()?.trim();
+    let secure = fields.next()?.trim();
+    let expires = fields.next()?.trim();
+    let name = fields.next()?.trim();
+    let value = fields.next()?.trim();
+    let expires_at = match expires.parse::<i64>().ok().filter(|value| *value > 0) {
+        Some(value) => Some(value),
+        None => None,
+    };
+    if skip_session && expires_at.is_none() {
+        return None;
+    }
+    if expires_at.is_some_and(|expires_at| expires_at <= now) {
+        return None;
+    }
+    Some(Cookie {
+        name: name.to_string(),
+        value: value.to_string(),
+        domain: domain.trim_start_matches('.').to_ascii_lowercase(),
+        path: if path.is_empty() {
+            "/".to_string()
+        } else {
+            path.to_string()
+        },
+        secure: secure.eq_ignore_ascii_case("TRUE"),
+        host_only: !include_subdomains.eq_ignore_ascii_case("TRUE"),
+        expires_at,
+    })
+}
+
+fn parse_cookie_date(value: &str) -> Option<i64> {
+    parse_rfc1123_date(value).or_else(|| value.parse::<i64>().ok())
+}
+
+fn parse_rfc1123_date(value: &str) -> Option<i64> {
+    let mut parts = value.split_whitespace();
+    let weekday = parts.next()?;
+    if !weekday.ends_with(',') {
+        return None;
+    }
+    let day = parts.next()?.parse::<u32>().ok()?;
+    let month = parse_month(parts.next()?)?;
+    let year = parts.next()?.parse::<i32>().ok()?;
+    let (hour, minute, second) = parse_hms(parts.next()?)?;
+    if parts.next()? != "GMT" {
+        return None;
+    }
+    Some(unix_timestamp_utc(year, month, day, hour, minute, second))
+}
+
+fn parse_month(value: &str) -> Option<u32> {
+    match value {
+        "Jan" => Some(1),
+        "Feb" => Some(2),
+        "Mar" => Some(3),
+        "Apr" => Some(4),
+        "May" => Some(5),
+        "Jun" => Some(6),
+        "Jul" => Some(7),
+        "Aug" => Some(8),
+        "Sep" => Some(9),
+        "Oct" => Some(10),
+        "Nov" => Some(11),
+        "Dec" => Some(12),
+        _ => None,
+    }
+}
+
+fn parse_hms(value: &str) -> Option<(u32, u32, u32)> {
+    let mut parts = value.split(':');
+    let hour = parts.next()?.parse().ok()?;
+    let minute = parts.next()?.parse().ok()?;
+    let second = parts.next()?.parse().ok()?;
+    Some((hour, minute, second))
+}
+
+fn unix_timestamp_utc(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> i64 {
+    let days = days_from_civil(year, month, day);
+    days * 86_400 + hour as i64 * 3_600 + minute as i64 * 60 + second as i64
+}
+
+fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
+    let adjusted_year = year - i32::from(month <= 2);
+    let era = if adjusted_year >= 0 {
+        adjusted_year / 400
+    } else {
+        (adjusted_year - 399) / 400
+    };
+    let year_of_era = adjusted_year - era * 400;
+    let month_prime = month as i32 + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * month_prime + 2) / 5 + day as i32 - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    (era * 146_097 + day_of_era - 719_468) as i64
+}
+
+fn current_unix_time() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{parse_set_cookie, CookieStore};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn cookie_rejects_public_suffix_domains() {
@@ -250,5 +436,33 @@ mod tests {
             store.serialize_netscape(),
             "# Netscape HTTP Cookie File\n# https://curl.se/docs/http-cookies.html\n# This file was generated by libcurl! Edit at your own risk.\n\n127.0.0.1\tFALSE\t/we/want/\tFALSE\t0\tsecondcookie\tpresent\n127.0.0.1\tFALSE\t/we/want/\tFALSE\t0\tfoobar\tname\n"
         );
+    }
+
+    #[test]
+    fn cookie_store_loads_matching_cookie_file_entries() {
+        let mut store = CookieStore::default();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_secs() as i64;
+        let path = std::env::temp_dir().join(format!("port-libcurl-safe-cookies-{}.txt", now));
+        std::fs::write(
+            &path,
+            format!(
+                "# Netscape HTTP Cookie File\nexample.test\tFALSE\t/\tFALSE\t{}\tsid\tone\n",
+                now + 60
+            ),
+        )
+        .expect("cookie file");
+        store
+            .load_from_path(path.to_str().expect("path"), false)
+            .expect("load");
+        assert_eq!(
+            store
+                .apply_request("http://example.test/path", None)
+                .as_deref(),
+            Some("sid=one")
+        );
+        let _ = std::fs::remove_file(path);
     }
 }

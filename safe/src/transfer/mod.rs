@@ -10,7 +10,9 @@ use crate::http::auth;
 use crate::http::cookies;
 use crate::http::hsts;
 use crate::http::request::{self, Origin};
-use crate::http::response::{self, HEADER_ORIGIN_1XX, HEADER_ORIGIN_HEADER};
+use crate::http::response::{
+    self, HEADER_ORIGIN_1XX, HEADER_ORIGIN_CONNECT, HEADER_ORIGIN_HEADER, HEADER_ORIGIN_TRAILER,
+};
 use core::ffi::{c_int, c_long, c_void};
 use std::collections::HashMap;
 use std::fs::File;
@@ -210,16 +212,20 @@ struct RequestContext {
     use_chunked_upload: bool,
     range_header: Option<String>,
     body_length: Option<usize>,
+    send_body: bool,
+    http_version: c_long,
 }
 
 struct ResponseMeta {
     status_code: u16,
+    http_version: c_long,
     content_length: Option<usize>,
     content_type: Option<String>,
     has_content_range: bool,
     retry_after: Option<curl_off_t>,
     location: Option<String>,
     body_prefix: Vec<u8>,
+    chunked: bool,
 }
 
 struct TransferOutcome {
@@ -687,13 +693,18 @@ fn perform_transfer_impl(
     };
 
     let _ = perform::with_http_state_mut(handle, |state| state.clear_transient());
-    if let Err(code) = preload_hsts(handle, &metadata, callbacks, metadata.hsts_ctrl != 0) {
+    preload_cookie_store(handle, &metadata);
+    preload_altsvc_cache(handle, &metadata);
+    let hsts_enabled = hsts_enabled(&metadata, callbacks);
+    if let Err(code) = preload_hsts(handle, &metadata, callbacks, hsts_enabled) {
         return code;
     }
     let mut current_url = initial_url;
     let initial_origin = Origin::from_url(&current_url);
     let mut referer_value = metadata.referer.clone();
     let mut allow_cross_origin_auth = false;
+    let mut method_override = None::<String>;
+    let mut send_body = request_body_enabled(&metadata, None);
     let mut redirect_time_us: curl_off_t = 0;
     crate::share::touch_connect_callbacks(handle, metadata.share_handle, 6);
     let redirect_limit = if metadata.follow_location {
@@ -706,7 +717,12 @@ fn perform_transfer_impl(
     };
 
     for redirect_count in 0..=redirect_limit {
-        let mut request = match RequestContext::new(&current_url, &metadata) {
+        let mut request = match RequestContext::new(
+            &current_url,
+            &metadata,
+            method_override.as_deref(),
+            send_body,
+        ) {
             Ok(request) => request,
             Err(code) => return code,
         };
@@ -746,9 +762,7 @@ fn perform_transfer_impl(
 
         let outcome = match outcome {
             Ok(outcome) => outcome,
-            Err(code) => {
-                return finalize_hsts(handle, &metadata, callbacks, metadata.hsts_ctrl != 0, code)
-            }
+            Err(code) => return finalize_hsts(handle, &metadata, callbacks, hsts_enabled, code),
         };
 
         let redirect_url = redirected_url(
@@ -767,10 +781,7 @@ fn perform_transfer_impl(
         recorded_info.redirect_count = redirect_count as c_long;
         recorded_info.redirect_time_us = redirect_time_us;
         recorded_info.num_connects = (redirect_count + 1) as c_long;
-        recorded_info.http_version = match request.scheme.as_str() {
-            "http" | "https" | "ws" | "wss" => CURL_HTTP_VERSION_1_1,
-            _ => 0,
-        };
+        recorded_info.http_version = outcome.info.http_version;
         recorded_info.protocol = crate::easy::perform::protocol_from_url(Some(&current_url));
         perform::record_transfer_info(handle, recorded_info);
 
@@ -789,6 +800,9 @@ fn perform_transfer_impl(
         );
         if let Some(decision) = decision {
             redirect_time_us = redirect_time_us.saturating_add(outcome.info.total_time_us);
+            let next_method = redirect_method(&request.method, outcome.response_code, &metadata);
+            send_body = request_body_enabled(&metadata, Some(next_method.as_str()));
+            method_override = Some(next_method);
             current_url = decision.next_url;
             allow_cross_origin_auth = decision.allow_cross_origin_auth;
             if let Some(referer) = decision.referer {
@@ -797,13 +811,7 @@ fn perform_transfer_impl(
             continue;
         }
 
-        return finalize_hsts(
-            handle,
-            &metadata,
-            callbacks,
-            metadata.hsts_ctrl != 0,
-            outcome.result,
-        );
+        return finalize_hsts(handle, &metadata, callbacks, hsts_enabled, outcome.result);
     }
 
     perform::set_error_buffer(handle, "Maximum redirects followed");
@@ -811,7 +819,7 @@ fn perform_transfer_impl(
         handle,
         &metadata,
         callbacks,
-        metadata.hsts_ctrl != 0,
+        hsts_enabled,
         CURLE_BAD_FUNCTION_ARGUMENT,
     )
 }
@@ -832,6 +840,9 @@ fn preload_hsts(
 ) -> Result<(), CURLcode> {
     if !enabled {
         return Ok(());
+    }
+    if let Some(path) = metadata.hsts_file.as_deref() {
+        let _ = with_hsts_store_mut(handle, metadata, |store| store.load_from_path(path));
     }
     let Some(callback) = callbacks.hsts_read_function else {
         return Ok(());
@@ -867,6 +878,16 @@ fn preload_hsts(
     }
 }
 
+fn hsts_enabled(metadata: &EasyMetadata, callbacks: EasyCallbacks) -> bool {
+    metadata.hsts_ctrl != 0
+        || metadata
+            .hsts_file
+            .as_deref()
+            .is_some_and(|path| !path.trim().is_empty())
+        || callbacks.hsts_read_function.is_some()
+        || callbacks.hsts_write_function.is_some()
+}
+
 fn finalize_hsts(
     handle: *mut CURL,
     metadata: &EasyMetadata,
@@ -877,6 +898,9 @@ fn finalize_hsts(
     if !enabled {
         return result;
     }
+    if let Some(path) = metadata.hsts_file.as_deref() {
+        let _ = with_hsts_store_mut(handle, metadata, |store| store.flush_to_path(path));
+    }
     let Some(callback) = callbacks.hsts_write_function else {
         return result;
     };
@@ -885,8 +909,12 @@ fn finalize_hsts(
     else {
         return result;
     };
-    let total = entries.len();
-    for (index, stored) in entries.iter().enumerate() {
+    let active = entries
+        .into_iter()
+        .filter(|entry| entry.expires > current_unix_time())
+        .collect::<Vec<_>>();
+    let total = active.len();
+    for (index, stored) in active.iter().enumerate() {
         let name = std::ffi::CString::new(stored.host.clone())
             .expect("stored HSTS host contains no interior NUL");
         let mut entry = curl_hstsentry {
@@ -910,6 +938,24 @@ fn finalize_hsts(
         }
     }
     result
+}
+
+fn preload_cookie_store(handle: *mut CURL, metadata: &EasyMetadata) {
+    let Some(path) = metadata.cookie_file.as_deref() else {
+        return;
+    };
+    let _ = with_cookie_store_mut(handle, metadata, |store| {
+        let _ = store.load_from_path(path, metadata.cookie_session);
+    });
+}
+
+fn preload_altsvc_cache(handle: *mut CURL, metadata: &EasyMetadata) {
+    let Some(path) = metadata.altsvc_file.as_deref() else {
+        return;
+    };
+    let _ = perform::with_http_state_mut(handle, |state| {
+        let _ = state.altsvc.load_from_path(path);
+    });
 }
 
 fn perform_file_transfer(
@@ -1074,10 +1120,17 @@ fn execute_http_transfer(
     stream
         .set_write_timeout(Some(CONNECT_TIMEOUT))
         .map_err(|_| CURLE_COULDNT_CONNECT)?;
-    let response_prefix = if request.tunnel_proxy {
-        establish_proxy_tunnel(&mut stream, handle, callbacks, metadata, request)?
+    let (response_prefix, http_connect_code) = if request.tunnel_proxy {
+        establish_proxy_tunnel(
+            &mut stream,
+            handle,
+            callbacks,
+            metadata,
+            request,
+            request_index,
+        )?
     } else {
-        Vec::new()
+        (Vec::new(), 0)
     };
     let mut stream = if let Some(policy) = plan.tls.as_ref() {
         let tls = crate::tls::connect(
@@ -1097,8 +1150,9 @@ fn execute_http_transfer(
         info.appconnect_time_us = transport_ready_us;
     }
     info.pretransfer_time_us = transport_ready_us;
+    info.http_connect_code = http_connect_code;
     write_request(&mut stream, request)?;
-    if metadata.upload {
+    if request.send_body {
         write_request_body(&mut stream, handle, callbacks, request)?;
     }
 
@@ -1112,6 +1166,7 @@ fn execute_http_transfer(
         response_prefix,
     )?;
     flush_cookie_jar(handle, metadata);
+    flush_altsvc_cache(handle, metadata);
     info.starttransfer_time_us = elapsed_us(request_started.elapsed());
     let mut outcome = TransferOutcome {
         result: crate::abi::CURLE_OK,
@@ -1121,6 +1176,7 @@ fn execute_http_transfer(
         location: response.location,
         info,
     };
+    outcome.info.http_version = response.http_version;
 
     let resume_requested = metadata.resume_from > 0;
     let ignore_body = if resume_requested && response.status_code == 416 {
@@ -1150,14 +1206,27 @@ fn execute_http_transfer(
 
     let mut low_speed = LowSpeedGuard::new(plan.low_speed);
     invoke_progress_callback(callbacks, 0, response.content_length)?;
-    transfer_body(
-        &mut stream,
-        handle,
-        callbacks,
-        response.body_prefix,
-        response.content_length,
-        &mut low_speed,
-    )?;
+    if response.chunked {
+        transfer_chunked_body(
+            &mut stream,
+            handle,
+            callbacks,
+            metadata,
+            request,
+            request_index,
+            response.body_prefix,
+            &mut low_speed,
+        )?;
+    } else {
+        transfer_body(
+            &mut stream,
+            handle,
+            callbacks,
+            response.body_prefix,
+            response.content_length,
+            &mut low_speed,
+        )?;
+    }
     outcome.info.total_time_us = elapsed_us(request_started.elapsed());
     Ok(outcome)
 }
@@ -1167,6 +1236,13 @@ fn flush_cookie_jar(handle: *mut CURL, metadata: &EasyMetadata) {
         return;
     };
     let _ = with_cookie_store_mut(handle, metadata, |store| store.flush_to_path(path));
+}
+
+fn flush_altsvc_cache(handle: *mut CURL, metadata: &EasyMetadata) {
+    let Some(path) = metadata.altsvc_file.as_deref() else {
+        return;
+    };
+    let _ = perform::with_http_state_mut(handle, |state| state.altsvc.flush_to_path(path));
 }
 
 pub(crate) fn transfer_body(
@@ -1211,6 +1287,124 @@ pub(crate) fn transfer_body(
     }
 
     Ok(())
+}
+
+fn transfer_chunked_body(
+    stream: &mut TransportStream,
+    handle: *mut CURL,
+    callbacks: EasyCallbacks,
+    metadata: &EasyMetadata,
+    request: &RequestContext,
+    request_index: usize,
+    mut buffer: Vec<u8>,
+    low_speed: &mut LowSpeedGuard,
+) -> Result<(), CURLcode> {
+    let mut delivered = 0usize;
+    loop {
+        let line = read_line_buffered(stream, &mut buffer, low_speed)?;
+        let text = String::from_utf8_lossy(&line);
+        let trimmed = text.trim_end_matches(['\r', '\n']);
+        let size_text = trimmed.split(';').next().unwrap_or("").trim();
+        let chunk_size = usize::from_str_radix(size_text, 16).map_err(|_| CURLE_READ_ERROR)?;
+        if chunk_size == 0 {
+            process_trailer_block(
+                stream,
+                handle,
+                callbacks,
+                metadata,
+                request,
+                request_index,
+                &mut buffer,
+                low_speed,
+            )?;
+            break;
+        }
+        ensure_buffered_data(stream, &mut buffer, chunk_size, low_speed)?;
+        let mut chunk = buffer.drain(..chunk_size).collect::<Vec<_>>();
+        consume_chunk_ending(stream, &mut buffer, low_speed)?;
+        deliver_write(handle, callbacks, &mut chunk)?;
+        delivered = delivered.saturating_add(chunk_size);
+        low_speed.observe_progress(chunk_size)?;
+        invoke_progress_callback(callbacks, delivered, None)?;
+    }
+    Ok(())
+}
+
+fn read_line_buffered(
+    stream: &mut TransportStream,
+    buffer: &mut Vec<u8>,
+    low_speed: &mut LowSpeedGuard,
+) -> Result<Vec<u8>, CURLcode> {
+    loop {
+        if let Some(position) = buffer.iter().position(|byte| *byte == b'\n') {
+            return Ok(buffer.drain(..=position).collect());
+        }
+        read_more_body_data(stream, buffer, low_speed)?;
+    }
+}
+
+fn ensure_buffered_data(
+    stream: &mut TransportStream,
+    buffer: &mut Vec<u8>,
+    needed: usize,
+    low_speed: &mut LowSpeedGuard,
+) -> Result<(), CURLcode> {
+    while buffer.len() < needed {
+        read_more_body_data(stream, buffer, low_speed)?;
+    }
+    Ok(())
+}
+
+fn consume_chunk_ending(
+    stream: &mut TransportStream,
+    buffer: &mut Vec<u8>,
+    low_speed: &mut LowSpeedGuard,
+) -> Result<(), CURLcode> {
+    if buffer.starts_with(b"\r\n") {
+        buffer.drain(..2);
+        return Ok(());
+    }
+    if buffer.starts_with(b"\n") {
+        buffer.drain(..1);
+        return Ok(());
+    }
+    while buffer.len() < 2 {
+        read_more_body_data(stream, buffer, low_speed)?;
+        if buffer.starts_with(b"\n") {
+            buffer.drain(..1);
+            return Ok(());
+        }
+    }
+    if buffer.starts_with(b"\r\n") {
+        buffer.drain(..2);
+        Ok(())
+    } else if buffer.starts_with(b"\n") {
+        buffer.drain(..1);
+        Ok(())
+    } else {
+        Err(CURLE_READ_ERROR)
+    }
+}
+
+fn read_more_body_data(
+    stream: &mut TransportStream,
+    buffer: &mut Vec<u8>,
+    low_speed: &mut LowSpeedGuard,
+) -> Result<(), CURLcode> {
+    loop {
+        let mut scratch = [0u8; 4096];
+        match stream.read(&mut scratch) {
+            Ok(0) => return Err(CURLE_READ_ERROR),
+            Ok(read) => {
+                buffer.extend_from_slice(&scratch[..read]);
+                return Ok(());
+            }
+            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                low_speed.observe_idle()?;
+            }
+            Err(_) => return Err(CURLE_READ_ERROR),
+        }
+    }
 }
 
 fn connect_stream(
@@ -1471,12 +1665,13 @@ fn establish_proxy_tunnel(
     callbacks: EasyCallbacks,
     metadata: &EasyMetadata,
     request: &RequestContext,
-) -> Result<Vec<u8>, CURLcode> {
+    request_index: usize,
+) -> Result<(Vec<u8>, c_long), CURLcode> {
     write_proxy_connect_request(stream, request)?;
     let (status_code, body_prefix) =
-        read_proxy_connect_response(stream, handle, callbacks, metadata)?;
+        read_proxy_connect_response(stream, handle, callbacks, metadata, request, request_index)?;
     if (200..300).contains(&status_code) {
-        Ok(body_prefix)
+        Ok((body_prefix, c_long::from(status_code)))
     } else {
         perform::set_error_buffer(handle, "HTTP proxy CONNECT failed");
         Err(CURLE_COULDNT_CONNECT)
@@ -1510,7 +1705,11 @@ fn write_request(stream: &mut TransportStream, request: &RequestContext) -> Resu
     encoded.push_str(&request.method);
     encoded.push(' ');
     encoded.push_str(&request.request_target);
-    encoded.push_str(" HTTP/1.1\r\n");
+    encoded.push_str(if request.http_version == CURL_HTTP_VERSION_1_0 {
+        " HTTP/1.0\r\n"
+    } else {
+        " HTTP/1.1\r\n"
+    });
     encoded.push_str("Host: ");
     encoded.push_str(&request.host_header);
     encoded.push_str("\r\n");
@@ -1568,19 +1767,30 @@ fn write_request_body(
         return write_chunked_request_body(stream, handle, callbacks);
     }
 
-    let mut remaining = request.body_length.unwrap_or(0);
     let mut buf = vec![0u8; 16 * 1024];
-    while remaining > 0 {
-        let chunk_len = remaining.min(buf.len());
-        let read = read_request_body_chunk(handle, callbacks, &mut buf[..chunk_len])?;
-        if read == 0 {
-            perform::set_error_buffer(handle, "Failed reading upload data");
-            return Err(CURLE_READ_ERROR);
+    if let Some(mut remaining) = request.body_length {
+        while remaining > 0 {
+            let chunk_len = remaining.min(buf.len());
+            let read = read_request_body_chunk(handle, callbacks, &mut buf[..chunk_len])?;
+            if read == 0 {
+                perform::set_error_buffer(handle, "Failed reading upload data");
+                return Err(CURLE_READ_ERROR);
+            }
+            stream
+                .write_all(&buf[..read])
+                .map_err(|_| CURLE_SEND_ERROR)?;
+            remaining -= read;
         }
-        stream
-            .write_all(&buf[..read])
-            .map_err(|_| CURLE_SEND_ERROR)?;
-        remaining -= read;
+    } else {
+        loop {
+            let read = read_request_body_chunk(handle, callbacks, &mut buf)?;
+            if read == 0 {
+                break;
+            }
+            stream
+                .write_all(&buf[..read])
+                .map_err(|_| CURLE_SEND_ERROR)?;
+        }
     }
     stream.flush().map_err(|_| CURLE_SEND_ERROR)
 }
@@ -1641,44 +1851,21 @@ fn read_proxy_connect_response(
     handle: *mut CURL,
     callbacks: EasyCallbacks,
     metadata: &EasyMetadata,
+    request: &RequestContext,
+    request_index: usize,
 ) -> Result<(u16, Vec<u8>), CURLcode> {
-    let mut bytes = Vec::new();
-    let started = Instant::now();
-    let header_end = loop {
-        if let Some(header_end) = find_header_end(&bytes) {
-            break header_end;
-        }
-        if bytes.len() > response::MAX_RESPONSE_HEADERS_BYTES {
-            perform::set_error_buffer(handle, "Too large response headers");
-            return Err(CURLE_RECV_ERROR);
-        }
-        if started.elapsed() >= HEADER_WAIT_TIMEOUT {
-            return Err(CURLE_OPERATION_TIMEDOUT);
-        }
-
-        let mut buf = [0u8; 1024];
-        match stream.read(&mut buf) {
-            Ok(0) if bytes.is_empty() => return Err(CURLE_READ_ERROR),
-            Ok(0) => break bytes.len(),
-            Ok(read) => bytes.extend_from_slice(&buf[..read]),
-            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
-            Err(_) => return Err(CURLE_READ_ERROR),
-        }
-    };
-
-    let header_block = &bytes[..header_end];
-    let body_prefix = bytes[header_end..].to_vec();
-    let mut status_code = 0u16;
-    for (index, raw_line) in split_header_lines(header_block).into_iter().enumerate() {
-        deliver_header(handle, callbacks, metadata, raw_line)?;
-        let text = String::from_utf8_lossy(raw_line);
-        let trimmed = text.trim_end_matches(['\r', '\n']);
-        if index == 0 {
-            status_code = parse_status_code(trimmed).ok_or(CURLE_READ_ERROR)?;
-        }
-    }
-
-    Ok((status_code, body_prefix))
+    let (header_block, body_prefix) = read_header_block(stream, handle, Vec::new())?;
+    let parsed = process_response_header_block(
+        handle,
+        callbacks,
+        metadata,
+        request,
+        request_index,
+        &header_block,
+        HEADER_ORIGIN_CONNECT,
+        !metadata.suppress_connect_headers,
+    )?;
+    Ok((parsed.status_code, body_prefix))
 }
 
 fn read_response_meta_with_prefix(
@@ -1688,8 +1875,34 @@ fn read_response_meta_with_prefix(
     metadata: &EasyMetadata,
     request: &RequestContext,
     request_index: usize,
-    mut bytes: Vec<u8>,
+    bytes: Vec<u8>,
 ) -> Result<ResponseMeta, CURLcode> {
+    let mut pending = bytes;
+    loop {
+        let (header_block, body_prefix) = read_header_block(stream, handle, pending)?;
+        let mut parsed = process_response_header_block(
+            handle,
+            callbacks,
+            metadata,
+            request,
+            request_index,
+            &header_block,
+            HEADER_ORIGIN_HEADER,
+            true,
+        )?;
+        parsed.body_prefix = body_prefix;
+        if parsed.status_code >= 200 || parsed.status_code == 101 {
+            return Ok(parsed);
+        }
+        pending = parsed.body_prefix;
+    }
+}
+
+fn read_header_block<R: Read>(
+    stream: &mut R,
+    handle: *mut CURL,
+    mut bytes: Vec<u8>,
+) -> Result<(Vec<u8>, Vec<u8>), CURLcode> {
     let started = Instant::now();
     let header_end = loop {
         if let Some(header_end) = find_header_end(&bytes) {
@@ -1712,32 +1925,47 @@ fn read_response_meta_with_prefix(
             Err(_) => return Err(CURLE_READ_ERROR),
         }
     };
+    Ok((bytes[..header_end].to_vec(), bytes[header_end..].to_vec()))
+}
 
-    let body_prefix = bytes[header_end..].to_vec();
-    let header_block = &bytes[..header_end];
-    let mut status_code = 0u16;
+fn process_response_header_block(
+    handle: *mut CURL,
+    callbacks: EasyCallbacks,
+    metadata: &EasyMetadata,
+    request: &RequestContext,
+    request_index: usize,
+    header_block: &[u8],
+    default_origin: u32,
+    emit_headers: bool,
+) -> Result<ResponseMeta, CURLcode> {
+    let lines = split_header_lines(header_block);
+    let status_line = lines.first().copied().ok_or(CURLE_READ_ERROR)?;
+    let status_text = String::from_utf8_lossy(status_line);
+    let status_trimmed = status_text.trim_end_matches(['\r', '\n']);
+    let status_code = parse_status_code(status_trimmed).ok_or(CURLE_READ_ERROR)?;
+    let origin_flag =
+        if default_origin == HEADER_ORIGIN_HEADER && status_code < 200 && status_code != 101 {
+            HEADER_ORIGIN_1XX
+        } else {
+            default_origin
+        };
     let mut content_length = None;
     let mut content_type = None;
     let mut has_content_range = false;
     let mut retry_after = None;
     let mut location = None;
-    let mut origin_flag = HEADER_ORIGIN_HEADER;
+    let mut chunked = false;
     let _ = perform::with_http_state_mut(handle, |state| {
         state.headers.set_latest_request(request_index)
     });
 
-    for (index, raw_line) in split_header_lines(header_block).into_iter().enumerate() {
-        deliver_header(handle, callbacks, metadata, raw_line)?;
+    for (index, raw_line) in lines.into_iter().enumerate() {
+        if emit_headers {
+            deliver_header(handle, callbacks, metadata, raw_line)?;
+        }
         let text = String::from_utf8_lossy(raw_line);
         let trimmed = text.trim_end_matches(['\r', '\n']);
-        if index == 0 {
-            status_code = parse_status_code(trimmed).ok_or(CURLE_READ_ERROR)?;
-            if status_code < 200 {
-                origin_flag = HEADER_ORIGIN_1XX;
-            }
-            continue;
-        }
-        if trimmed.is_empty() {
+        if index == 0 || trimmed.is_empty() {
             continue;
         }
         let Some((name, value)) = trimmed.split_once(':') else {
@@ -1745,18 +1973,15 @@ fn read_response_meta_with_prefix(
         };
         let name = name.trim();
         let value = value.trim();
-        let _ = perform::with_http_state_mut(handle, |state| {
-            state
-                .headers
-                .record(request_index, origin_flag, name, value);
-            cookies::record_from_header(&mut state.cookies, &request.url, trimmed);
-        });
-        let _ = crate::share::with_shared_cookies_mut(metadata.share_handle, |store| {
-            cookies::record_from_header(store, &request.url, trimmed);
-        });
-        let _ = with_hsts_store_mut(handle, metadata, |store| {
-            hsts::record_from_header(store, &request.target_host, trimmed);
-        });
+        record_received_header(
+            handle,
+            metadata,
+            request,
+            request_index,
+            origin_flag,
+            name,
+            value,
+        );
         if name.eq_ignore_ascii_case("content-length") {
             content_length = value.parse::<usize>().ok();
         } else if name.eq_ignore_ascii_case("content-type") {
@@ -1767,17 +1992,114 @@ fn read_response_meta_with_prefix(
             retry_after = parse_retry_after(value);
         } else if name.eq_ignore_ascii_case("location") {
             location = Some(value.to_string());
+        } else if name.eq_ignore_ascii_case("transfer-encoding") {
+            chunked = value
+                .split(',')
+                .any(|part| part.trim().eq_ignore_ascii_case("chunked"));
         }
     }
+
     Ok(ResponseMeta {
         status_code,
+        http_version: parse_http_version(status_trimmed),
         content_length,
         content_type,
         has_content_range,
         retry_after,
         location,
-        body_prefix,
+        body_prefix: Vec::new(),
+        chunked,
     })
+}
+
+fn process_trailer_block(
+    stream: &mut TransportStream,
+    handle: *mut CURL,
+    callbacks: EasyCallbacks,
+    metadata: &EasyMetadata,
+    request: &RequestContext,
+    request_index: usize,
+    buffer: &mut Vec<u8>,
+    low_speed: &mut LowSpeedGuard,
+) -> Result<(), CURLcode> {
+    if buffer.starts_with(b"\r\n") {
+        deliver_header(handle, callbacks, metadata, b"\r\n")?;
+        buffer.drain(..2);
+        return Ok(());
+    }
+    if buffer.starts_with(b"\n") {
+        deliver_header(handle, callbacks, metadata, b"\n")?;
+        buffer.drain(..1);
+        return Ok(());
+    }
+    let header_end = loop {
+        if let Some(header_end) = find_header_end(buffer) {
+            break header_end;
+        }
+        if buffer.len() > response::MAX_RESPONSE_HEADERS_BYTES {
+            perform::set_error_buffer(handle, "Too large response headers");
+            return Err(CURLE_RECV_ERROR);
+        }
+        let mut scratch = [0u8; 1024];
+        match stream.read(&mut scratch) {
+            Ok(0) => return Err(CURLE_READ_ERROR),
+            Ok(read) => buffer.extend_from_slice(&scratch[..read]),
+            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                low_speed.observe_idle()?;
+            }
+            Err(_) => return Err(CURLE_READ_ERROR),
+        }
+    };
+    let header_block = buffer.drain(..header_end).collect::<Vec<_>>();
+    for raw_line in split_header_lines(&header_block) {
+        deliver_header(handle, callbacks, metadata, raw_line)?;
+        let text = String::from_utf8_lossy(raw_line);
+        let trimmed = text.trim_end_matches(['\r', '\n']);
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Some((name, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        record_received_header(
+            handle,
+            metadata,
+            request,
+            request_index,
+            HEADER_ORIGIN_TRAILER,
+            name.trim(),
+            value.trim(),
+        );
+    }
+    Ok(())
+}
+
+fn record_received_header(
+    handle: *mut CURL,
+    metadata: &EasyMetadata,
+    request: &RequestContext,
+    request_index: usize,
+    origin_flag: u32,
+    name: &str,
+    value: &str,
+) {
+    let line = format!("{name}: {value}");
+    let _ = perform::with_http_state_mut(handle, |state| {
+        state
+            .headers
+            .record(request_index, origin_flag, name, value);
+        cookies::record_from_header(&mut state.cookies, &request.url, &line);
+        hsts::record_from_header(&mut state.hsts, &request.target_host, &line);
+        if name.eq_ignore_ascii_case("alt-svc") {
+            state.altsvc.remember_header(&request.target_host, value);
+        }
+    });
+    let _ = crate::share::with_shared_cookies_mut(metadata.share_handle, |store| {
+        cookies::record_from_header(store, &request.url, &line);
+    });
+    let _ = with_hsts_store_mut(handle, metadata, |store| {
+        hsts::record_from_header(store, &request.target_host, &line);
+    });
 }
 
 fn should_use_reference_http2_transport(
@@ -2107,7 +2429,14 @@ fn prepare_request_headers(
         }
     }
 
-    let uses_cookies = metadata.cookie.is_some()
+    let store_has_cookies =
+        crate::share::with_shared_cookies(metadata.share_handle, |store| !store.is_empty())
+            .unwrap_or_else(|| {
+                perform::with_http_state_mut(handle, |state| !state.cookies.is_empty())
+                    .unwrap_or(false)
+            });
+    let uses_cookies = store_has_cookies
+        || metadata.cookie.is_some()
         || metadata.cookie_file.is_some()
         || metadata.cookie_jar.is_some()
         || !metadata.cookie_list.is_empty()
@@ -2149,7 +2478,12 @@ fn prepare_request_headers(
 }
 
 impl RequestContext {
-    fn new(url: &str, metadata: &EasyMetadata) -> Result<Self, CURLcode> {
+    fn new(
+        url: &str,
+        metadata: &EasyMetadata,
+        method_override: Option<&str>,
+        send_body: bool,
+    ) -> Result<Self, CURLcode> {
         let parsed = ParsedUrl::parse(url).ok_or(CURLE_URL_MALFORMAT)?;
         let websocket_style = crate::ws::websocket_mode_enabled(metadata.connect_mode)
             && matches!(parsed.scheme.as_str(), "ws" | "wss");
@@ -2183,6 +2517,9 @@ impl RequestContext {
         let scheme = parsed.scheme.clone();
         let host_header = parsed.host_header.clone();
         let path_and_query = parsed.path_and_query.clone();
+        let method = effective_method(metadata, websocket_style, method_override);
+        let http_version = request_http_version(metadata);
+        let upload_body = send_body && metadata.upload;
 
         Ok(Self {
             url: url.to_string(),
@@ -2198,7 +2535,7 @@ impl RequestContext {
                     parsed.path_and_query
                 }
             }),
-            method: effective_method(metadata, websocket_style),
+            method,
             request_headers: metadata.http_headers.clone(),
             proxy_headers: if has_proxy {
                 if separate_proxy_headers {
@@ -2213,13 +2550,17 @@ impl RequestContext {
             },
             tunnel_proxy: metadata.tunnel_proxy,
             websocket_style,
-            use_chunked_upload: metadata.upload && metadata.upload_size.is_none(),
+            use_chunked_upload: upload_body
+                && metadata.upload_size.is_none()
+                && http_version != CURL_HTTP_VERSION_1_0,
             range_header: effective_range_header(metadata),
-            body_length: if websocket_style || !metadata.upload {
+            body_length: if websocket_style || !upload_body {
                 None
             } else {
                 metadata.upload_size.map(|size| size.max(0) as usize)
             },
+            send_body: upload_body,
+            http_version,
         })
     }
 }
@@ -2299,9 +2640,16 @@ fn fill_hsts_expire(entry: &mut curl_hstsentry, value: Option<&str>) {
     }
 }
 
-fn effective_method(metadata: &EasyMetadata, websocket_style: bool) -> String {
+fn effective_method(
+    metadata: &EasyMetadata,
+    websocket_style: bool,
+    method_override: Option<&str>,
+) -> String {
     if websocket_style {
         return "GET".to_string();
+    }
+    if let Some(method) = method_override {
+        return method.to_string();
     }
     if let Some(custom) = metadata.custom_request.as_ref() {
         return custom.clone();
@@ -2309,10 +2657,66 @@ fn effective_method(metadata: &EasyMetadata, websocket_style: bool) -> String {
     if metadata.nobody {
         return "HEAD".to_string();
     }
+    if metadata.mimepost_handle.is_some() || metadata.httppost_handle.is_some() {
+        return "POST".to_string();
+    }
     if metadata.upload {
         return "PUT".to_string();
     }
+    if metadata.http_get {
+        return "GET".to_string();
+    }
     "GET".to_string()
+}
+
+fn request_body_enabled(metadata: &EasyMetadata, method_override: Option<&str>) -> bool {
+    if metadata.nobody {
+        return false;
+    }
+    if let Some(method) = method_override {
+        if method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD") {
+            return false;
+        }
+    }
+    metadata.upload
+}
+
+fn redirect_method(current_method: &str, status_code: u16, metadata: &EasyMetadata) -> String {
+    const CURL_REDIR_POST_301: c_long = 1 << 0;
+    const CURL_REDIR_POST_302: c_long = 1 << 1;
+    const CURL_REDIR_POST_303: c_long = 1 << 2;
+
+    if status_code == 303 && !current_method.eq_ignore_ascii_case("GET") {
+        if current_method.eq_ignore_ascii_case("POST")
+            && (metadata.postredir & CURL_REDIR_POST_303) != 0
+        {
+            return "POST".to_string();
+        }
+        return if current_method.eq_ignore_ascii_case("HEAD") {
+            "HEAD".to_string()
+        } else {
+            "GET".to_string()
+        };
+    }
+
+    if current_method.eq_ignore_ascii_case("POST") {
+        if status_code == 301 && (metadata.postredir & CURL_REDIR_POST_301) == 0 {
+            return "GET".to_string();
+        }
+        if status_code == 302 && (metadata.postredir & CURL_REDIR_POST_302) == 0 {
+            return "GET".to_string();
+        }
+    }
+
+    current_method.to_string()
+}
+
+fn request_http_version(metadata: &EasyMetadata) -> c_long {
+    if metadata.http_version == CURL_HTTP_VERSION_1_0 {
+        CURL_HTTP_VERSION_1_0
+    } else {
+        CURL_HTTP_VERSION_1_1
+    }
 }
 
 fn effective_range_header(metadata: &EasyMetadata) -> Option<String> {
@@ -2387,14 +2791,33 @@ fn parse_status_code(line: &str) -> Option<u16> {
     fields.next()?.parse().ok()
 }
 
+fn parse_http_version(line: &str) -> c_long {
+    let version = line.split_whitespace().next().unwrap_or_default();
+    if version.eq_ignore_ascii_case("HTTP/1.0") {
+        CURL_HTTP_VERSION_1_0
+    } else if version.eq_ignore_ascii_case("HTTP/1.1") {
+        CURL_HTTP_VERSION_1_1
+    } else {
+        0
+    }
+}
+
 fn parse_retry_after(value: &str) -> Option<curl_off_t> {
     if let Ok(seconds) = value.parse::<curl_off_t>() {
         return Some(seconds);
     }
 
     let timestamp = parse_http_date(value)?;
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs() as i64;
+    let now = current_unix_time();
     Some((timestamp - now) as curl_off_t)
+}
+
+fn current_unix_time() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 fn has_header(headers: &[String], name: &str) -> bool {

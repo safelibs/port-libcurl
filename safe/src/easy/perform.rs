@@ -747,6 +747,26 @@ fn apply_cookie_list_item(shadow: &mut EasyShadow, item: String) {
         flush_cookie_store(shadow);
         return;
     }
+    if item.eq_ignore_ascii_case("SESS") {
+        shadow.http_state.cookies.clear_session();
+        let _ = crate::share::with_shared_cookies_mut(shadow.metadata.share_handle, |store| {
+            store.clear_session();
+        });
+        shadow.metadata.cookie_session = true;
+        return;
+    }
+    if item.eq_ignore_ascii_case("RELOAD") {
+        if let Some(path) = shadow.metadata.cookie_file.as_deref() {
+            let _ = shadow
+                .http_state
+                .cookies
+                .load_from_path(path, shadow.metadata.cookie_session);
+            let _ = crate::share::with_shared_cookies_mut(shadow.metadata.share_handle, |store| {
+                let _ = store.load_from_path(path, shadow.metadata.cookie_session);
+            });
+        }
+        return;
+    }
 
     if let Some(value) = item.strip_prefix("Set-Cookie:").map(str::trim) {
         if let Some(current_url) = shadow.metadata.url.as_deref() {
@@ -1468,6 +1488,8 @@ pub(crate) fn record_transfer_info(handle: *mut CURL, info: RecordedTransferInfo
         shadow.info.http_version = info.http_version;
         shadow.info.protocol = info.protocol;
         shadow.info.filetime = info.filetime;
+        shadow.info.retry_after_set = false;
+        shadow.info.retry_after = 0;
         if let Some(retry_after) = info.retry_after {
             shadow.info.retry_after = retry_after;
             shadow.info.retry_after_set = true;

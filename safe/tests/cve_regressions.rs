@@ -10,7 +10,7 @@ use std::ptr;
 use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const CURLOPT_URL: u32 = 10002;
 const CURLOPT_FOLLOWLOCATION: u32 = 52;
@@ -19,15 +19,24 @@ const CURLOPT_AUTOREFERER: u32 = 58;
 const CURLOPT_RESOLVE: u32 = 10203;
 const CURLOPT_NETRC: u32 = 51;
 const CURLOPT_NETRC_FILE: u32 = 10118;
+const CURLOPT_COOKIEFILE: u32 = 10031;
 const CURLOPT_CONNECT_ONLY: u32 = 141;
+const CURLOPT_ALTSVC_CTRL: u32 = 286;
+const CURLOPT_ALTSVC: u32 = 10287;
+const CURLOPT_HSTS_CTRL: u32 = 299;
+const CURLOPT_HSTS: u32 = 10300;
 
 const CURL_GLOBAL_DEFAULT: c_long = 3;
 const CURL_NETRC_OPTIONAL: c_long = 1;
 const CURLH_HEADER: u32 = 1 << 0;
+const CURLH_TRAILER: u32 = 1 << 1;
 const CURLWS_TEXT: u32 = 1 << 0;
 const CURLWS_CLOSE: u32 = 1 << 3;
+const CURLPAUSE_RECV: i32 = 1 << 0;
+const CURLPAUSE_SEND: i32 = 1 << 2;
 
 const CURLE_OK: CURLcode = 0;
+const CURLE_AGAIN: CURLcode = 81;
 const CURLE_RECV_ERROR: CURLcode = 56;
 
 unsafe extern "C" {
@@ -36,7 +45,21 @@ unsafe extern "C" {
     fn curl_easy_init() -> *mut CURL;
     fn curl_easy_cleanup(handle: *mut CURL);
     fn curl_easy_perform(handle: *mut CURL) -> CURLcode;
+    fn curl_easy_pause(handle: *mut CURL, bitmask: i32) -> CURLcode;
+    fn curl_easy_recv(
+        handle: *mut CURL,
+        buffer: *mut c_void,
+        buflen: usize,
+        n: *mut usize,
+    ) -> CURLcode;
+    fn curl_easy_send(
+        handle: *mut CURL,
+        buffer: *const c_void,
+        buflen: usize,
+        n: *mut usize,
+    ) -> CURLcode;
     fn curl_easy_setopt(handle: *mut CURL, option: u32, ...) -> CURLcode;
+    fn curl_easy_upkeep(handle: *mut CURL) -> CURLcode;
     fn curl_easy_header(
         easy: *mut CURL,
         name: *const c_char,
@@ -770,4 +793,244 @@ fn temp_path(stem: &str) -> PathBuf {
         .expect("time")
         .as_nanos();
     std::env::temp_dir().join(format!("port-libcurl-safe-{stem}-{nanos}.tmp"))
+}
+
+#[test]
+fn cookiefile_preloads_into_native_requests() {
+    let _guard = serialized_test_lock().lock().expect("test lock");
+    let _curl = CurlGuard::new();
+
+    let cookie_file = temp_path("cookiefile");
+    fs::write(
+        &cookie_file,
+        "# Netscape HTTP Cookie File\nexample.test\tFALSE\t/\tFALSE\t2147483647\tsid\tone\n",
+    )
+    .expect("cookie file");
+    let server = spawn_scripted_http_server(vec![
+        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_string(),
+    ]);
+    let mut resolve = Slist::new();
+    resolve.push(format!("example.test:{}:127.0.0.1", server.port));
+    let url = CString::new(format!("http://example.test:{}/check", server.port)).expect("url");
+    let cookie_file_c =
+        CString::new(cookie_file.to_string_lossy().into_owned()).expect("cookie file");
+    let handle = EasyHandle::new();
+    unsafe {
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_URL, url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_RESOLVE, resolve.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_COOKIEFILE, cookie_file_c.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(curl_easy_perform(handle.as_ptr()), CURLE_OK);
+    }
+    server.join.join().expect("cookiefile server");
+    let requests = server.requests.lock().expect("requests").clone();
+    assert_eq!(header(&requests[0], "Cookie").as_deref(), Some("sid=one"));
+    let _ = fs::remove_file(cookie_file);
+}
+
+#[test]
+fn chunked_response_trailers_reach_header_api() {
+    let _guard = serialized_test_lock().lock().expect("test lock");
+    let _curl = CurlGuard::new();
+
+    let server = spawn_scripted_http_server(vec![
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n2\r\nok\r\n0\r\nX-Trailer: done\r\n\r\n".to_string(),
+    ]);
+    let url = CString::new(format!("http://127.0.0.1:{}/trailers", server.port)).expect("url");
+    let handle = EasyHandle::new();
+    unsafe {
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_URL, url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(curl_easy_perform(handle.as_ptr()), CURLE_OK);
+    }
+    server.join.join().expect("trailer server");
+
+    let mut header_ptr = ptr::null_mut();
+    let name = CString::new("X-Trailer").expect("name");
+    let code = unsafe {
+        curl_easy_header(
+            handle.as_ptr(),
+            name.as_ptr(),
+            0,
+            CURLH_TRAILER,
+            -1,
+            &mut header_ptr,
+        )
+    };
+    assert_eq!(code, 0);
+    assert_eq!(
+        unsafe { CStr::from_ptr((*header_ptr).value) }
+            .to_str()
+            .expect("value"),
+        "done"
+    );
+}
+
+#[test]
+fn hsts_and_altsvc_headers_persist_from_native_transfer() {
+    let _guard = serialized_test_lock().lock().expect("test lock");
+    let _curl = CurlGuard::new();
+
+    let hsts_file = temp_path("hsts");
+    let altsvc_file = temp_path("altsvc");
+    let server = spawn_scripted_http_server(vec![
+        "HTTP/1.1 200 OK\r\nStrict-Transport-Security: max-age=31536000; includeSubDomains\r\nAlt-Svc: h2=\":8443\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
+    ]);
+    let mut resolve = Slist::new();
+    resolve.push(format!("example.test:{}:127.0.0.1", server.port));
+    let url = CString::new(format!("http://example.test:{}/state", server.port)).expect("url");
+    let hsts_file_c = CString::new(hsts_file.to_string_lossy().into_owned()).expect("hsts");
+    let altsvc_file_c = CString::new(altsvc_file.to_string_lossy().into_owned()).expect("altsvc");
+    let handle = EasyHandle::new();
+    unsafe {
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_URL, url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_RESOLVE, resolve.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_HSTS, hsts_file_c.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_HSTS_CTRL, 1 as c_long),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_ALTSVC, altsvc_file_c.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_ALTSVC_CTRL, 1 as c_long),
+            CURLE_OK
+        );
+        assert_eq!(curl_easy_perform(handle.as_ptr()), CURLE_OK);
+    }
+    server.join.join().expect("state server");
+    let hsts_text = fs::read_to_string(&hsts_file).expect("read hsts");
+    let altsvc_text = fs::read_to_string(&altsvc_file).expect("read altsvc");
+    assert!(hsts_text.contains(".example.test"));
+    assert!(altsvc_text.contains("h2=\"example.test:8443\""));
+    let _ = fs::remove_file(hsts_file);
+    let _ = fs::remove_file(altsvc_file);
+}
+
+#[test]
+fn native_connect_only_send_recv_pause_and_upkeep() {
+    let _guard = serialized_test_lock().lock().expect("test lock");
+    let _curl = CurlGuard::new();
+
+    let (tx, rx) = mpsc::channel();
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let join = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        let mut buf = [0u8; 4];
+        stream.read_exact(&mut buf).expect("read ping");
+        tx.send(buf).expect("send ping");
+        stream.write_all(b"pong").expect("write pong");
+        stream.flush().expect("flush pong");
+        let _ = stream.shutdown(Shutdown::Both);
+    });
+
+    let url = CString::new(format!("http://127.0.0.1:{port}/raw")).expect("url");
+    let handle = EasyHandle::new();
+    unsafe {
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_URL, url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(handle.as_ptr(), CURLOPT_CONNECT_ONLY, 1 as c_long),
+            CURLE_OK
+        );
+        assert_eq!(curl_easy_perform(handle.as_ptr()), CURLE_OK);
+        assert_eq!(curl_easy_upkeep(handle.as_ptr()), CURLE_OK);
+        assert_eq!(curl_easy_pause(handle.as_ptr(), CURLPAUSE_SEND), CURLE_OK);
+    }
+
+    let mut written = 0usize;
+    let rc = unsafe { curl_easy_send(handle.as_ptr(), b"ping".as_ptr().cast(), 4, &mut written) };
+    assert_eq!(rc, CURLE_AGAIN);
+    assert_eq!(written, 0);
+
+    unsafe {
+        assert_eq!(curl_easy_pause(handle.as_ptr(), 0), CURLE_OK);
+    }
+    let start = std::time::Instant::now();
+    loop {
+        let rc =
+            unsafe { curl_easy_send(handle.as_ptr(), b"ping".as_ptr().cast(), 4, &mut written) };
+        if rc == CURLE_OK {
+            break;
+        }
+        assert_eq!(rc, CURLE_AGAIN);
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "timed out waiting to send"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(written, 4);
+    assert_eq!(
+        rx.recv_timeout(Duration::from_secs(1))
+            .expect("server saw ping"),
+        *b"ping"
+    );
+
+    unsafe {
+        assert_eq!(curl_easy_pause(handle.as_ptr(), CURLPAUSE_RECV), CURLE_OK);
+    }
+    let mut recv_len = 0usize;
+    let mut buffer = [0u8; 16];
+    let rc = unsafe {
+        curl_easy_recv(
+            handle.as_ptr(),
+            buffer.as_mut_ptr().cast(),
+            buffer.len(),
+            &mut recv_len,
+        )
+    };
+    assert_eq!(rc, CURLE_AGAIN);
+    assert_eq!(recv_len, 0);
+
+    unsafe {
+        assert_eq!(curl_easy_pause(handle.as_ptr(), 0), CURLE_OK);
+    }
+    let start = std::time::Instant::now();
+    loop {
+        let rc = unsafe {
+            curl_easy_recv(
+                handle.as_ptr(),
+                buffer.as_mut_ptr().cast(),
+                buffer.len(),
+                &mut recv_len,
+            )
+        };
+        if rc == CURLE_OK && recv_len > 0 {
+            break;
+        }
+        assert_eq!(rc, CURLE_AGAIN);
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "timed out waiting to recv"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(&buffer[..recv_len], b"pong");
+
+    join.join().expect("connect-only server");
 }

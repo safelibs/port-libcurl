@@ -18,6 +18,5 @@ pub(crate) struct HandleHttpState {
 impl HandleHttpState {
     pub(crate) fn clear_transient(&mut self) {
         self.headers.clear();
-        self.altsvc.clear_runtime();
     }
 }
