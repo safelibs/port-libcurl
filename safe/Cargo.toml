@@ -10,6 +10,9 @@ default = []
 openssl-flavor = []
 gnutls-flavor = []
 
+[dependencies]
+idna = "1"
+
 [lib]
 name = "port_libcurl_safe"
 path = "src/lib.rs"

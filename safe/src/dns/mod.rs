@@ -159,10 +159,11 @@ fn split_colon_fields(input: &str, expected: usize) -> Vec<String> {
 }
 
 fn normalize_host(host: &str) -> String {
-    host.trim()
+    let trimmed = host
+        .trim()
         .trim_start_matches('[')
-        .trim_end_matches(']')
-        .to_string()
+        .trim_end_matches(']');
+    crate::idn::normalize_host_for_transfer(trimmed).unwrap_or_else(|_| trimmed.to_string())
 }
 
 fn normalize_optional_host(host: &str) -> Option<String> {

@@ -7,6 +7,8 @@ use core::ptr;
 use std::ffi::CStr;
 
 pub(crate) const CURL_ZERO_TERMINATED: usize = usize::MAX;
+const MIME_BOUNDARY_PREFIX: &str = "------------------------port-libcurl-safe-mime-";
+const SEEK_SET: c_int = 0;
 
 #[derive(Default)]
 pub(crate) struct HeaderStore {
@@ -111,6 +113,141 @@ fn slist_strings(mut headers: *mut curl_slist) -> Vec<String> {
     values
 }
 
+fn read_callback_body(callback: &CallbackBody) -> Option<Vec<u8>> {
+    let readfunc = callback.readfunc?;
+    if let Some(seekfunc) = callback.seekfunc {
+        let _ = unsafe { seekfunc(callback.arg, 0, SEEK_SET) };
+    }
+
+    let mut body = Vec::new();
+    let mut remaining = (callback.size >= 0).then_some(callback.size as usize);
+    loop {
+        let chunk_len = remaining.map(|len| len.min(16 * 1024)).unwrap_or(16 * 1024);
+        if chunk_len == 0 {
+            break;
+        }
+        let start = body.len();
+        body.resize(start + chunk_len, 0);
+        let read = unsafe {
+            readfunc(
+                body[start..].as_mut_ptr().cast(),
+                1,
+                chunk_len,
+                callback.arg,
+            )
+        };
+        if read == 0 {
+            body.truncate(start);
+            break;
+        }
+        if read > chunk_len {
+            return None;
+        }
+        body.truncate(start + read);
+        if let Some(left) = remaining.as_mut() {
+            *left = left.saturating_sub(read);
+            if *left == 0 {
+                break;
+            }
+        }
+    }
+    Some(body)
+}
+
+fn body_source_bytes(body: &BodySource) -> Option<Vec<u8>> {
+    match body {
+        BodySource::None => Some(Vec::new()),
+        BodySource::Owned(bytes) => Some(bytes.clone()),
+        BodySource::Borrowed { ptr, len } => {
+            Some(unsafe { core::slice::from_raw_parts(*ptr, *len) }.to_vec())
+        }
+        BodySource::FilePath(path) => std::fs::read(path).ok(),
+        BodySource::Callback(callback) => read_callback_body(callback),
+        BodySource::Subparts(subparts) => render_multipart_body(*subparts, nested_boundary(*subparts))
+            .map(|(bytes, _)| bytes),
+    }
+}
+
+fn nested_boundary(mime: *mut curl_mime) -> String {
+    format!("{MIME_BOUNDARY_PREFIX}{:x}", mime as usize)
+}
+
+fn append_part_headers(
+    rendered: &mut Vec<u8>,
+    part: &MimePartHandle,
+    nested_content_type: Option<&str>,
+) {
+    rendered.extend_from_slice(b"Content-Disposition: form-data");
+    if let Some(name) = part.name.as_deref() {
+        rendered.extend_from_slice(b"; name=\"");
+        rendered.extend_from_slice(name.as_bytes());
+        rendered.extend_from_slice(b"\"");
+    }
+    if let Some(filename) = part.filename.as_deref() {
+        rendered.extend_from_slice(b"; filename=\"");
+        rendered.extend_from_slice(filename.as_bytes());
+        rendered.extend_from_slice(b"\"");
+    }
+    rendered.extend_from_slice(b"\r\n");
+
+    if let Some(content_type) = nested_content_type.or(part.mime_type.as_deref()) {
+        rendered.extend_from_slice(b"Content-Type: ");
+        rendered.extend_from_slice(content_type.as_bytes());
+        rendered.extend_from_slice(b"\r\n");
+    }
+    if let Some(encoding) = part.encoder.as_deref() {
+        rendered.extend_from_slice(b"Content-Transfer-Encoding: ");
+        rendered.extend_from_slice(encoding.as_bytes());
+        rendered.extend_from_slice(b"\r\n");
+    }
+    for header in &part.headers.values {
+        rendered.extend_from_slice(header.as_bytes());
+        rendered.extend_from_slice(b"\r\n");
+    }
+}
+
+fn render_part_bytes(part: &MimePartHandle) -> Option<Vec<u8>> {
+    match &part.body {
+        BodySource::Subparts(subparts) => {
+            let nested_boundary = nested_boundary(*subparts);
+            let (bytes, _) = render_multipart_body(*subparts, nested_boundary.clone())?;
+            let mut rendered = Vec::new();
+            append_part_headers(
+                &mut rendered,
+                part,
+                Some(&format!("multipart/mixed; boundary={nested_boundary}")),
+            );
+            rendered.extend_from_slice(b"\r\n");
+            rendered.extend_from_slice(&bytes);
+            Some(rendered)
+        }
+        body => {
+            let mut rendered = Vec::new();
+            append_part_headers(&mut rendered, part, None);
+            rendered.extend_from_slice(b"\r\n");
+            rendered.extend_from_slice(&body_source_bytes(body)?);
+            Some(rendered)
+        }
+    }
+}
+
+fn render_multipart_body(mime: *mut curl_mime, boundary: String) -> Option<(Vec<u8>, String)> {
+    let mime = mime_mut(mime)?;
+    let mut rendered = Vec::new();
+    for raw_part in &mime.parts {
+        let part = part_mut((*raw_part).cast())?;
+        rendered.extend_from_slice(b"--");
+        rendered.extend_from_slice(boundary.as_bytes());
+        rendered.extend_from_slice(b"\r\n");
+        rendered.extend_from_slice(&render_part_bytes(part)?);
+        rendered.extend_from_slice(b"\r\n");
+    }
+    rendered.extend_from_slice(b"--");
+    rendered.extend_from_slice(boundary.as_bytes());
+    rendered.extend_from_slice(b"--\r\n");
+    Some((rendered, boundary))
+}
+
 pub(crate) unsafe fn cleanup_body_source(body: &mut BodySource) {
     match std::mem::take(body) {
         BodySource::Callback(callback) => {
@@ -176,7 +313,9 @@ pub unsafe extern "C" fn port_safe_export_curl_mime_free(mime: *mut curl_mime) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn port_safe_export_curl_mime_addpart(mime: *mut curl_mime) -> *mut curl_mimepart {
+pub unsafe extern "C" fn port_safe_export_curl_mime_addpart(
+    mime: *mut curl_mime,
+) -> *mut curl_mimepart {
     let Some(mime) = mime_mut(mime) else {
         return ptr::null_mut();
     };
@@ -193,7 +332,10 @@ pub unsafe extern "C" fn port_safe_export_curl_mime_addpart(mime: *mut curl_mime
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn port_safe_export_curl_mime_name(part: *mut curl_mimepart, name: *const c_char) -> CURLcode {
+pub unsafe extern "C" fn port_safe_export_curl_mime_name(
+    part: *mut curl_mimepart,
+    name: *const c_char,
+) -> CURLcode {
     let Some(part) = part_mut(part) else {
         return CURLE_BAD_FUNCTION_ARGUMENT;
     };
@@ -351,15 +493,13 @@ pub(crate) fn mime_summary(mime: *mut curl_mime) -> Option<(usize, *mut CURL)> {
     Some((mime.parts.len(), mime.easy))
 }
 
+pub(crate) fn mime_post_bytes(mime: *mut curl_mime) -> Option<(Vec<u8>, String)> {
+    let boundary = nested_boundary(mime);
+    let (bytes, boundary) = render_multipart_body(mime, boundary)?;
+    Some((bytes, format!("multipart/form-data; boundary={boundary}")))
+}
+
 pub(crate) fn part_body_bytes(part: *mut curl_mimepart) -> Option<Vec<u8>> {
     let part = part_mut(part)?;
-    match &part.body {
-        BodySource::None => Some(Vec::new()),
-        BodySource::Owned(bytes) => Some(bytes.clone()),
-        BodySource::Borrowed { ptr, len } => {
-            Some(unsafe { core::slice::from_raw_parts(*ptr, *len) }.to_vec())
-        }
-        BodySource::FilePath(path) => std::fs::read(path).ok(),
-        BodySource::Callback(_) | BodySource::Subparts(_) => None,
-    }
+    body_source_bytes(&part.body)
 }

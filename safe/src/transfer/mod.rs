@@ -1,6 +1,7 @@
 use crate::abi::{
-    curl_hstsentry, curl_index, curl_off_t, curl_slist, curl_socket_t, CURLMcode, CURLSTScode,
-    CURLcode, CURL, CURLE_BAD_FUNCTION_ARGUMENT, CURLE_OK, CURLINFO,
+    curl_hstsentry, curl_httppost, curl_index, curl_mime, curl_off_t, curl_slist,
+    curl_socket_t, CURLMcode, CURLSTScode, CURLcode, CURL, CURLE_BAD_FUNCTION_ARGUMENT,
+    CURLE_OK, CURLINFO,
 };
 use crate::conn::cache::{parse_proxy_authority, parse_url_authority, ConnectionCacheKey};
 use crate::conn::filter::{ConnectionFilterChain, ConnectionFilterStep};
@@ -255,9 +256,15 @@ struct RequestContext {
     use_chunked_upload: bool,
     range_header: Option<String>,
     body_bytes: Option<Vec<u8>>,
+    body_content_type: Option<String>,
     body_length: Option<usize>,
     send_body: bool,
     http_version: c_long,
+}
+
+struct PreparedRequestBody {
+    bytes: Vec<u8>,
+    content_type: Option<String>,
 }
 
 #[derive(Clone)]
@@ -3030,6 +3037,13 @@ fn prepare_request_headers(
                 .push(format!("User-Agent: {user_agent}"));
         }
     }
+    if let Some(content_type) = request.body_content_type.as_deref() {
+        if !has_header(&request.request_headers, "Content-Type") {
+            request
+                .request_headers
+                .push(format!("Content-Type: {content_type}"));
+        }
+    }
 
     let needs_auth_headers = metadata.xoauth2_bearer.is_some()
         || metadata.userpwd.is_some()
@@ -3161,17 +3175,17 @@ impl RequestContext {
         let method = effective_method(metadata, websocket_style, method_override);
         let http_version = request_http_version(metadata);
         let upload_body = send_body && metadata.upload;
-        let body_bytes = if websocket_style || upload_body || !send_body {
+        let prepared_body = if websocket_style || upload_body || !send_body {
             None
         } else {
-            post_request_body_bytes(metadata)
+            prepare_post_request_body(metadata)?
         };
         let body_length = if websocket_style || !send_body {
             None
         } else if upload_body {
             metadata.upload_size.map(|size| size.max(0) as usize)
         } else {
-            body_bytes.as_ref().map(Vec::len)
+            prepared_body.as_ref().map(|body| body.bytes.len())
         };
 
         Ok(Self {
@@ -3207,7 +3221,8 @@ impl RequestContext {
                 && metadata.upload_size.is_none()
                 && http_version != CURL_HTTP_VERSION_1_0,
             range_header: effective_range_header(metadata),
-            body_bytes,
+            body_bytes: prepared_body.as_ref().map(|body| body.bytes.clone()),
+            body_content_type: prepared_body.and_then(|body| body.content_type),
             body_length,
             send_body,
             http_version,
@@ -3332,7 +3347,11 @@ fn request_body_enabled(metadata: &EasyMetadata, method_override: Option<&str>) 
     if method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD") {
         return false;
     }
-    metadata.upload || (metadata.post_request && post_request_body_bytes(metadata).is_some())
+    metadata.upload
+        || metadata.post_request
+        || metadata.post_fields.is_some()
+        || metadata.mimepost_handle.is_some()
+        || metadata.httppost_handle.is_some()
 }
 
 fn post_request_body_bytes(metadata: &EasyMetadata) -> Option<Vec<u8>> {
@@ -3357,6 +3376,42 @@ fn post_request_body_bytes(metadata: &EasyMetadata) -> Option<Vec<u8>> {
             }
         }
     }
+}
+
+fn prepare_post_request_body(metadata: &EasyMetadata) -> Result<Option<PreparedRequestBody>, CURLcode> {
+    if let Some(mime_handle) = metadata.mimepost_handle {
+        let (bytes, content_type) = crate::mime::mime_post_bytes(mime_handle as *mut curl_mime)
+            .ok_or(CURLE_READ_ERROR)?;
+        return Ok(Some(PreparedRequestBody {
+            bytes,
+            content_type: Some(content_type),
+        }));
+    }
+
+    if let Some(form_handle) = metadata.httppost_handle {
+        let (bytes, content_type) = crate::form::form_post_bytes(form_handle as *mut curl_httppost)
+            .ok_or(CURLE_READ_ERROR)?;
+        return Ok(Some(PreparedRequestBody {
+            bytes,
+            content_type: Some(content_type),
+        }));
+    }
+
+    if let Some(bytes) = post_request_body_bytes(metadata) {
+        return Ok(Some(PreparedRequestBody {
+            bytes,
+            content_type: None,
+        }));
+    }
+
+    if metadata.post_request {
+        return Ok(Some(PreparedRequestBody {
+            bytes: Vec::new(),
+            content_type: None,
+        }));
+    }
+
+    Ok(None)
 }
 
 fn redirect_method(current_method: &str, status_code: u16, metadata: &EasyMetadata) -> String {

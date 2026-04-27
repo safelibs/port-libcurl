@@ -23,10 +23,6 @@ use std::sync::{Mutex, OnceLock};
 const CURLE_UNSUPPORTED_PROTOCOL: CURLcode = 1;
 const CURLE_URL_MALFORMAT: CURLcode = 3;
 
-type RefPushHeaderByNameFn =
-    unsafe extern "C" fn(*mut curl_pushheaders, *const c_char) -> *mut c_char;
-type RefPushHeaderByNumFn = unsafe extern "C" fn(*mut curl_pushheaders, usize) -> *mut c_char;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SchemeHandler {
     Http,
@@ -162,13 +158,17 @@ fn split_host_port(input: &str, default_port: u16) -> Result<(String, u16), CURL
     }
     if let Some((host, port_text)) = trimmed.rsplit_once(':') {
         if !host.contains(':') && !port_text.is_empty() {
+            let normalized =
+                crate::idn::normalize_host_for_transfer(host).map_err(|_| CURLE_URL_MALFORMAT)?;
             return Ok((
-                host.to_string(),
+                normalized,
                 port_text.parse().map_err(|_| CURLE_URL_MALFORMAT)?,
             ));
         }
     }
-    Ok((trimmed.to_string(), default_port))
+    let normalized =
+        crate::idn::normalize_host_for_transfer(trimmed).map_err(|_| CURLE_URL_MALFORMAT)?;
+    Ok((normalized, default_port))
 }
 
 pub(crate) fn percent_decode(input: &[u8]) -> Result<String, CURLcode> {
@@ -224,16 +224,6 @@ pub(crate) fn default_port_for_scheme(scheme: &str) -> u16 {
         "scp" | "sftp" => 22,
         _ => 0,
     }
-}
-
-fn ref_pushheader_byname() -> RefPushHeaderByNameFn {
-    static FN: OnceLock<RefPushHeaderByNameFn> = OnceLock::new();
-    *FN.get_or_init(|| unsafe { crate::global::load_reference(b"curl_pushheader_byname\0") })
-}
-
-fn ref_pushheader_bynum() -> RefPushHeaderByNumFn {
-    static FN: OnceLock<RefPushHeaderByNumFn> = OnceLock::new();
-    *FN.get_or_init(|| unsafe { crate::global::load_reference(b"curl_pushheader_bynum\0") })
 }
 
 pub(crate) fn route_scheme(
@@ -444,7 +434,7 @@ pub(crate) unsafe fn capture_push_headers(headers: *mut curl_pushheaders, num_he
 
     let mut captured = Vec::with_capacity(num_headers);
     for index in 0..num_headers {
-        let value = unsafe { ref_pushheader_bynum()(headers, index) };
+        let value = unsafe { pushheader_bynum(headers, index) };
         if value.is_null() {
             continue;
         }
@@ -508,7 +498,7 @@ pub(crate) unsafe fn pushheader_byname(
     {
         return value;
     }
-    unsafe { ref_pushheader_byname()(headers, name) }
+    core::ptr::null_mut()
 }
 
 pub(crate) unsafe fn pushheader_bynum(headers: *mut curl_pushheaders, index: usize) -> *mut c_char {
@@ -523,5 +513,5 @@ pub(crate) unsafe fn pushheader_bynum(headers: *mut curl_pushheaders, index: usi
     {
         return value.as_ptr().cast_mut();
     }
-    unsafe { ref_pushheader_bynum()(headers, index) }
+    core::ptr::null_mut()
 }

@@ -12,6 +12,7 @@ const CURL_FORMADD_UNKNOWN_OPTION: CURLFORMcode = 4;
 const CURL_FORMADD_INCOMPLETE: CURLFORMcode = 5;
 const CURL_FORMADD_ILLEGAL_ARRAY: CURLFORMcode = 6;
 const CURL_FORMADD_DISABLED: CURLFORMcode = 7;
+const FORM_BOUNDARY: &str = "--------------------------port-libcurl-safe";
 
 pub(crate) const FORM_FLAG_PTR_CONTENTS: u32 = 1 << 0;
 pub(crate) const FORM_FLAG_FILE: u32 = 1 << 1;
@@ -192,7 +193,8 @@ fn collect_header_lines(mut headers: *mut curl_slist) -> Vec<String> {
 
 fn render_part(node: &FormNode) -> Vec<u8> {
     let mut rendered = Vec::new();
-    rendered.extend_from_slice(b"--------------------------port-libcurl-safe\r\n");
+    rendered.extend_from_slice(FORM_BOUNDARY.as_bytes());
+    rendered.extend_from_slice(b"\r\n");
     rendered.extend_from_slice(b"Content-Disposition: form-data; name=\"");
     rendered.extend_from_slice(unsafe { CStr::from_ptr(node.post.name) }.to_bytes());
     rendered.extend_from_slice(b"\"");
@@ -215,6 +217,23 @@ fn render_part(node: &FormNode) -> Vec<u8> {
     rendered.extend_from_slice(&render_body(node));
     rendered.extend_from_slice(b"\r\n");
     rendered
+}
+
+pub(crate) fn form_post_bytes(form: *mut curl_httppost) -> Option<(Vec<u8>, String)> {
+    let boundary = FORM_BOUNDARY.strip_prefix("--").unwrap_or(FORM_BOUNDARY);
+    let mut rendered = Vec::new();
+    let mut cursor = form;
+    while !cursor.is_null() {
+        let node = form_node_mut(cursor)?;
+        rendered.extend_from_slice(&render_part(node));
+        cursor = node.post.next;
+    }
+    rendered.extend_from_slice(FORM_BOUNDARY.as_bytes());
+    rendered.extend_from_slice(b"--\r\n");
+    Some((
+        rendered,
+        format!("multipart/form-data; boundary={boundary}"),
+    ))
 }
 
 #[no_mangle]
@@ -339,7 +358,7 @@ pub unsafe extern "C" fn port_safe_export_curl_formget(
     append_chunk(
         append,
         arg,
-        b"--------------------------port-libcurl-safe--\r\n",
+        format!("{FORM_BOUNDARY}--\r\n").as_bytes(),
     )
     .map(|_| 0)
     .unwrap_or(1)

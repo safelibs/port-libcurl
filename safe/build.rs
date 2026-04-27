@@ -87,6 +87,7 @@ fn main() {
     compile_c_shims(&manifest_dir, flavor, &public_export_shim);
 
     println!("cargo:rustc-link-lib=dl");
+    println!("cargo:rustc-link-lib=z");
     link_psl();
     println!("cargo:rustc-link-lib=nghttp2");
     println!("cargo:rustc-link-lib=ssh2");
@@ -100,6 +101,10 @@ fn main() {
         }
         _ => unreachable!(),
     }
+    println!(
+        "cargo:rustc-env=PORT_LIBCURL_SAFE_TARGET={}",
+        env::var("TARGET").expect("TARGET")
+    );
     println!(
         "cargo:rustc-cdylib-link-arg=-Wl,-soname,{}",
         symbol_manifest.soname

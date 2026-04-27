@@ -30,6 +30,8 @@ const CURLU_DEFAULT_SCHEME: u32 = 1 << 2;
 const CURLU_URLDECODE: u32 = 1 << 6;
 const CURLU_URLENCODE: u32 = 1 << 7;
 const CURLU_APPENDQUERY: u32 = 1 << 8;
+const CURLU_PUNYCODE: u32 = 1 << 12;
+const CURLU_PUNY2IDN: u32 = 1 << 13;
 
 #[derive(Clone, Default)]
 struct UrlState {
@@ -92,6 +94,30 @@ fn percent_encode(text: &str) -> String {
     for byte in text.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
             out.push(byte as char);
+        } else {
+            out.push('%');
+            out.push(
+                char::from_digit((byte >> 4) as u32, 16)
+                    .unwrap()
+                    .to_ascii_uppercase(),
+            );
+            out.push(
+                char::from_digit((byte & 0x0f) as u32, 16)
+                    .unwrap()
+                    .to_ascii_uppercase(),
+            );
+        }
+    }
+    out
+}
+
+fn percent_encode_query(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(byte as char);
+        } else if byte == b' ' {
+            out.push('+');
         } else {
             out.push('%');
             out.push(
@@ -208,8 +234,13 @@ fn parse_full_url(input: &str) -> Result<UrlState, CURLUcode> {
     Ok(state)
 }
 
-fn render_host(state: &UrlState) -> Result<String, CURLUcode> {
-    let host = state.host.clone().ok_or(CURLUE_NO_HOST)?;
+fn render_host(state: &UrlState, flags: u32) -> Result<String, CURLUcode> {
+    let mut host = state.host.clone().ok_or(CURLUE_NO_HOST)?;
+    if flags & CURLU_PUNYCODE != 0 {
+        host = crate::idn::host_to_ascii(&host).map_err(|_| CURLUE_MALFORMED_INPUT)?;
+    } else if flags & CURLU_PUNY2IDN != 0 {
+        host = crate::idn::host_to_unicode(&host).map_err(|_| CURLUE_MALFORMED_INPUT)?;
+    }
     if host.contains(':') && !host.starts_with('[') {
         if let Some(zoneid) = state.zoneid.as_deref() {
             Ok(format!("[{host}%25{zoneid}]"))
@@ -240,7 +271,7 @@ fn render_url(state: &UrlState, flags: u32) -> Result<String, CURLUcode> {
         }
         rendered.push('@');
     }
-    rendered.push_str(&render_host(state)?);
+    rendered.push_str(&render_host(state, flags)?);
 
     let default_port = default_port_for_scheme(&scheme);
     if let Some(port) = state.port {
@@ -275,7 +306,7 @@ fn part_string(state: &UrlState, what: CURLUPart, flags: u32) -> Result<String, 
         CURLUPART_USER => state.user.clone().ok_or(CURLUE_NO_USER)?,
         CURLUPART_PASSWORD => state.password.clone().ok_or(CURLUE_NO_PASSWORD)?,
         CURLUPART_OPTIONS => state.options.clone().ok_or(CURLUE_NO_OPTIONS)?,
-        CURLUPART_HOST => render_host(state)?,
+        CURLUPART_HOST => render_host(state, flags)?,
         CURLUPART_PORT => {
             if state.port_explicit {
                 state.port.unwrap().to_string()
@@ -394,13 +425,10 @@ pub(crate) unsafe fn url_set(
     let Some(handle) = handle_mut(handle) else {
         return CURLUE_BAD_HANDLE;
     };
-    let mut value = match read_part(part) {
+    let value = match read_part(part) {
         Ok(value) => value,
         Err(code) => return code,
     };
-    if flags & CURLU_URLENCODE != 0 {
-        value = value.map(|text| percent_encode(&text));
-    }
 
     if what == CURLUPART_URL {
         return match value {
@@ -420,9 +448,33 @@ pub(crate) unsafe fn url_set(
 
     match what {
         CURLUPART_SCHEME => handle.state.scheme = value.filter(|text| !text.is_empty()),
-        CURLUPART_USER => handle.state.user = value.filter(|text| !text.is_empty()),
-        CURLUPART_PASSWORD => handle.state.password = value.filter(|text| !text.is_empty()),
-        CURLUPART_OPTIONS => handle.state.options = value.filter(|text| !text.is_empty()),
+        CURLUPART_USER => {
+            handle.state.user = value.map(|text| {
+                if flags & CURLU_URLENCODE != 0 {
+                    percent_encode(&text)
+                } else {
+                    text
+                }
+            });
+        }
+        CURLUPART_PASSWORD => {
+            handle.state.password = value.map(|text| {
+                if flags & CURLU_URLENCODE != 0 {
+                    percent_encode(&text)
+                } else {
+                    text
+                }
+            });
+        }
+        CURLUPART_OPTIONS => {
+            handle.state.options = value.map(|text| {
+                if flags & CURLU_URLENCODE != 0 {
+                    percent_encode(&text)
+                } else {
+                    text
+                }
+            });
+        }
         CURLUPART_HOST => handle.state.host = value.filter(|text| !text.is_empty()),
         CURLUPART_PORT => {
             if let Some(text) = value.as_deref() {
@@ -439,6 +491,11 @@ pub(crate) unsafe fn url_set(
         CURLUPART_PATH => {
             handle.state.path = value
                 .map(|text| {
+                    let text = if flags & CURLU_URLENCODE != 0 {
+                        percent_encode(&text)
+                    } else {
+                        text
+                    };
                     if text.is_empty() {
                         "/".to_string()
                     } else {
@@ -450,6 +507,15 @@ pub(crate) unsafe fn url_set(
         CURLUPART_QUERY => {
             if flags & CURLU_APPENDQUERY != 0 {
                 if let Some(text) = value {
+                    if text.is_empty() {
+                        handle.state.query = None;
+                        return CURLUE_OK;
+                    }
+                    let text = if flags & CURLU_URLENCODE != 0 {
+                        percent_encode_query(&text)
+                    } else {
+                        text
+                    };
                     let current = handle.state.query.take().unwrap_or_default();
                     handle.state.query = Some(if current.is_empty() {
                         text
@@ -458,10 +524,28 @@ pub(crate) unsafe fn url_set(
                     });
                 }
             } else {
-                handle.state.query = value.filter(|text| !text.is_empty());
+                handle.state.query = value
+                    .map(|text| {
+                        if flags & CURLU_URLENCODE != 0 {
+                            percent_encode_query(&text)
+                        } else {
+                            text
+                        }
+                    })
+                    .filter(|text| !text.is_empty());
             }
         }
-        CURLUPART_FRAGMENT => handle.state.fragment = value.filter(|text| !text.is_empty()),
+        CURLUPART_FRAGMENT => {
+            handle.state.fragment = value
+                .map(|text| {
+                    if flags & CURLU_URLENCODE != 0 {
+                        percent_encode(&text)
+                    } else {
+                        text
+                    }
+                })
+                .filter(|text| !text.is_empty());
+        }
         CURLUPART_ZONEID => handle.state.zoneid = value.filter(|text| !text.is_empty()),
         _ => return CURLUE_UNKNOWN_PART,
     }

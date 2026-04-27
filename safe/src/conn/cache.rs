@@ -125,11 +125,13 @@ fn split_host_port(input: &str, default_port: u16) -> Option<(String, u16)> {
 
     if let Some((host, port_text)) = trimmed.rsplit_once(':') {
         if !host.contains(':') && !port_text.is_empty() {
-            return Some((host.to_string(), port_text.parse().ok()?));
+            let normalized = crate::idn::normalize_host_for_transfer(host).ok()?;
+            return Some((normalized, port_text.parse().ok()?));
         }
     }
 
-    Some((trimmed.to_string(), default_port))
+    let normalized = crate::idn::normalize_host_for_transfer(trimmed).ok()?;
+    Some((normalized, default_port))
 }
 
 fn default_port_for_scheme(scheme: &str) -> u16 {
