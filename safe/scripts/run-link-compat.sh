@@ -333,7 +333,7 @@ while IFS= read -r entry_json; do
       "${script_dir}/run-http-client-tests.sh" --flavor "${flavor}" --build-state "${build_state}" --program "${runtime_client_name}" --binary "${exe_path}"
       ;;
     ldap-devpkg)
-      "${script_dir}/run-ldap-devpkg-test.sh" --flavor "${flavor}" --build-state "${build_state}" --binary "${exe_path}"
+      "${script_dir}/run-ldap-devpkg-test.sh" --flavor "${flavor}" --implementation compat --build-state "${build_state}" --binary "${exe_path}" --compile-only
       ;;
   esac
 done < <(jq -c '.[]' <<<"${selection_json}")

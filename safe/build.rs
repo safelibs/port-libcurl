@@ -44,9 +44,9 @@ fn main() {
         &tls_backend,
         &ssh_backend,
         &reference_script,
+        &manifest_dir.join("vendor/upstream/manifest.json"),
         &manifest_dir.join("include/curl/curl.h"),
         &manifest_dir.join("include/curl/options.h"),
-        &manifest_dir.join("original/lib/easyoptions.c"),
     ] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
@@ -131,8 +131,8 @@ fn collect_rust_source_files(src_dir: &Path) -> Vec<PathBuf> {
 }
 
 fn collect_rust_source_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
-    let entries = fs::read_dir(dir)
-        .unwrap_or_else(|err| panic!("read_dir {}: {}", dir.display(), err));
+    let entries =
+        fs::read_dir(dir).unwrap_or_else(|err| panic!("read_dir {}: {}", dir.display(), err));
     for entry in entries {
         let entry = entry.expect("dir entry");
         let path = entry.path();
@@ -150,8 +150,8 @@ fn collect_rust_public_exports(source_files: &[PathBuf]) -> RustPublicExports {
     let mut hidden_helpers = BTreeSet::new();
 
     for path in source_files {
-        let contents =
-            fs::read_to_string(path).unwrap_or_else(|err| panic!("read {}: {}", path.display(), err));
+        let contents = fs::read_to_string(path)
+            .unwrap_or_else(|err| panic!("read {}: {}", path.display(), err));
         for line in contents.lines() {
             if let Some(name) = parse_rust_abi_fn_name(line, "port_safe_export_curl_") {
                 public_exports.insert(name.to_string());
@@ -169,10 +169,7 @@ fn collect_rust_public_exports(source_files: &[PathBuf]) -> RustPublicExports {
 }
 
 fn parse_rust_abi_fn_name<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
-    const PREFIXES: [&str; 2] = [
-        "pub unsafe extern \"C\" fn ",
-        "pub extern \"C\" fn ",
-    ];
+    const PREFIXES: [&str; 2] = ["pub unsafe extern \"C\" fn ", "pub extern \"C\" fn "];
 
     let trimmed = line.trim();
     for marker in PREFIXES {

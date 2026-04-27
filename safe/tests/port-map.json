@@ -418,5 +418,10 @@
   "integration_test": "safe/tests/unit_port.rs",
   "schema_version": 1,
   "source_manifest": "safe/metadata/test-manifest.json",
+  "source_resolution": {
+    "provenance_root": "original",
+    "vendor_manifest": "safe/vendor/upstream/manifest.json",
+    "vendor_root": "safe/vendor/upstream"
+  },
   "unit_makefile": "original/tests/unit/Makefile.inc"
 }

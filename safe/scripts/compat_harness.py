@@ -20,8 +20,11 @@ SAFE_DIR = SCRIPT_DIR.parent
 REPO_ROOT = SAFE_DIR.parent
 MANIFEST_PATH = SAFE_DIR / "metadata" / "test-manifest.json"
 VENDOR_ROOT = SAFE_DIR / "vendor" / "upstream"
+VENDOR_MANIFEST_PATH = VENDOR_ROOT / "manifest.json"
 COMPAT_ROOT = SAFE_DIR / ".compat"
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s+"([^"]+)"', re.M)
+IGNORED_SAFE_DIR_NAMES = {".compat", ".reference", "__pycache__", "target"}
+IGNORED_SAFE_FILE_SUFFIXES = {".pyc", ".pyo"}
 
 
 class HarnessError(RuntimeError):
@@ -96,6 +99,10 @@ def load_manifest() -> dict:
     return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
 
+def load_vendor_manifest() -> dict:
+    return json.loads(VENDOR_MANIFEST_PATH.read_text(encoding="utf-8"))
+
+
 def sha256_path(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as fh:
@@ -104,12 +111,47 @@ def sha256_path(path: Path) -> str:
     return digest.hexdigest()
 
 
+def git_ls_files_optional(prefixes: list[str]) -> list[Path] | None:
+    completed = subprocess.run(
+        ["git", "ls-files", "-z", "--", *prefixes],
+        cwd=str(REPO_ROOT),
+        check=False,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        return None
+    return [
+        (REPO_ROOT / rel.decode("utf-8")).resolve()
+        for rel in completed.stdout.split(b"\x00")
+        if rel
+    ]
+
+
+def safe_inventory_paths() -> list[Path]:
+    git_paths = git_ls_files_optional(["safe"])
+    if git_paths is not None:
+        return git_paths
+
+    files: list[Path] = []
+    for root, dirnames, filenames in os.walk(SAFE_DIR):
+        dirnames[:] = sorted(
+            name for name in dirnames if name not in IGNORED_SAFE_DIR_NAMES
+        )
+        for filename in sorted(filenames):
+            if filename == ".DS_Store":
+                continue
+            if Path(filename).suffix in IGNORED_SAFE_FILE_SUFFIXES:
+                continue
+            files.append((Path(root) / filename).resolve())
+    return files
+
+
 def safe_source_fingerprint() -> str:
     digest = hashlib.sha256()
-    for path in git_ls_files(["safe"]):
+    for path in safe_inventory_paths():
         if not path.is_file():
             continue
-        relative = path.relative_to(REPO_ROOT).as_posix()
+        relative = path.relative_to(SAFE_DIR).as_posix()
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
         digest.update(path.read_bytes())
@@ -137,6 +179,13 @@ def git_ls_files(prefixes: list[str]) -> list[Path]:
         for rel in completed.stdout.encode("utf-8").split(b"\x00")
         if rel
     ]
+
+
+def manifest_safe_path(path_str: str) -> Path:
+    path = Path(path_str)
+    if path.parts and path.parts[0] == "safe":
+        return SAFE_DIR.joinpath(*path.parts[1:])
+    return SAFE_DIR / path
 
 
 def component_root(component: str, worktree: Path | None = None) -> Path:
@@ -325,20 +374,18 @@ def export_tracked_tree(mode: str, dest: Path) -> None:
     else:
         dest.mkdir(parents=True)
 
+    safe_files = safe_inventory_paths()
     if mode == "safe-only":
-        tracked = git_ls_files(["safe"])
-        destinations = [(path, dest / path.relative_to(REPO_ROOT / "safe")) for path in tracked]
+        destinations = [(path, dest / path.relative_to(SAFE_DIR)) for path in safe_files]
     elif mode == "with-root-harness":
-        tracked = git_ls_files(["safe", "dependents.json"])
-        destinations = []
-        for path in tracked:
-            relative = path.relative_to(REPO_ROOT)
-            if relative.as_posix() == "dependents.json":
-                destinations.append((path, dest / "dependents.json"))
-            elif relative.parts[0] == "safe":
-                destinations.append((path, dest / "safe" / Path(*relative.parts[1:])))
-            else:
-                raise HarnessError(f"unexpected tracked export path: {relative}")
+        destinations = [
+            (path, dest / "safe" / path.relative_to(SAFE_DIR)) for path in safe_files
+        ]
+        for filename in ("dependents.json", "test-original.sh"):
+            src = REPO_ROOT / filename
+            if not src.exists():
+                raise HarnessError(f"required tracked export input is missing: {src}")
+            destinations.append((src, dest / filename))
     else:
         raise HarnessError(f"unsupported export mode: {mode}")
 
@@ -408,11 +455,22 @@ def stage_safe_library(flavor: FlavorConfig) -> dict:
 
 
 def sync_worktree(flavor: FlavorConfig) -> None:
-    if not VENDOR_ROOT.exists():
-        raise HarnessError("vendored tree is missing, run vendor-compat-assets first")
+    if not VENDOR_MANIFEST_PATH.exists():
+        raise HarnessError(
+            f"vendored manifest is missing: {VENDOR_MANIFEST_PATH}; run vendor-compat-assets.sh"
+        )
     if flavor.worktree_dir.exists():
         shutil.rmtree(flavor.worktree_dir)
-    shutil.copytree(VENDOR_ROOT, flavor.worktree_dir)
+    vendor_manifest = load_vendor_manifest()
+    vendor_root = manifest_safe_path(vendor_manifest["root"])
+    for entry in vendor_manifest["entries"]:
+        src = manifest_safe_path(entry["destination"])
+        if not src.exists():
+            raise HarnessError(f"vendored file listed in manifest is missing: {src}")
+        relative = src.relative_to(vendor_root)
+        dst = flavor.worktree_dir / relative
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
 
     if flavor.name == "openssl":
         patch_root = flavor.worktree_dir / ".pc" / "90_gnutls.patch"
@@ -783,10 +841,16 @@ def cmd_export(args: argparse.Namespace) -> None:
 def cmd_build(args: argparse.Namespace) -> None:
     manifest = load_manifest()
     flavor = flavor_config(args.flavor)
-    if not VENDOR_ROOT.exists():
-        vendor_assets(manifest)
+    if not VENDOR_MANIFEST_PATH.exists():
+        raise HarnessError(
+            f"vendored manifest is missing: {VENDOR_MANIFEST_PATH}; run vendor-compat-assets.sh"
+        )
     targets = selected_targets(manifest, [] if args.all else args.target)
     build_targets(flavor, targets, jobs=args.jobs or os.cpu_count() or 1)
+
+
+def cmd_fingerprint(_args: argparse.Namespace) -> None:
+    print(safe_source_fingerprint())
 
 
 def main() -> int:
@@ -807,6 +871,9 @@ def main() -> int:
     build_parser.add_argument("--target", action="append", default=[])
     build_parser.add_argument("--jobs", type=int, default=0)
     build_parser.set_defaults(func=cmd_build)
+
+    fingerprint_parser = subparsers.add_parser("fingerprint")
+    fingerprint_parser.set_defaults(func=cmd_fingerprint)
 
     args = parser.parse_args()
     try:

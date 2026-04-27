@@ -677,75 +677,24 @@ def build_test_manifest(repo_root: pathlib.Path, safe_dir: pathlib.Path) -> dict
         {"source": "lib510.c", "targets": ["lib510", "lib565"]},
     ]
 
-    tracked_vendor_paths = {
-        (repo_root / relative).resolve()
-        for relative in run_git(
-            repo_root,
-            "ls-files",
-            "--",
-            "original/src",
-            "original/tests",
-            "original/.pc/90_gnutls.patch",
-            "original/debian/tests/LDAP-bindata.c",
-        )
-    }
-    direct_lib_refs: set[pathlib.Path] = set()
-    component_roots = {
-        "src": repo_root / "original/src",
-        "libtest": repo_root / "original/tests/libtest",
-        "server": repo_root / "original/tests/server",
-        "http-client": repo_root / "original/tests/http/clients",
-    }
-    for target in targets:
-        root = component_roots[target["component"]]
-        for source in target["sources"]:
-            candidate = canonicalize_lib_path(root, source)
-            if candidate and "/original/lib/" in str(candidate):
-                direct_lib_refs.add(candidate)
-
-    for key in ["CURLX_CFILES", "CURLX_HFILES", "CURLTOOL_LIBCURL_CFILES"]:
-        if key in src_vars:
-            for token in tokenize_make_value(resolve_make_value(key, src_vars)):
-                candidate = canonicalize_lib_path(repo_root / "original/src", token)
-                if candidate:
-                    direct_lib_refs.add(candidate)
-    for key in ["CURLX_SRCS", "CURLX_HDRS", "USEFUL", "UTIL"]:
-        if key in server_vars:
-            for token in tokenize_make_value(resolve_make_value(key, server_vars)):
-                candidate = canonicalize_lib_path(repo_root / "original/tests/server", token)
-                if candidate and "/original/lib/" in str(candidate):
-                    direct_lib_refs.add(candidate)
-    for target in targets:
-        root = component_roots[target["component"]]
-        for source in target["sources"]:
-            candidate = canonicalize_lib_path(root, source)
-            if candidate:
-                direct_lib_refs.add(candidate)
-
-    tracked_lib_paths = {
-        path
-        for path in tracked_vendor_paths
-        if "/original/lib/" in str(path)
-    }
-    include_closure = collect_include_closure(direct_lib_refs, tracked_lib_paths)
-    vendor_entries = []
-    for path in sorted(tracked_vendor_paths | include_closure):
-        relative = path.relative_to(repo_root)
-        vendor_entries.append(
-            {
-                "source": str(relative),
-                "destination": f"safe/vendor/upstream/{relative.as_posix()[len('original/') :]}",
-                "tracked": True,
-                "sha256": sha256_path(path),
-            }
-        )
-
+    vendor_manifest_path = safe_dir / "vendor" / "upstream" / "manifest.json"
+    vendor_manifest = load_json(vendor_manifest_path)
+    vendor_entries = vendor_manifest["entries"]
     dependents = load_json(repo_root / "dependents.json")
-    autopkgtests = run_git(repo_root, "ls-files", "--", "original/debian/tests")
+    autopkgtests = sorted(
+        entry["source"]
+        for entry in vendor_entries
+        if entry["source"].startswith("original/debian/tests/")
+    )
 
     return {
         "schema_version": 1,
         "generated_at": os.environ.get("SOURCE_DATE_EPOCH", "deterministic-build"),
+        "source_resolution": {
+            "provenance_root": "original",
+            "vendor_manifest": str(vendor_manifest_path.relative_to(repo_root)),
+            "vendor_root": vendor_manifest["root"],
+        },
         "raw_ordered_testcases": testcases,
         "duplicate_testcase_tokens": testcase_duplicates,
         "disabled": disabled,

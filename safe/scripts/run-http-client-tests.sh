@@ -193,6 +193,10 @@ start_nghttpx() {
   local log_file="$4"
   local cert="${safe_dir}/vendor/upstream/tests/certs/Server-localhost-sv.pem"
   local key="${safe_dir}/vendor/upstream/tests/certs/Server-localhost-sv.key"
+  [[ -f "${cert}" && -f "${key}" ]] || {
+    echo "missing tracked TLS fixture assets under ${safe_dir}/vendor/upstream/tests/certs" >&2
+    exit 1
+  }
   local -a cmd=(
     nghttpx
     --conf=/dev/null

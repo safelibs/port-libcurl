@@ -36,6 +36,7 @@ def main() -> None:
     abi_path = pathlib.Path(args.abi).resolve()
     tests_path = pathlib.Path(args.tests).resolve()
     cves_path = pathlib.Path(args.cves).resolve()
+    vendor_path = SAFE_DIR / "vendor" / "upstream" / "manifest.json"
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_root = pathlib.Path(tmp)
@@ -48,6 +49,7 @@ def main() -> None:
         actual_abi = load_json(abi_path)
         actual_tests = load_json(tests_path)
         actual_cves = load_json(cves_path)
+        actual_vendor = load_json(vendor_path)
 
         if actual_abi != expected_abi:
             raise SystemExit("abi manifest is out of date")
@@ -55,6 +57,11 @@ def main() -> None:
             raise SystemExit("test manifest is out of date")
         if actual_cves != expected_cves:
             raise SystemExit("cve manifest is out of date")
+        if actual_tests["vendor_inventory"] != {
+            "root": actual_vendor["root"],
+            "entries": actual_vendor["entries"],
+        }:
+            raise SystemExit("test manifest vendor inventory diverges from vendor/upstream/manifest.json")
 
         if actual_tests["raw_ordered_testcases"].count("test1190") != 2:
             raise SystemExit("test manifest lost the duplicate test1190 token")

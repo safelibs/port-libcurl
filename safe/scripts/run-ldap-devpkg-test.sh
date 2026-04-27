@@ -43,7 +43,11 @@ done
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 safe_dir="$(cd "${script_dir}/.." && pwd)"
 src="${safe_dir}/vendor/upstream/debian/tests/LDAP-bindata.c"
-[[ -f "${src}" ]] || "${script_dir}/vendor-compat-assets.sh"
+[[ -f "${src}" ]] || {
+  echo "missing tracked LDAP test source: ${src}" >&2
+  echo "refresh vendored inputs with safe/scripts/vendor-compat-assets.sh from a full repo checkout" >&2
+  exit 1
+}
 
 tmp_root="$(mktemp -d)"
 trap 'rm -rf "${tmp_root}"' EXIT

@@ -31,6 +31,33 @@ fn port_map() -> &'static Value {
     VALUE.get_or_init(|| serde_json::from_str(include_str!("port-map.json")).expect("port map"))
 }
 
+fn source_resolution() -> &'static Value {
+    &test_manifest()["source_resolution"]
+}
+
+fn resolve_tracked_path(path: &str) -> PathBuf {
+    if let Some(relative) = path.strip_prefix("safe/") {
+        return safe_dir().join(relative);
+    }
+
+    let repo_candidate = repo_root().join(path);
+    if repo_candidate.exists() {
+        return repo_candidate;
+    }
+
+    let provenance_root = source_resolution()["provenance_root"]
+        .as_str()
+        .expect("source resolution provenance_root");
+    let vendor_root = source_resolution()["vendor_root"]
+        .as_str()
+        .expect("source resolution vendor_root");
+    if let Some(relative) = path.strip_prefix(&format!("{provenance_root}/")) {
+        return resolve_tracked_path(vendor_root).join(relative);
+    }
+
+    repo_candidate
+}
+
 #[derive(Debug)]
 struct CaseFile {
     id: String,
@@ -79,7 +106,8 @@ fn port_map_entry(unit_id: &str) -> Value {
 }
 
 fn read_source(source: &str) -> String {
-    fs::read_to_string(repo_root().join(source)).expect("source file")
+    let path = resolve_tracked_path(source);
+    fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {}: {}", path.display(), err))
 }
 
 fn unit_ids() -> Vec<String> {
@@ -101,8 +129,12 @@ fn enabled_units() -> BTreeSet<String> {
 }
 
 fn makefile_unitprogs() -> BTreeSet<String> {
-    let text = fs::read_to_string(repo_root().join("original/tests/unit/Makefile.inc"))
-        .expect("unit makefile");
+    let makefile = port_map()["unit_makefile"]
+        .as_str()
+        .expect("unit makefile path");
+    let path = resolve_tracked_path(makefile);
+    let text =
+        fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {}: {}", path.display(), err));
     let line = text
         .lines()
         .find(|line| line.trim_start().starts_with("UNITPROGS ="))
@@ -117,6 +149,16 @@ fn makefile_unitprogs() -> BTreeSet<String> {
 
 #[test]
 fn port_map_inventory_matches_manifest_and_case_files() {
+    assert_eq!(
+        port_map()["source_resolution"],
+        test_manifest()["source_resolution"]
+    );
+    assert_eq!(
+        port_map()["source_manifest"]
+            .as_str()
+            .expect("source manifest"),
+        "safe/metadata/test-manifest.json"
+    );
     let manifest_units = unit_ids().into_iter().collect::<BTreeSet<_>>();
     let map_units = port_map()["entries"]
         .as_array()
