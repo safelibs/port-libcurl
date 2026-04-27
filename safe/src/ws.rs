@@ -3,7 +3,7 @@ use crate::http::auth::base64_encode;
 use crate::rand;
 use crate::transfer;
 use core::ffi::c_void;
-use std::io::{ErrorKind, Read, Write};
+use std::io::{Error, ErrorKind, Read, Write};
 use std::net::TcpStream;
 
 const CURLE_OK: CURLcode = 0;
@@ -246,7 +246,7 @@ impl WebSocketSession {
             if fragsize != 0 || flags != 0 {
                 return Err(CURLE_BAD_FUNCTION_ARGUMENT);
             }
-            return stream.write(buffer).map_err(|_| CURLE_SEND_ERROR);
+            return stream.write(buffer).map_err(map_send_error);
         }
 
         let opcode = opcode_from_flags(flags, self.send_fragment_remaining.is_some())?;
@@ -259,14 +259,26 @@ impl WebSocketSession {
         let finish = (buffer.len() as u64) >= remaining && (flags & CURLWS_OFFSET) == 0
             || (buffer.len() as u64) >= remaining;
         let frame = encode_frame(buffer, opcode, finish)?;
-        stream.write_all(&frame).map_err(|_| CURLE_SEND_ERROR)?;
-        stream.flush().map_err(|_| CURLE_SEND_ERROR)?;
+        stream.write_all(&frame).map_err(map_send_error)?;
+        stream.flush().map_err(map_send_error)?;
         if finish {
             self.send_fragment_remaining = None;
         } else {
             self.send_fragment_remaining = Some(remaining.saturating_sub(buffer.len() as u64));
         }
         Ok(buffer.len())
+    }
+}
+
+fn retryable_io(error: &Error) -> bool {
+    matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)
+}
+
+fn map_send_error(error: Error) -> CURLcode {
+    if retryable_io(&error) {
+        CURLE_AGAIN
+    } else {
+        CURLE_SEND_ERROR
     }
 }
 

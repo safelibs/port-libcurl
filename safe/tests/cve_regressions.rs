@@ -645,16 +645,27 @@ fn run_websocket_recv_progress_case() {
     let mut recv_len = 0usize;
     let mut meta = ptr::null();
     let mut buffer = [0u8; 16];
-    let rc = unsafe {
-        curl_ws_recv(
-            handle.as_ptr(),
-            buffer.as_mut_ptr().cast(),
-            buffer.len(),
-            &mut recv_len,
-            &mut meta,
-        )
-    };
-    assert_eq!(rc, CURLE_OK);
+    let start = std::time::Instant::now();
+    loop {
+        let rc = unsafe {
+            curl_ws_recv(
+                handle.as_ptr(),
+                buffer.as_mut_ptr().cast(),
+                buffer.len(),
+                &mut recv_len,
+                &mut meta,
+            )
+        };
+        if rc == CURLE_OK {
+            break;
+        }
+        assert_eq!(rc, CURLE_AGAIN);
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "timed out waiting for websocket payload"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
     assert_eq!(&buffer[..recv_len], b"ok");
     assert!(!meta.is_null());
     assert_eq!(unsafe { (*meta).len }, 2);

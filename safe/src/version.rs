@@ -34,18 +34,19 @@ struct SyncVersionInfo(curl_version_info_data);
 unsafe impl Sync for SyncVersionInfo {}
 unsafe impl Send for SyncVersionInfo {}
 
-static PROTOCOLS: SyncCharPtrArray<26> = SyncCharPtrArray([
+// Keep this inventory aligned with the reference curl-config script used by the
+// compat harness so `curl --version` and `curl-config --protocols` agree.
+static PROTOCOLS: SyncCharPtrArray<23> = SyncCharPtrArray([
     c"dict".as_ptr(),
     c"file".as_ptr(),
     c"ftp".as_ptr(),
     c"ftps".as_ptr(),
     c"gopher".as_ptr(),
+    c"gophers".as_ptr(),
     c"http".as_ptr(),
     c"https".as_ptr(),
     c"imap".as_ptr(),
     c"imaps".as_ptr(),
-    c"ldap".as_ptr(),
-    c"ldaps".as_ptr(),
     c"mqtt".as_ptr(),
     c"pop3".as_ptr(),
     c"pop3s".as_ptr(),
@@ -58,8 +59,6 @@ static PROTOCOLS: SyncCharPtrArray<26> = SyncCharPtrArray([
     c"smtps".as_ptr(),
     c"telnet".as_ptr(),
     c"tftp".as_ptr(),
-    c"ws".as_ptr(),
-    c"wss".as_ptr(),
     ptr::null(),
 ]);
 
@@ -262,7 +261,10 @@ pub unsafe extern "C" fn port_safe_export_curl_getenv(variable: *const c_char) -
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn port_safe_export_curl_getdate(input: *const c_char, _unused: *const time_t) -> time_t {
+pub unsafe extern "C" fn port_safe_export_curl_getdate(
+    input: *const c_char,
+    _unused: *const time_t,
+) -> time_t {
     if input.is_null() {
         return -1;
     }
@@ -271,7 +273,10 @@ pub unsafe extern "C" fn port_safe_export_curl_getdate(input: *const c_char, _un
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn port_safe_export_curl_strequal(s1: *const c_char, s2: *const c_char) -> i32 {
+pub unsafe extern "C" fn port_safe_export_curl_strequal(
+    s1: *const c_char,
+    s2: *const c_char,
+) -> i32 {
     if s1.is_null() || s2.is_null() {
         return 0;
     }
@@ -291,7 +296,11 @@ pub unsafe extern "C" fn port_safe_export_curl_strequal(s1: *const c_char, s2: *
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn port_safe_export_curl_strnequal(s1: *const c_char, s2: *const c_char, n: size_t) -> i32 {
+pub unsafe extern "C" fn port_safe_export_curl_strnequal(
+    s1: *const c_char,
+    s2: *const c_char,
+    n: size_t,
+) -> i32 {
     if n == 0 {
         return 1;
     }
@@ -335,6 +344,8 @@ pub unsafe extern "C" fn port_safe_export_curl_version() -> *mut c_char {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn port_safe_export_curl_version_info(_stamp: CURLversion) -> *mut curl_version_info_data {
+pub unsafe extern "C" fn port_safe_export_curl_version_info(
+    _stamp: CURLversion,
+) -> *mut curl_version_info_data {
     version_info() as *const curl_version_info_data as *mut curl_version_info_data
 }

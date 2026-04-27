@@ -60,6 +60,7 @@ const SOCK_STREAM: c_int = 1;
 const IPPROTO_TCP: c_int = 6;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const CONNECT_ONLY_WEBSOCKET_IO_TIMEOUT: Duration = Duration::from_secs(1);
 const IO_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const HEADER_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 const REDIRECT_LIMIT: usize = 8;
@@ -1073,9 +1074,7 @@ fn connect_only_transfer(
     } else {
         None
     };
-    stream
-        .set_nonblocking(true)
-        .map_err(|_| CURLE_COULDNT_CONNECT)?;
+    configure_connect_only_stream(&stream, websocket.is_some())?;
     info.pretransfer_time_us = info.connect_time_us;
     info.starttransfer_time_us = info.connect_time_us;
     info.total_time_us = info.connect_time_us;
@@ -1099,6 +1098,22 @@ fn connect_only_transfer(
         location: None,
         info,
     })
+}
+
+fn configure_connect_only_stream(stream: &TcpStream, websocket: bool) -> Result<(), CURLcode> {
+    if websocket {
+        stream
+            .set_read_timeout(Some(CONNECT_ONLY_WEBSOCKET_IO_TIMEOUT))
+            .map_err(|_| CURLE_COULDNT_CONNECT)?;
+        stream
+            .set_write_timeout(Some(CONNECT_ONLY_WEBSOCKET_IO_TIMEOUT))
+            .map_err(|_| CURLE_COULDNT_CONNECT)?;
+    } else {
+        stream
+            .set_nonblocking(true)
+            .map_err(|_| CURLE_COULDNT_CONNECT)?;
+    }
+    Ok(())
 }
 
 fn execute_http_transfer(
