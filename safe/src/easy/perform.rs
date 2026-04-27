@@ -133,12 +133,25 @@ const CURLOPT_CLOSESOCKETFUNCTION: CURLoption = 20208;
 const CURLOPT_CLOSESOCKETDATA: CURLoption = 10209;
 const CURLOPT_QUICK_EXIT: CURLoption = 322;
 
+const CURLINFO_EFFECTIVE_URL: u32 = 0x100000 + 1;
 const CURLINFO_RESPONSE_CODE: u32 = 0x200000 + 2;
 const CURLINFO_TOTAL_TIME: u32 = 0x300000 + 3;
 const CURLINFO_NAMELOOKUP_TIME: u32 = 0x300000 + 4;
 const CURLINFO_CONNECT_TIME: u32 = 0x300000 + 5;
 const CURLINFO_PRETRANSFER_TIME: u32 = 0x300000 + 6;
+const CURLINFO_SSL_VERIFYRESULT: u32 = 0x200000 + 13;
+const CURLINFO_FILETIME: u32 = 0x200000 + 14;
 const CURLINFO_STARTTRANSFER_TIME: u32 = 0x300000 + 17;
+const CURLINFO_CONTENT_TYPE: u32 = 0x100000 + 18;
+const CURLINFO_REDIRECT_TIME: u32 = 0x300000 + 19;
+const CURLINFO_REDIRECT_COUNT: u32 = 0x200000 + 20;
+const CURLINFO_HTTP_CONNECTCODE: u32 = 0x200000 + 22;
+const CURLINFO_OS_ERRNO: u32 = 0x200000 + 25;
+const CURLINFO_NUM_CONNECTS: u32 = 0x200000 + 26;
+const CURLINFO_LASTSOCKET: u32 = 0x200000 + 29;
+const CURLINFO_REDIRECT_URL: u32 = 0x100000 + 31;
+const CURLINFO_APPCONNECT_TIME: u32 = 0x300000 + 33;
+const CURLINFO_CONDITION_UNMET: u32 = 0x200000 + 35;
 const CURLINFO_PRIMARY_IP: u32 = 0x100000 + 32;
 const CURLINFO_PRIMARY_PORT: u32 = 0x200000 + 40;
 const CURLINFO_LOCAL_IP: u32 = 0x100000 + 41;
@@ -148,15 +161,50 @@ const CURLINFO_CERTINFO: u32 = 0x400000 + 34;
 const CURLINFO_TLS_SESSION: u32 = 0x400000 + 43;
 const CURLINFO_PRIVATE: u32 = 0x100000 + 21;
 const CURLINFO_TLS_SSL_PTR: u32 = 0x400000 + 45;
+const CURLINFO_HTTP_VERSION: u32 = 0x200000 + 46;
+const CURLINFO_PROXY_SSL_VERIFYRESULT: u32 = 0x200000 + 47;
+const CURLINFO_PROTOCOL: u32 = 0x200000 + 48;
 const CURLINFO_SCHEME: u32 = 0x100000 + 49;
 const CURLINFO_RTSP_SESSION_ID: u32 = 0x100000 + 36;
+const CURLINFO_FILETIME_T: u32 = 0x600000 + 14;
 const CURLINFO_TOTAL_TIME_T: u32 = 0x600000 + 50;
 const CURLINFO_NAMELOOKUP_TIME_T: u32 = 0x600000 + 51;
 const CURLINFO_CONNECT_TIME_T: u32 = 0x600000 + 52;
 const CURLINFO_PRETRANSFER_TIME_T: u32 = 0x600000 + 53;
 const CURLINFO_STARTTRANSFER_TIME_T: u32 = 0x600000 + 54;
+const CURLINFO_REDIRECT_TIME_T: u32 = 0x600000 + 55;
+const CURLINFO_APPCONNECT_TIME_T: u32 = 0x600000 + 56;
 const CURLINFO_RETRY_AFTER: u32 = 0x600000 + 57;
+const CURLINFO_EFFECTIVE_METHOD: u32 = 0x100000 + 58;
+const CURLINFO_REFERER: u32 = 0x100000 + 60;
 const CURL_ERROR_SIZE: usize = 256;
+
+const CURL_HTTP_VERSION_1_0: c_long = 1;
+const CURL_HTTP_VERSION_1_1: c_long = 2;
+
+const CURLPROTO_HTTP: c_long = 1 << 0;
+const CURLPROTO_HTTPS: c_long = 1 << 1;
+const CURLPROTO_FTP: c_long = 1 << 2;
+const CURLPROTO_FTPS: c_long = 1 << 3;
+const CURLPROTO_SCP: c_long = 1 << 4;
+const CURLPROTO_SFTP: c_long = 1 << 5;
+const CURLPROTO_TELNET: c_long = 1 << 6;
+const CURLPROTO_LDAP: c_long = 1 << 7;
+const CURLPROTO_LDAPS: c_long = 1 << 8;
+const CURLPROTO_DICT: c_long = 1 << 9;
+const CURLPROTO_FILE: c_long = 1 << 10;
+const CURLPROTO_TFTP: c_long = 1 << 11;
+const CURLPROTO_IMAP: c_long = 1 << 12;
+const CURLPROTO_IMAPS: c_long = 1 << 13;
+const CURLPROTO_POP3: c_long = 1 << 14;
+const CURLPROTO_POP3S: c_long = 1 << 15;
+const CURLPROTO_SMTP: c_long = 1 << 16;
+const CURLPROTO_SMTPS: c_long = 1 << 17;
+const CURLPROTO_RTSP: c_long = 1 << 18;
+const CURLPROTO_GOPHER: c_long = 1 << 25;
+const CURLPROTO_SMB: c_long = 1 << 26;
+const CURLPROTO_SMBS: c_long = 1 << 27;
+const CURLPROTO_MQTT: c_long = 1 << 28;
 
 #[derive(Clone)]
 pub(crate) struct EasyMetadata {
@@ -366,9 +414,14 @@ pub(crate) struct EasyCallbacks {
     pub no_progress: bool,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct EasyInfo {
     response_code: c_long,
+    effective_url: Option<CString>,
+    content_type: Option<CString>,
+    redirect_url: Option<CString>,
+    effective_method: Option<CString>,
+    referer: Option<CString>,
     primary_ip: Option<CString>,
     primary_port: c_long,
     local_ip: Option<CString>,
@@ -377,10 +430,57 @@ struct EasyInfo {
     total_time_us: curl_off_t,
     namelookup_time_us: curl_off_t,
     connect_time_us: curl_off_t,
+    appconnect_time_us: curl_off_t,
     pretransfer_time_us: curl_off_t,
     starttransfer_time_us: curl_off_t,
+    redirect_time_us: curl_off_t,
     retry_after: curl_off_t,
     retry_after_set: bool,
+    redirect_count: c_long,
+    ssl_verify_result: c_long,
+    proxy_ssl_verify_result: c_long,
+    http_connect_code: c_long,
+    os_errno: c_long,
+    num_connects: c_long,
+    http_version: c_long,
+    protocol: c_long,
+    filetime: curl_off_t,
+}
+
+impl Default for EasyInfo {
+    fn default() -> Self {
+        Self {
+            response_code: 0,
+            effective_url: None,
+            content_type: None,
+            redirect_url: None,
+            effective_method: None,
+            referer: None,
+            primary_ip: None,
+            primary_port: 0,
+            local_ip: None,
+            local_port: 0,
+            rtsp_session_id: None,
+            total_time_us: 0,
+            namelookup_time_us: 0,
+            connect_time_us: 0,
+            appconnect_time_us: 0,
+            pretransfer_time_us: 0,
+            starttransfer_time_us: 0,
+            redirect_time_us: 0,
+            retry_after: 0,
+            retry_after_set: false,
+            redirect_count: 0,
+            ssl_verify_result: 0,
+            proxy_ssl_verify_result: 0,
+            http_connect_code: 0,
+            os_errno: 0,
+            num_connects: 0,
+            http_version: 0,
+            protocol: 0,
+            filetime: -1,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -392,9 +492,14 @@ struct StoredTlsSessionInfo {
 
 unsafe impl Send for StoredTlsSessionInfo {}
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct RecordedTransferInfo {
     pub response_code: c_long,
+    pub effective_url: Option<String>,
+    pub content_type: Option<String>,
+    pub redirect_url: Option<String>,
+    pub effective_method: Option<String>,
+    pub referer: Option<String>,
     pub primary_ip: Option<String>,
     pub primary_port: Option<u16>,
     pub local_ip: Option<String>,
@@ -402,9 +507,54 @@ pub(crate) struct RecordedTransferInfo {
     pub total_time_us: curl_off_t,
     pub namelookup_time_us: curl_off_t,
     pub connect_time_us: curl_off_t,
+    pub appconnect_time_us: curl_off_t,
     pub pretransfer_time_us: curl_off_t,
     pub starttransfer_time_us: curl_off_t,
+    pub redirect_time_us: curl_off_t,
     pub retry_after: Option<curl_off_t>,
+    pub redirect_count: c_long,
+    pub ssl_verify_result: c_long,
+    pub proxy_ssl_verify_result: c_long,
+    pub http_connect_code: c_long,
+    pub os_errno: c_long,
+    pub num_connects: c_long,
+    pub http_version: c_long,
+    pub protocol: c_long,
+    pub filetime: curl_off_t,
+}
+
+impl Default for RecordedTransferInfo {
+    fn default() -> Self {
+        Self {
+            response_code: 0,
+            effective_url: None,
+            content_type: None,
+            redirect_url: None,
+            effective_method: None,
+            referer: None,
+            primary_ip: None,
+            primary_port: None,
+            local_ip: None,
+            local_port: None,
+            total_time_us: 0,
+            namelookup_time_us: 0,
+            connect_time_us: 0,
+            appconnect_time_us: 0,
+            pretransfer_time_us: 0,
+            starttransfer_time_us: 0,
+            redirect_time_us: 0,
+            retry_after: None,
+            redirect_count: 0,
+            ssl_verify_result: 0,
+            proxy_ssl_verify_result: 0,
+            http_connect_code: 0,
+            os_errno: 0,
+            num_connects: 0,
+            http_version: 0,
+            protocol: 0,
+            filetime: -1,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -574,7 +724,10 @@ fn apply_cookie_list_item(shadow: &mut EasyShadow, item: String) {
 
     if let Some(value) = item.strip_prefix("Set-Cookie:").map(str::trim) {
         if let Some(current_url) = shadow.metadata.url.as_deref() {
-            shadow.http_state.cookies.store_set_cookie(current_url, value);
+            shadow
+                .http_state
+                .cookies
+                .store_set_cookie(current_url, value);
             let _ = crate::share::with_shared_cookies_mut(shadow.metadata.share_handle, |store| {
                 store.store_set_cookie(current_url, value);
             });
@@ -768,7 +921,11 @@ pub(crate) fn easy_setopt_long(handle: *mut CURL, option: CURLoption, value: c_l
     }
 }
 
-pub(crate) fn easy_setopt_ptr(handle: *mut CURL, option: CURLoption, value: *mut c_void) -> CURLcode {
+pub(crate) fn easy_setopt_ptr(
+    handle: *mut CURL,
+    option: CURLoption,
+    value: *mut c_void,
+) -> CURLcode {
     match with_shadow_mut(handle, |shadow| match option {
         CURLOPT_READDATA => {
             shadow.callbacks.read_data = value as usize;
@@ -930,7 +1087,11 @@ pub(crate) fn easy_setopt_ptr(handle: *mut CURL, option: CURLoption, value: *mut
         }
         CURLOPT_RTSP_SESSION_ID => {
             shadow.metadata.rtsp_session_id = copy_c_string(value.cast());
-            shadow.info.rtsp_session_id = shadow.metadata.rtsp_session_id.clone().and_then(to_c_string);
+            shadow.info.rtsp_session_id = shadow
+                .metadata
+                .rtsp_session_id
+                .clone()
+                .and_then(to_c_string);
             CURLE_OK
         }
         CURLOPT_RTSP_STREAM_URI => {
@@ -1047,7 +1208,11 @@ pub(crate) fn easy_setopt_function(
     }
 }
 
-pub(crate) fn easy_setopt_off_t(handle: *mut CURL, option: CURLoption, value: curl_off_t) -> CURLcode {
+pub(crate) fn easy_setopt_off_t(
+    handle: *mut CURL,
+    option: CURLoption,
+    value: curl_off_t,
+) -> CURLcode {
     match with_shadow_mut(handle, |shadow| {
         let metadata = &mut shadow.metadata;
         match option {
@@ -1196,6 +1361,11 @@ pub(crate) fn record_transfer_info(handle: *mut CURL, info: RecordedTransferInfo
         .get_mut(&(handle as usize))
     {
         shadow.info.response_code = info.response_code;
+        shadow.info.effective_url = info.effective_url.and_then(to_c_string);
+        shadow.info.content_type = info.content_type.and_then(to_c_string);
+        shadow.info.redirect_url = info.redirect_url.and_then(to_c_string);
+        shadow.info.effective_method = info.effective_method.and_then(to_c_string);
+        shadow.info.referer = info.referer.and_then(to_c_string);
         shadow.info.primary_ip = info.primary_ip.and_then(to_c_string);
         shadow.info.primary_port = info.primary_port.map(c_long::from).unwrap_or(0);
         shadow.info.local_ip = info.local_ip.and_then(to_c_string);
@@ -1203,8 +1373,19 @@ pub(crate) fn record_transfer_info(handle: *mut CURL, info: RecordedTransferInfo
         shadow.info.total_time_us = info.total_time_us;
         shadow.info.namelookup_time_us = info.namelookup_time_us;
         shadow.info.connect_time_us = info.connect_time_us;
+        shadow.info.appconnect_time_us = info.appconnect_time_us;
         shadow.info.pretransfer_time_us = info.pretransfer_time_us;
         shadow.info.starttransfer_time_us = info.starttransfer_time_us;
+        shadow.info.redirect_time_us = info.redirect_time_us;
+        shadow.info.redirect_count = info.redirect_count;
+        shadow.info.ssl_verify_result = info.ssl_verify_result;
+        shadow.info.proxy_ssl_verify_result = info.proxy_ssl_verify_result;
+        shadow.info.http_connect_code = info.http_connect_code;
+        shadow.info.os_errno = info.os_errno;
+        shadow.info.num_connects = info.num_connects;
+        shadow.info.http_version = info.http_version;
+        shadow.info.protocol = info.protocol;
+        shadow.info.filetime = info.filetime;
         if let Some(retry_after) = info.retry_after {
             shadow.info.retry_after = retry_after;
             shadow.info.retry_after_set = true;
@@ -1227,6 +1408,60 @@ pub(crate) fn record_rtsp_session_id(handle: *mut CURL, session_id: Option<&str>
 
 fn timing_seconds(micros: curl_off_t) -> f64 {
     micros as f64 / 1_000_000.0
+}
+
+fn effective_method_from_metadata(metadata: &EasyMetadata) -> String {
+    if let Some(custom_request) = metadata.custom_request.as_ref() {
+        return custom_request.clone();
+    }
+    if metadata.nobody {
+        return "HEAD".to_string();
+    }
+    if metadata.upload {
+        return "PUT".to_string();
+    }
+    if metadata.mimepost_handle.is_some() || metadata.httppost_handle.is_some() {
+        return "POST".to_string();
+    }
+    if metadata.http_get {
+        return "GET".to_string();
+    }
+    "GET".to_string()
+}
+
+pub(crate) fn protocol_from_url(url: Option<&str>) -> c_long {
+    let Some(url) = url else {
+        return 0;
+    };
+    let Some((scheme, _)) = url.split_once("://") else {
+        return 0;
+    };
+    match scheme.to_ascii_lowercase().as_str() {
+        "dict" => CURLPROTO_DICT,
+        "file" => CURLPROTO_FILE,
+        "ftp" => CURLPROTO_FTP,
+        "ftps" => CURLPROTO_FTPS,
+        "gopher" => CURLPROTO_GOPHER,
+        "http" | "ws" => CURLPROTO_HTTP,
+        "https" | "wss" => CURLPROTO_HTTPS,
+        "imap" => CURLPROTO_IMAP,
+        "imaps" => CURLPROTO_IMAPS,
+        "ldap" => CURLPROTO_LDAP,
+        "ldaps" => CURLPROTO_LDAPS,
+        "mqtt" => CURLPROTO_MQTT,
+        "pop3" => CURLPROTO_POP3,
+        "pop3s" => CURLPROTO_POP3S,
+        "rtsp" => CURLPROTO_RTSP,
+        "scp" => CURLPROTO_SCP,
+        "smb" => CURLPROTO_SMB,
+        "smbs" => CURLPROTO_SMBS,
+        "sftp" => CURLPROTO_SFTP,
+        "smtp" => CURLPROTO_SMTP,
+        "smtps" => CURLPROTO_SMTPS,
+        "telnet" => CURLPROTO_TELNET,
+        "tftp" => CURLPROTO_TFTP,
+        _ => 0,
+    }
 }
 
 fn scheme_ptr(url: Option<&str>) -> *mut c_char {
@@ -1320,11 +1555,35 @@ pub(crate) fn easy_getinfo_long(
         return Some(CURLE_BAD_FUNCTION_ARGUMENT);
     }
     let guard = registry().lock().expect("easy registry mutex poisoned");
-    let info_values = guard.get(&(handle as usize)).map(|shadow| &shadow.info);
+    let shadow = guard.get(&(handle as usize));
+    let info_values = shadow.map(|shadow| &shadow.info);
     let result = match info {
         CURLINFO_RESPONSE_CODE => info_values.map(|info| info.response_code).unwrap_or(0),
+        CURLINFO_SSL_VERIFYRESULT => info_values.map(|info| info.ssl_verify_result).unwrap_or(0),
+        CURLINFO_FILETIME => {
+            let filetime = info_values.map(|info| info.filetime).unwrap_or(-1);
+            filetime.clamp(c_long::MIN as curl_off_t, c_long::MAX as curl_off_t) as c_long
+        }
+        CURLINFO_REDIRECT_COUNT => info_values.map(|info| info.redirect_count).unwrap_or(0),
+        CURLINFO_HTTP_CONNECTCODE => info_values.map(|info| info.http_connect_code).unwrap_or(0),
+        CURLINFO_OS_ERRNO => info_values.map(|info| info.os_errno).unwrap_or(0),
+        CURLINFO_NUM_CONNECTS => info_values.map(|info| info.num_connects).unwrap_or(0),
+        CURLINFO_LASTSOCKET => crate::transfer::active_socket(handle)
+            .map(|socket| socket as c_long)
+            .unwrap_or(-1),
+        CURLINFO_CONDITION_UNMET => info_values
+            .map(|info| (info.response_code == 304) as c_long)
+            .unwrap_or(0),
         CURLINFO_PRIMARY_PORT => info_values.map(|info| info.primary_port).unwrap_or(0),
         CURLINFO_LOCAL_PORT => info_values.map(|info| info.local_port).unwrap_or(0),
+        CURLINFO_HTTP_VERSION => info_values.map(|info| info.http_version).unwrap_or(0),
+        CURLINFO_PROXY_SSL_VERIFYRESULT => info_values
+            .map(|info| info.proxy_ssl_verify_result)
+            .unwrap_or(0),
+        CURLINFO_PROTOCOL => info_values
+            .map(|info| info.protocol)
+            .or_else(|| shadow.map(|shadow| protocol_from_url(shadow.metadata.url.as_deref())))
+            .unwrap_or(0),
         _ => return None,
     };
     unsafe { *value = result };
@@ -1342,19 +1601,39 @@ pub(crate) fn easy_getinfo_double(
     let guard = registry().lock().expect("easy registry mutex poisoned");
     let shadow = guard.get(&(handle as usize));
     let result = match info {
-        CURLINFO_TOTAL_TIME => timing_seconds(shadow.map(|shadow| shadow.info.total_time_us).unwrap_or(0)),
-        CURLINFO_NAMELOOKUP_TIME => {
-            timing_seconds(shadow.map(|shadow| shadow.info.namelookup_time_us).unwrap_or(0))
+        CURLINFO_TOTAL_TIME => {
+            timing_seconds(shadow.map(|shadow| shadow.info.total_time_us).unwrap_or(0))
         }
-        CURLINFO_CONNECT_TIME => {
-            timing_seconds(shadow.map(|shadow| shadow.info.connect_time_us).unwrap_or(0))
-        }
-        CURLINFO_PRETRANSFER_TIME => {
-            timing_seconds(shadow.map(|shadow| shadow.info.pretransfer_time_us).unwrap_or(0))
-        }
-        CURLINFO_STARTTRANSFER_TIME => {
-            timing_seconds(shadow.map(|shadow| shadow.info.starttransfer_time_us).unwrap_or(0))
-        }
+        CURLINFO_NAMELOOKUP_TIME => timing_seconds(
+            shadow
+                .map(|shadow| shadow.info.namelookup_time_us)
+                .unwrap_or(0),
+        ),
+        CURLINFO_CONNECT_TIME => timing_seconds(
+            shadow
+                .map(|shadow| shadow.info.connect_time_us)
+                .unwrap_or(0),
+        ),
+        CURLINFO_APPCONNECT_TIME => timing_seconds(
+            shadow
+                .map(|shadow| shadow.info.appconnect_time_us)
+                .unwrap_or(0),
+        ),
+        CURLINFO_PRETRANSFER_TIME => timing_seconds(
+            shadow
+                .map(|shadow| shadow.info.pretransfer_time_us)
+                .unwrap_or(0),
+        ),
+        CURLINFO_STARTTRANSFER_TIME => timing_seconds(
+            shadow
+                .map(|shadow| shadow.info.starttransfer_time_us)
+                .unwrap_or(0),
+        ),
+        CURLINFO_REDIRECT_TIME => timing_seconds(
+            shadow
+                .map(|shadow| shadow.info.redirect_time_us)
+                .unwrap_or(0),
+        ),
         _ => return None,
     };
     unsafe { *value = result };
@@ -1370,14 +1649,63 @@ pub(crate) fn easy_getinfo_string(
         return Some(CURLE_BAD_FUNCTION_ARGUMENT);
     }
 
-    let guard = registry().lock().expect("easy registry mutex poisoned");
-    let shadow = guard.get(&(handle as usize));
+    let mut guard = registry().lock().expect("easy registry mutex poisoned");
+    let shadow = guard.get_mut(&(handle as usize));
     unsafe {
         *value = match info {
+            CURLINFO_EFFECTIVE_URL => shadow
+                .map(|shadow| {
+                    if shadow.info.effective_url.is_none() {
+                        shadow.info.effective_url =
+                            shadow.metadata.url.clone().and_then(to_c_string);
+                    }
+                    shadow
+                        .info
+                        .effective_url
+                        .as_ref()
+                        .map(|value| value.as_ptr().cast_mut())
+                        .unwrap_or(c"".as_ptr().cast_mut())
+                })
+                .unwrap_or(c"".as_ptr().cast_mut()),
+            CURLINFO_CONTENT_TYPE => shadow
+                .and_then(|shadow| shadow.info.content_type.as_ref())
+                .map(|value| value.as_ptr().cast_mut())
+                .unwrap_or(ptr::null_mut()),
             CURLINFO_PRIVATE => shadow
                 .map(|shadow| shadow.metadata.private_data as *mut c_char)
                 .unwrap_or(ptr::null_mut()),
+            CURLINFO_REDIRECT_URL => shadow
+                .and_then(|shadow| shadow.info.redirect_url.as_ref())
+                .map(|value| value.as_ptr().cast_mut())
+                .unwrap_or(ptr::null_mut()),
             CURLINFO_SCHEME => scheme_ptr(shadow.and_then(|shadow| shadow.metadata.url.as_deref())),
+            CURLINFO_EFFECTIVE_METHOD => shadow
+                .map(|shadow| {
+                    if shadow.info.effective_method.is_none() {
+                        shadow.info.effective_method =
+                            to_c_string(effective_method_from_metadata(&shadow.metadata));
+                    }
+                    shadow
+                        .info
+                        .effective_method
+                        .as_ref()
+                        .map(|value| value.as_ptr().cast_mut())
+                        .unwrap_or(ptr::null_mut())
+                })
+                .unwrap_or(ptr::null_mut()),
+            CURLINFO_REFERER => shadow
+                .map(|shadow| {
+                    if shadow.info.referer.is_none() {
+                        shadow.info.referer = shadow.metadata.referer.clone().and_then(to_c_string);
+                    }
+                    shadow
+                        .info
+                        .referer
+                        .as_ref()
+                        .map(|value| value.as_ptr().cast_mut())
+                        .unwrap_or(ptr::null_mut())
+                })
+                .unwrap_or(ptr::null_mut()),
             CURLINFO_PRIMARY_IP => shadow
                 .and_then(|shadow| shadow.info.primary_ip.as_ref())
                 .map(|value| value.as_ptr().cast_mut())
@@ -1407,6 +1735,7 @@ pub(crate) fn easy_getinfo_off_t(
     let guard = registry().lock().expect("easy registry mutex poisoned");
     let shadow = guard.get(&(handle as usize));
     let result = match info {
+        CURLINFO_FILETIME_T => shadow.map(|shadow| shadow.info.filetime).unwrap_or(-1),
         CURLINFO_RETRY_AFTER => shadow
             .and_then(|shadow| {
                 shadow
@@ -1422,11 +1751,17 @@ pub(crate) fn easy_getinfo_off_t(
         CURLINFO_CONNECT_TIME_T => shadow
             .map(|shadow| shadow.info.connect_time_us)
             .unwrap_or(0),
+        CURLINFO_APPCONNECT_TIME_T => shadow
+            .map(|shadow| shadow.info.appconnect_time_us)
+            .unwrap_or(0),
         CURLINFO_PRETRANSFER_TIME_T => shadow
             .map(|shadow| shadow.info.pretransfer_time_us)
             .unwrap_or(0),
         CURLINFO_STARTTRANSFER_TIME_T => shadow
             .map(|shadow| shadow.info.starttransfer_time_us)
+            .unwrap_or(0),
+        CURLINFO_REDIRECT_TIME_T => shadow
+            .map(|shadow| shadow.info.redirect_time_us)
             .unwrap_or(0),
         _ => return None,
     };

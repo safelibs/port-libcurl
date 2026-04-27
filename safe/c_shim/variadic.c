@@ -8,9 +8,6 @@
 #include <curl/urlapi.h>
 
 void *port_safe_resolve_reference_symbol(const char *name);
-CURL *port_safe_reference_easy_handle(CURL *handle);
-
-typedef CURLcode (*curl_easy_getinfo_fn)(CURL *handle, CURLINFO info, ...);
 
 CURLcode port_safe_easy_setopt_long(CURL *handle, CURLoption option, long value);
 CURLcode port_safe_easy_setopt_ptr(CURL *handle, CURLoption option, void *value);
@@ -60,14 +57,6 @@ struct port_safe_form_spec {
 #define FORM_FLAG_STREAM       (1u << 4)
 #define FORM_FLAG_CONTENTLEN   (1u << 5)
 
-static curl_easy_getinfo_fn resolve_easy_getinfo(void) {
-  static curl_easy_getinfo_fn fn = NULL;
-  if(!fn)
-    fn = (curl_easy_getinfo_fn)port_safe_resolve_reference_symbol("curl_easy_getinfo");
-  return fn;
-}
-
-
 CURLcode curl_easy_setopt(CURL *handle, CURLoption option, ...) {
   CURLcode result;
   va_list args;
@@ -116,8 +105,6 @@ CURLcode curl_easy_getinfo(CURL *handle, CURLINFO info, ...) {
   CURLcode result;
   va_list args;
   unsigned int type_mask = info & CURLINFO_TYPEMASK;
-  curl_easy_getinfo_fn fn = resolve_easy_getinfo();
-  CURL *ref_handle = port_safe_reference_easy_handle(handle);
 
   va_start(args, info);
   switch(type_mask) {
@@ -125,7 +112,7 @@ CURLcode curl_easy_getinfo(CURL *handle, CURLINFO info, ...) {
   {
     char **value = va_arg(args, char **);
     if(!port_safe_easy_getinfo_string(handle, info, value, &result))
-      result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
+      result = CURLE_UNKNOWN_OPTION;
     break;
   }
   case CURLINFO_SLIST:
@@ -133,12 +120,12 @@ CURLcode curl_easy_getinfo(CURL *handle, CURLINFO info, ...) {
     if(info == CURLINFO_COOKIELIST) {
       struct curl_slist **value = va_arg(args, struct curl_slist **);
       if(!port_safe_easy_getinfo_slist(handle, info, value, &result))
-        result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
+        result = CURLE_UNKNOWN_OPTION;
     }
     else {
       void **value = va_arg(args, void **);
       if(!port_safe_easy_getinfo_ptr(handle, info, value, &result))
-        result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
+        result = CURLE_UNKNOWN_OPTION;
     }
     break;
   }
@@ -146,28 +133,28 @@ CURLcode curl_easy_getinfo(CURL *handle, CURLINFO info, ...) {
   {
     long *value = va_arg(args, long *);
     if(!port_safe_easy_getinfo_long(handle, info, value, &result))
-      result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
+      result = CURLE_UNKNOWN_OPTION;
     break;
   }
   case CURLINFO_DOUBLE:
   {
     double *value = va_arg(args, double *);
     if(!port_safe_easy_getinfo_double(handle, info, value, &result))
-      result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
+      result = CURLE_UNKNOWN_OPTION;
     break;
   }
   case CURLINFO_SOCKET:
   {
     curl_socket_t *value = va_arg(args, curl_socket_t *);
     if(!port_safe_easy_getinfo_socket(handle, info, value, &result))
-      result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
+      result = CURLE_UNKNOWN_OPTION;
     break;
   }
   case CURLINFO_OFF_T:
   {
     curl_off_t *value = va_arg(args, curl_off_t *);
     if(!port_safe_easy_getinfo_off_t(handle, info, value, &result))
-      result = ref_handle ? fn(ref_handle, info, value) : CURLE_UNKNOWN_OPTION;
+      result = CURLE_UNKNOWN_OPTION;
     break;
   }
   default:

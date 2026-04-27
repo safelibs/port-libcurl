@@ -215,6 +215,7 @@ struct RequestContext {
 struct ResponseMeta {
     status_code: u16,
     content_length: Option<usize>,
+    content_type: Option<String>,
     has_content_range: bool,
     retry_after: Option<curl_off_t>,
     location: Option<String>,
@@ -224,6 +225,7 @@ struct ResponseMeta {
 struct TransferOutcome {
     result: CURLcode,
     response_code: u16,
+    content_type: Option<String>,
     retry_after: Option<curl_off_t>,
     location: Option<String>,
     info: RecordedTransferInfo,
@@ -692,6 +694,7 @@ fn perform_transfer_impl(
     let initial_origin = Origin::from_url(&current_url);
     let mut referer_value = metadata.referer.clone();
     let mut allow_cross_origin_auth = false;
+    let mut redirect_time_us: curl_off_t = 0;
     crate::share::touch_connect_callbacks(handle, metadata.share_handle, 6);
     let redirect_limit = if metadata.follow_location {
         metadata
@@ -748,9 +751,27 @@ fn perform_transfer_impl(
             }
         };
 
+        let redirect_url = redirected_url(
+            &current_url,
+            outcome.response_code,
+            outcome.location.as_deref(),
+        );
         let mut recorded_info = outcome.info.clone();
         recorded_info.response_code = outcome.response_code as c_long;
+        recorded_info.effective_url = Some(current_url.clone());
+        recorded_info.content_type = outcome.content_type.clone();
+        recorded_info.redirect_url = redirect_url;
+        recorded_info.effective_method = Some(request.method.clone());
+        recorded_info.referer = request_header_value(&request.request_headers, "Referer");
         recorded_info.retry_after = outcome.retry_after;
+        recorded_info.redirect_count = redirect_count as c_long;
+        recorded_info.redirect_time_us = redirect_time_us;
+        recorded_info.num_connects = (redirect_count + 1) as c_long;
+        recorded_info.http_version = match request.scheme.as_str() {
+            "http" | "https" | "ws" | "wss" => CURL_HTTP_VERSION_1_1,
+            _ => 0,
+        };
+        recorded_info.protocol = crate::easy::perform::protocol_from_url(Some(&current_url));
         perform::record_transfer_info(handle, recorded_info);
 
         let decision = request::decide_redirect(
@@ -767,6 +788,7 @@ fn perform_transfer_impl(
             initial_origin.as_ref(),
         );
         if let Some(decision) = decision {
+            redirect_time_us = redirect_time_us.saturating_add(outcome.info.total_time_us);
             current_url = decision.next_url;
             allow_cross_origin_auth = decision.allow_cross_origin_auth;
             if let Some(referer) = decision.referer {
@@ -1026,6 +1048,7 @@ fn connect_only_transfer(
     Ok(TransferOutcome {
         result: crate::abi::CURLE_OK,
         response_code: 0,
+        content_type: None,
         retry_after: None,
         location: None,
         info,
@@ -1069,6 +1092,11 @@ fn execute_http_transfer(
     } else {
         TransportStream::Plain(stream)
     };
+    let transport_ready_us = elapsed_us(request_started.elapsed());
+    if plan.tls.is_some() {
+        info.appconnect_time_us = transport_ready_us;
+    }
+    info.pretransfer_time_us = transport_ready_us;
     write_request(&mut stream, request)?;
     if metadata.upload {
         write_request_body(&mut stream, handle, callbacks, request)?;
@@ -1084,11 +1112,11 @@ fn execute_http_transfer(
         response_prefix,
     )?;
     flush_cookie_jar(handle, metadata);
-    info.pretransfer_time_us = info.connect_time_us;
     info.starttransfer_time_us = elapsed_us(request_started.elapsed());
     let mut outcome = TransferOutcome {
         result: crate::abi::CURLE_OK,
         response_code: response.status_code,
+        content_type: response.content_type,
         retry_after: response.retry_after,
         location: response.location,
         info,
@@ -1687,6 +1715,7 @@ fn read_response_meta_with_prefix(
     let header_block = &bytes[..header_end];
     let mut status_code = 0u16;
     let mut content_length = None;
+    let mut content_type = None;
     let mut has_content_range = false;
     let mut retry_after = None;
     let mut location = None;
@@ -1728,6 +1757,8 @@ fn read_response_meta_with_prefix(
         });
         if name.eq_ignore_ascii_case("content-length") {
             content_length = value.parse::<usize>().ok();
+        } else if name.eq_ignore_ascii_case("content-type") {
+            content_type = Some(value.to_string());
         } else if name.eq_ignore_ascii_case("content-range") {
             has_content_range = true;
         } else if name.eq_ignore_ascii_case("retry-after") {
@@ -1739,6 +1770,7 @@ fn read_response_meta_with_prefix(
     Ok(ResponseMeta {
         status_code,
         content_length,
+        content_type,
         has_content_range,
         retry_after,
         location,
@@ -2295,16 +2327,7 @@ fn effective_range_header(metadata: &EasyMetadata) -> Option<String> {
     })
 }
 
-fn redirected_url(
-    current_url: &str,
-    follow_location: bool,
-    redirect_count: usize,
-    status_code: u16,
-    location: Option<&str>,
-) -> Option<String> {
-    if !follow_location || redirect_count >= REDIRECT_LIMIT {
-        return None;
-    }
+fn redirected_url(current_url: &str, status_code: u16, location: Option<&str>) -> Option<String> {
     if !matches!(status_code, 301 | 302 | 303 | 307 | 308) {
         return None;
     }
@@ -2377,6 +2400,16 @@ fn has_header(headers: &[String], name: &str) -> bool {
         header
             .split_once(':')
             .is_some_and(|(candidate, _)| candidate.trim().eq_ignore_ascii_case(name))
+    })
+}
+
+fn request_header_value(headers: &[String], name: &str) -> Option<String> {
+    headers.iter().find_map(|header| {
+        let (candidate, value) = header.split_once(':')?;
+        candidate
+            .trim()
+            .eq_ignore_ascii_case(name)
+            .then(|| value.trim().to_string())
     })
 }
 

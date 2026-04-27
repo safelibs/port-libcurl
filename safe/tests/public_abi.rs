@@ -1,24 +1,35 @@
 use port_libcurl_safe::abi::{
     curl_calloc_callback, curl_easyoption, curl_free_callback, curl_malloc_callback, curl_mime,
-    curl_mimepart, curl_realloc_callback, curl_slist, curl_ssl_backend, curl_sslbackend,
-    curl_strdup_callback, curl_version_info_data, CURLMcode, CURLSHcode, CURLSHoption, CURLUcode,
-    CURLcode, CURLoption, CURLsslset, CURLversion, CURL, CURLE_OK, CURLM, CURLM_OK, CURLOT_STRING,
-    CURLSH, CURLSHE_OK, CURLSHOPT_SHARE, CURLSSLBACKEND_GNUTLS, CURLSSLBACKEND_OPENSSL,
-    CURLSSLSET_OK, CURLSSLSET_TOO_LATE, CURLU, CURLUE_OK, CURLUPART_HOST, CURLUPART_URL,
-    CURLVERSION_NOW, CURL_GLOBAL_DEFAULT, CURL_LOCK_DATA_COOKIE,
+    curl_mimepart, curl_off_t, curl_realloc_callback, curl_slist, curl_ssl_backend,
+    curl_sslbackend, curl_strdup_callback, curl_version_info_data, CURLMcode, CURLSHcode,
+    CURLSHoption, CURLUcode, CURLcode, CURLoption, CURLsslset, CURLversion, CURL, CURLE_OK, CURLM,
+    CURLM_OK, CURLOT_STRING, CURLSH, CURLSHE_OK, CURLSHOPT_SHARE, CURLSSLBACKEND_GNUTLS,
+    CURLSSLBACKEND_OPENSSL, CURLSSLSET_OK, CURLSSLSET_TOO_LATE, CURLU, CURLUE_OK, CURLUPART_HOST,
+    CURLUPART_URL, CURLVERSION_NOW, CURL_GLOBAL_DEFAULT, CURL_LOCK_DATA_COOKIE,
 };
 use port_libcurl_safe::BUILD_FLAVOR;
 use std::collections::HashSet;
 use std::ffi::{c_char, c_int, c_long, c_void, CStr, CString};
+use std::io::{Read, Write};
+use std::net::{Shutdown, TcpListener};
 use std::ptr;
 use std::sync::{Mutex, OnceLock};
+use std::thread;
 
 const CURLOPT_MIMEPOST: CURLoption = 10269;
 const CURLOPT_URL: CURLoption = 10002;
 const CURLOPT_COOKIELIST: CURLoption = 10135;
 const CURLOPT_CURLU: CURLoption = 10282;
+const CURLOPT_FOLLOWLOCATION: CURLoption = 52;
+const CURLOPT_NOBODY: CURLoption = 44;
+const CURLINFO_EFFECTIVE_URL: u32 = 0x100000 + 1;
+const CURLINFO_CONTENT_TYPE: u32 = 0x100000 + 18;
+const CURLINFO_REDIRECT_COUNT: u32 = 0x200000 + 20;
+const CURLINFO_REDIRECT_URL: u32 = 0x100000 + 31;
 const CURLINFO_COOKIELIST: u32 = 0x400000 + 28;
 const CURLINFO_SCHEME: u32 = 0x100000 + 49;
+const CURLINFO_REDIRECT_TIME_T: u32 = 0x600000 + 55;
+const CURLINFO_APPCONNECT_TIME_T: u32 = 0x600000 + 56;
 const CURL_ZERO_TERMINATED: usize = usize::MAX;
 
 unsafe extern "C" {
@@ -54,6 +65,7 @@ unsafe extern "C" {
     fn curl_easy_init() -> *mut CURL;
     fn curl_easy_cleanup(handle: *mut CURL);
     fn curl_easy_duphandle(handle: *mut CURL) -> *mut CURL;
+    fn curl_easy_perform(handle: *mut CURL) -> CURLcode;
     fn curl_easy_reset(handle: *mut CURL);
     fn curl_easy_setopt(handle: *mut CURL, option: CURLoption, ...) -> CURLcode;
     fn curl_easy_getinfo(handle: *mut CURL, info: u32, ...) -> CURLcode;
@@ -209,6 +221,48 @@ fn c_ptr(bytes: &'static [u8]) -> *const c_char {
     bytes.as_ptr().cast()
 }
 
+fn spawn_getinfo_fixture() -> (String, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind fixture");
+    let port = listener.local_addr().expect("fixture addr").port();
+    let base_url = format!("http://127.0.0.1:{port}");
+    let join = thread::spawn(move || {
+        for _ in 0..3 {
+            let (mut stream, _) = listener.accept().expect("accept fixture");
+            let mut request = Vec::new();
+            let mut scratch = [0u8; 1024];
+            loop {
+                let read = stream.read(&mut scratch).expect("read request");
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&scratch[..read]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+
+            let request_text = String::from_utf8_lossy(&request);
+            let path = request_text.split_whitespace().nth(1).unwrap_or("/");
+            let response = match path {
+                "/redirect" => {
+                    "HTTP/1.1 302 Found\r\nLocation: /target\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                }
+                "/target" => {
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                }
+                _ => {
+                    "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                }
+            };
+            stream
+                .write_all(response.as_bytes())
+                .expect("write response");
+            let _ = stream.shutdown(Shutdown::Both);
+        }
+    });
+    (base_url, join)
+}
+
 #[test]
 fn public_abi_smoke_and_allocator_contract() {
     assert!(!BUILD_FLAVOR.is_empty());
@@ -352,14 +406,20 @@ fn public_abi_smoke_and_allocator_contract() {
         assert_eq!(curl_easy_setopt(easy, CURLOPT_CURLU, url), CURLE_OK);
 
         let mut scheme = ptr::null_mut();
-        assert_eq!(curl_easy_getinfo(easy, CURLINFO_SCHEME, &mut scheme), CURLE_OK);
+        assert_eq!(
+            curl_easy_getinfo(easy, CURLINFO_SCHEME, &mut scheme),
+            CURLE_OK
+        );
         assert_eq!(CStr::from_ptr(scheme).to_bytes(), b"https");
 
         assert_eq!(
             curl_easy_setopt(easy, CURLOPT_URL, c_ptr(b"http://example.test/plain\0")),
             CURLE_OK
         );
-        assert_eq!(curl_easy_getinfo(easy, CURLINFO_SCHEME, &mut scheme), CURLE_OK);
+        assert_eq!(
+            curl_easy_getinfo(easy, CURLINFO_SCHEME, &mut scheme),
+            CURLE_OK
+        );
         assert_eq!(CStr::from_ptr(scheme).to_bytes(), b"http");
 
         assert_eq!(
@@ -417,6 +477,85 @@ fn public_abi_smoke_and_allocator_contract() {
         assert_eq!(curl_multi_cleanup(multi), CURLM_OK);
         curl_easy_reset(dup);
         curl_easy_cleanup(dup);
+
+        let (base_url, fixture_join) = spawn_getinfo_fixture();
+        let redirect_url = CString::new(format!("{base_url}/redirect")).expect("cstring");
+        let target_url = format!("{base_url}/target");
+
+        curl_easy_reset(easy);
+        assert_eq!(
+            curl_easy_setopt(easy, CURLOPT_URL, redirect_url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 1 as c_long),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(easy, CURLOPT_NOBODY, 1 as c_long),
+            CURLE_OK
+        );
+        assert_eq!(curl_easy_perform(easy), CURLE_OK);
+
+        let mut effective_url = ptr::null_mut();
+        assert_eq!(
+            curl_easy_getinfo(easy, CURLINFO_EFFECTIVE_URL, &mut effective_url),
+            CURLE_OK
+        );
+        assert_eq!(
+            CStr::from_ptr(effective_url).to_bytes(),
+            target_url.as_bytes()
+        );
+
+        let mut content_type = ptr::null_mut();
+        assert_eq!(
+            curl_easy_getinfo(easy, CURLINFO_CONTENT_TYPE, &mut content_type),
+            CURLE_OK
+        );
+        assert_eq!(CStr::from_ptr(content_type).to_bytes(), b"text/plain");
+
+        let mut redirect_count = 0i64 as c_long;
+        assert_eq!(
+            curl_easy_getinfo(easy, CURLINFO_REDIRECT_COUNT, &mut redirect_count),
+            CURLE_OK
+        );
+        assert_eq!(redirect_count, 1);
+
+        let mut redirect_time = 0 as curl_off_t;
+        assert_eq!(
+            curl_easy_getinfo(easy, CURLINFO_REDIRECT_TIME_T, &mut redirect_time),
+            CURLE_OK
+        );
+        assert!(redirect_time >= 0);
+
+        let mut appconnect_time = -1 as curl_off_t;
+        assert_eq!(
+            curl_easy_getinfo(easy, CURLINFO_APPCONNECT_TIME_T, &mut appconnect_time),
+            CURLE_OK
+        );
+        assert_eq!(appconnect_time, 0);
+
+        curl_easy_reset(easy);
+        assert_eq!(
+            curl_easy_setopt(easy, CURLOPT_URL, redirect_url.as_ptr()),
+            CURLE_OK
+        );
+        assert_eq!(
+            curl_easy_setopt(easy, CURLOPT_NOBODY, 1 as c_long),
+            CURLE_OK
+        );
+        assert_eq!(curl_easy_perform(easy), CURLE_OK);
+
+        let mut redirect_target = ptr::null_mut();
+        assert_eq!(
+            curl_easy_getinfo(easy, CURLINFO_REDIRECT_URL, &mut redirect_target),
+            CURLE_OK
+        );
+        assert_eq!(
+            CStr::from_ptr(redirect_target).to_bytes(),
+            target_url.as_bytes()
+        );
+        fixture_join.join().expect("fixture join");
 
         let fmt = CString::new("hello %s %d").expect("cstring");
         let world = CString::new("world").expect("cstring");
