@@ -126,7 +126,10 @@ fn link_psl() {
         if let Some(parent) = found.parent() {
             println!("cargo:rustc-link-search=native={}", parent.display());
         }
-        println!("cargo:rustc-link-arg=-l:{}", found.file_name().unwrap().to_string_lossy());
+        println!(
+            "cargo:rustc-link-arg=-l:{}",
+            found.file_name().unwrap().to_string_lossy()
+        );
     } else {
         println!("cargo:rustc-link-lib=psl");
     }
