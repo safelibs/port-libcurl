@@ -717,24 +717,6 @@
         "openssl",
         "gnutls"
       ],
-      "id": "libtest:lib1521",
-      "object_ids": [
-        "lib1521.c",
-        "../../lib/timediff.c",
-        "first.c"
-      ],
-      "relink_target_id": "libtest:lib1521",
-      "runtime": {
-        "adapter": "libtest",
-        "test_id": "1521"
-      },
-      "target_id": "libtest:lib1521"
-    },
-    {
-      "flavors": [
-        "openssl",
-        "gnutls"
-      ],
       "id": "libtest:lib1522",
       "object_ids": [
         "lib1522.c",
@@ -5052,7 +5034,6 @@
         "libtest:lib1517",
         "libtest:lib1518",
         "libtest:lib1520",
-        "libtest:lib1521",
         "libtest:lib1522",
         "libtest:lib1523",
         "libtest:lib1525",
