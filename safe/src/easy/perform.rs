@@ -91,6 +91,7 @@ const CURLOPT_SSL_VERIFYHOST: CURLoption = 81;
 const CURLOPT_COOKIESESSION: CURLoption = 96;
 const CURLOPT_SHARE: CURLoption = 10100;
 const CURLOPT_PRIVATE: CURLoption = 10103;
+const CURLOPT_PROXYTYPE: CURLoption = 101;
 const CURLOPT_UNRESTRICTED_AUTH: CURLoption = 105;
 const CURLOPT_HTTPAUTH: CURLoption = 107;
 const CURLOPT_PROXYAUTH: CURLoption = 111;
@@ -1026,6 +1027,7 @@ pub(crate) fn easy_setopt_long(handle: *mut CURL, option: CURLoption, value: c_l
             shadow.metadata.ssl_verify_host = value;
             CURLE_OK
         }
+        CURLOPT_PROXYTYPE => CURLE_OK,
         CURLOPT_SSL_ENABLE_ALPN => {
             shadow.metadata.ssl_enable_alpn = value != 0;
             CURLE_OK
