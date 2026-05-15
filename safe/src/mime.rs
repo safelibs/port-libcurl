@@ -10,10 +10,18 @@ pub(crate) const CURL_ZERO_TERMINATED: usize = usize::MAX;
 const MIME_BOUNDARY_PREFIX: &str = "------------------------port-libcurl-safe-mime-";
 const SEEK_SET: c_int = 0;
 
-#[derive(Default)]
 pub(crate) struct HeaderStore {
     pub(crate) values: Vec<String>,
     pub(crate) owned_list: *mut curl_slist,
+}
+
+impl Default for HeaderStore {
+    fn default() -> Self {
+        Self {
+            values: Vec::new(),
+            owned_list: ptr::null_mut(),
+        }
+    }
 }
 
 pub(crate) struct CallbackBody {

@@ -5,7 +5,7 @@ use core::ptr;
 use std::ffi::{CStr, CString};
 use std::sync::{Mutex, OnceLock};
 
-unsafe extern "C" {
+extern "C" {
     fn getenv(name: *const c_char) -> *mut c_char;
     fn zlibVersion() -> *const c_char;
     fn libssh2_version(req_version_num: c_int) -> *const c_char;
@@ -46,44 +46,47 @@ static VERSION_CACHE: Mutex<Option<usize>> = Mutex::new(None);
 
 // Keep this inventory aligned with the reference curl-config script used by the
 // compat harness so `curl --version` and `curl-config --protocols` agree.
-static PROTOCOL_NAMES: [&CStr; 22] = [
-    c"dict",
-    c"file",
-    c"ftp",
-    c"ftps",
-    c"gopher",
-    c"gophers",
-    c"http",
-    c"https",
-    c"imap",
-    c"imaps",
-    c"mqtt",
-    c"pop3",
-    c"pop3s",
-    c"rtsp",
-    c"scp",
-    c"sftp",
-    c"smb",
-    c"smbs",
-    c"smtp",
-    c"smtps",
-    c"telnet",
-    c"tftp",
+const PROTOCOL_NAMES_LEN: usize = 22;
+const FEATURE_NAME_STRINGS_LEN: usize = 12;
+
+static PROTOCOL_NAMES: [&CStr; PROTOCOL_NAMES_LEN] = [
+    cstr!("dict"),
+    cstr!("file"),
+    cstr!("ftp"),
+    cstr!("ftps"),
+    cstr!("gopher"),
+    cstr!("gophers"),
+    cstr!("http"),
+    cstr!("https"),
+    cstr!("imap"),
+    cstr!("imaps"),
+    cstr!("mqtt"),
+    cstr!("pop3"),
+    cstr!("pop3s"),
+    cstr!("rtsp"),
+    cstr!("scp"),
+    cstr!("sftp"),
+    cstr!("smb"),
+    cstr!("smbs"),
+    cstr!("smtp"),
+    cstr!("smtps"),
+    cstr!("telnet"),
+    cstr!("tftp"),
 ];
 
-static FEATURE_NAME_STRINGS: [&CStr; 12] = [
-    c"alt-svc",
-    c"AsynchDNS",
-    c"HSTS",
-    c"HTTP2",
-    c"HTTPS-proxy",
-    c"Largefile",
-    c"libz",
-    c"NTLM",
-    c"SSL",
-    c"threadsafe",
-    c"TLS-SRP",
-    c"UnixSockets",
+static FEATURE_NAME_STRINGS: [&CStr; FEATURE_NAME_STRINGS_LEN] = [
+    cstr!("alt-svc"),
+    cstr!("AsynchDNS"),
+    cstr!("HSTS"),
+    cstr!("HTTP2"),
+    cstr!("HTTPS-proxy"),
+    cstr!("Largefile"),
+    cstr!("libz"),
+    cstr!("NTLM"),
+    cstr!("SSL"),
+    cstr!("threadsafe"),
+    cstr!("TLS-SRP"),
+    cstr!("UnixSockets"),
 ];
 
 #[repr(C)]
@@ -103,8 +106,8 @@ struct VersionRuntime {
     libz_version: CString,
     libssh_version: CString,
     nghttp2_version: CString,
-    protocols: [*const c_char; PROTOCOL_NAMES.len() + 1],
-    feature_names: [*const c_char; FEATURE_NAME_STRINGS.len() + 1],
+    protocols: [*const c_char; PROTOCOL_NAMES_LEN + 1],
+    feature_names: [*const c_char; FEATURE_NAME_STRINGS_LEN + 1],
 }
 
 unsafe impl Sync for VersionRuntime {}
@@ -123,7 +126,7 @@ fn runtime_host() -> CString {
     };
     cstring_or_fallback(
         normalized,
-        c"unknown",
+        cstr!("unknown"),
     )
 }
 
@@ -134,18 +137,18 @@ fn ssl_version_string() -> CString {
         let version = unsafe { OpenSSL_version(OPENSSL_VERSION_STRING) };
         if !version.is_null() {
             let text = unsafe { CStr::from_ptr(version) }.to_string_lossy();
-            return cstring_or_fallback(format!("OpenSSL/{text}"), c"OpenSSL");
+            return cstring_or_fallback(format!("OpenSSL/{text}"), cstr!("OpenSSL"));
         }
-        c"OpenSSL".to_owned()
+        cstr!("OpenSSL").to_owned()
     }
     #[cfg(feature = "gnutls-flavor")]
     {
         let version = unsafe { gnutls_check_version(ptr::null()) };
         if !version.is_null() {
             let text = unsafe { CStr::from_ptr(version) }.to_string_lossy();
-            return cstring_or_fallback(format!("GnuTLS/{text}"), c"GnuTLS");
+            return cstring_or_fallback(format!("GnuTLS/{text}"), cstr!("GnuTLS"));
         }
-        c"GnuTLS".to_owned()
+        cstr!("GnuTLS").to_owned()
     }
 }
 
@@ -158,23 +161,23 @@ fn library_version(ptr: *const c_char, prefix: &str, fallback: &CStr) -> CString
 }
 
 fn libz_version_string() -> CString {
-    library_version(unsafe { zlibVersion() }, "", c"")
+    library_version(unsafe { zlibVersion() }, "", cstr!(""))
 }
 
 fn libssh_version_string() -> CString {
-    library_version(unsafe { libssh2_version(0) }, "libssh2/", c"libssh2")
+    library_version(unsafe { libssh2_version(0) }, "libssh2/", cstr!("libssh2"))
 }
 
 fn nghttp2_version_fields() -> (CString, u32) {
     let info = unsafe { nghttp2_version(0) };
     if info.is_null() {
-        return (c"".to_owned(), 0);
+        return (cstr!("").to_owned(), 0);
     }
     let info = unsafe { &*info };
     let text = if info.version_str.is_null() {
-        c"".to_owned()
+        cstr!("").to_owned()
     } else {
-        library_version(info.version_str, "", c"")
+        library_version(info.version_str, "", cstr!(""))
     };
     (text, info.version_num.max(0) as u32)
 }
@@ -195,7 +198,7 @@ fn version_runtime() -> &'static VersionRuntime {
                     libssh_version.to_string_lossy(),
                     nghttp2_version.to_string_lossy()
                 ),
-                c"libcurl/8.5.0",
+                cstr!("libcurl/8.5.0"),
             );
 
             let mut runtime = Box::new(VersionRuntime {
@@ -228,14 +231,14 @@ fn version_runtime() -> &'static VersionRuntime {
                     feature_names: ptr::null(),
                 },
                 curl_version_text,
-                version_short: c"8.5.0".to_owned(),
+                version_short: cstr!("8.5.0").to_owned(),
                 host: runtime_host(),
                 ssl_version,
                 libz_version,
                 libssh_version,
                 nghttp2_version,
-                protocols: [ptr::null(); PROTOCOL_NAMES.len() + 1],
-                feature_names: [ptr::null(); FEATURE_NAME_STRINGS.len() + 1],
+                protocols: [ptr::null(); PROTOCOL_NAMES_LEN + 1],
+                feature_names: [ptr::null(); FEATURE_NAME_STRINGS_LEN + 1],
             });
 
             for (slot, name) in runtime.protocols.iter_mut().zip(PROTOCOL_NAMES.iter()) {

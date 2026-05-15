@@ -6,7 +6,7 @@ use core::ffi::{c_char, c_void};
 use core::ptr;
 use std::sync::Mutex;
 
-unsafe extern "C" {
+extern "C" {
     fn malloc(size: size_t) -> *mut c_void;
     fn free(ptr: *mut c_void);
     fn realloc(ptr: *mut c_void, size: size_t) -> *mut c_void;

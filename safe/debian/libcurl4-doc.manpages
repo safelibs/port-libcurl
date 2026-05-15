@@ -1,2 +1,2 @@
-docs/libcurl/*.3
-docs/libcurl/opts/*.3
+vendor/upstream/docs/libcurl/*.3
+vendor/upstream/docs/libcurl/opts/*.3

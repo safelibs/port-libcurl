@@ -82,7 +82,7 @@ struct QueuedMessage {
     result: CURLcode,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct CallbackState {
     socket_cb: CurlSocketCallback,
     socket_userp: *mut c_void,
@@ -91,6 +91,20 @@ struct CallbackState {
     push_cb: CurlPushCallback,
     push_userp: *mut c_void,
     in_callback: bool,
+}
+
+impl Default for CallbackState {
+    fn default() -> Self {
+        Self {
+            socket_cb: None,
+            socket_userp: ptr::null_mut(),
+            timer_cb: None,
+            timer_userp: ptr::null_mut(),
+            push_cb: None,
+            push_userp: ptr::null_mut(),
+            in_callback: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -788,9 +802,6 @@ pub(crate) unsafe fn assign_handle(
     let Some(wrapper) = wrapper_from_ptr(multi) else {
         return CURLM_BAD_HANDLE;
     };
-    if is_in_callback(wrapper) {
-        return CURLM_RECURSIVE_API_CALL;
-    }
 
     wrapper
         .inner
@@ -803,21 +814,21 @@ pub(crate) unsafe fn assign_handle(
 
 pub(crate) unsafe fn multi_strerror(code: CURLMcode) -> *const c_char {
     match code {
-        CURLM_CALL_MULTI_PERFORM => c"Please call curl_multi_perform() soon".as_ptr(),
-        0 => c"No error".as_ptr(),
-        CURLM_BAD_HANDLE => c"Invalid multi handle".as_ptr(),
-        CURLM_BAD_EASY_HANDLE => c"Invalid easy handle".as_ptr(),
-        CURLM_OUT_OF_MEMORY => c"Out of memory".as_ptr(),
-        CURLM_INTERNAL_ERROR => c"Internal error".as_ptr(),
-        CURLM_BAD_SOCKET => c"Invalid socket argument".as_ptr(),
-        CURLM_UNKNOWN_OPTION => c"Unknown option".as_ptr(),
-        CURLM_ADDED_ALREADY => c"The easy handle is already added to a multi handle".as_ptr(),
-        CURLM_RECURSIVE_API_CALL => c"API function called from within callback".as_ptr(),
-        CURLM_WAKEUP_FAILURE => c"Wakeup is unavailable or failed".as_ptr(),
-        CURLM_BAD_FUNCTION_ARGUMENT => c"A libcurl function was given a bad argument".as_ptr(),
-        CURLM_ABORTED_BY_CALLBACK => c"Operation was aborted by an application callback".as_ptr(),
-        CURLM_UNRECOVERABLE_POLL => c"Unrecoverable error in select/poll".as_ptr(),
-        _ => c"Unknown error".as_ptr(),
+        CURLM_CALL_MULTI_PERFORM => cstr!("Please call curl_multi_perform() soon").as_ptr(),
+        0 => cstr!("No error").as_ptr(),
+        CURLM_BAD_HANDLE => cstr!("Invalid multi handle").as_ptr(),
+        CURLM_BAD_EASY_HANDLE => cstr!("Invalid easy handle").as_ptr(),
+        CURLM_OUT_OF_MEMORY => cstr!("Out of memory").as_ptr(),
+        CURLM_INTERNAL_ERROR => cstr!("Internal error").as_ptr(),
+        CURLM_BAD_SOCKET => cstr!("Invalid socket argument").as_ptr(),
+        CURLM_UNKNOWN_OPTION => cstr!("Unknown option").as_ptr(),
+        CURLM_ADDED_ALREADY => cstr!("The easy handle is already added to a multi handle").as_ptr(),
+        CURLM_RECURSIVE_API_CALL => cstr!("API function called from within callback").as_ptr(),
+        CURLM_WAKEUP_FAILURE => cstr!("Wakeup is unavailable or failed").as_ptr(),
+        CURLM_BAD_FUNCTION_ARGUMENT => cstr!("A libcurl function was given a bad argument").as_ptr(),
+        CURLM_ABORTED_BY_CALLBACK => cstr!("Operation was aborted by an application callback").as_ptr(),
+        CURLM_UNRECOVERABLE_POLL => cstr!("Unrecoverable error in select/poll").as_ptr(),
+        _ => cstr!("Unknown error").as_ptr(),
     }
 }
 
@@ -1247,6 +1258,9 @@ fn invoke_socket_callback(
         guard.callbacks.in_callback = false;
         if rc == -1 {
             guard.dead = true;
+        }
+        if what == CURL_POLL_REMOVE {
+            guard.assignments.remove(&socket);
         }
     }
     let _ = multi_ptr;

@@ -4,21 +4,35 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_TAG="${LIBCURL_ORIGINAL_TEST_IMAGE:-libcurl-original-test:ubuntu24.04}"
 ONLY=""
+IMPLEMENTATION="original"
 
 usage() {
   cat <<'EOF'
-usage: test-original.sh [--only <dependent-name>]
+usage: test-original.sh [--implementation original|safe] [--only <dependent-name>]
 
-Builds the local Ubuntu curl source package from original/, installs the
-resulting runtime libraries into a Docker container, and smoke-tests the
-libcurl-dependent software listed in dependents.json using only public APIs.
+Builds the selected local libcurl implementation, installs it into a Docker
+container, and smoke-tests the libcurl-dependent software listed in
+dependents.json using only public APIs.
 
+--implementation selects original/ or the safe Debian package build.
 --only runs just one dependent by exact .dependents[].name.
 EOF
 }
 
 while (($#)); do
   case "$1" in
+    --implementation)
+      IMPLEMENTATION="${2:?missing value for --implementation}"
+      case "$IMPLEMENTATION" in
+        original|safe) ;;
+        *)
+          printf 'unknown implementation: %s\n' "$IMPLEMENTATION" >&2
+          usage >&2
+          exit 1
+          ;;
+      esac
+      shift 2
+      ;;
     --only)
       ONLY="${2:?missing value for --only}"
       shift 2
@@ -42,10 +56,17 @@ for tool in docker git jq; do
   }
 done
 
-[[ -d "$ROOT/original" ]] || {
+if [[ "$IMPLEMENTATION" == "original" ]]; then
+  [[ -d "$ROOT/original" ]] || {
   echo "missing original source tree" >&2
   exit 1
-}
+  }
+else
+  [[ -x "$ROOT/safe/scripts/export-tracked-tree.sh" ]] || {
+    echo "missing safe export script" >&2
+    exit 1
+  }
+fi
 
 [[ -f "$ROOT/dependents.json" ]] || {
   echo "missing dependents.json" >&2
@@ -63,6 +84,27 @@ if [[ -n "$ONLY" ]]; then
     printf 'unknown dependent in dependents.json: %s\n' "$ONLY" >&2
     exit 1
   }
+fi
+
+HOST_WORK="$ROOT"
+HOST_WORK_MODE="ro"
+SAFE_EXPORT_ROOT=""
+cleanup_host_export() {
+  if [[ -n "$SAFE_EXPORT_ROOT" ]]; then
+    if command -v docker >/dev/null 2>&1 && docker image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
+      docker run --rm -v "$SAFE_EXPORT_ROOT:/work:rw" "$IMAGE_TAG" \
+        bash -lc 'rm -rf /work/* /work/.[!.]* /work/..?*' >/dev/null 2>&1 || true
+    fi
+    rm -rf "$SAFE_EXPORT_ROOT" || true
+  fi
+}
+trap cleanup_host_export EXIT
+
+if [[ "$IMPLEMENTATION" == "safe" ]]; then
+  SAFE_EXPORT_ROOT="$(mktemp -d)"
+  "$ROOT/safe/scripts/export-tracked-tree.sh" --with-root-harness --dest "$SAFE_EXPORT_ROOT"
+  HOST_WORK="$SAFE_EXPORT_ROOT"
+  HOST_WORK_MODE="rw"
 fi
 
 docker build -t "$IMAGE_TAG" - <<'DOCKERFILE'
@@ -96,6 +138,7 @@ RUN apt-get update \
       fwupd \
       gdal-bin \
       git \
+      gnutls-bin \
       gzip \
       httpdirfs \
       jcat \
@@ -108,7 +151,7 @@ RUN apt-get update \
       pacman-package-manager \
       php8.3-cli \
       php8.3-curl \
-      pkg-config \
+      pkgconf \
       python3 \
       python3-librepo \
       python3-pycurl \
@@ -116,7 +159,6 @@ RUN apt-get update \
       r-cran-curl \
       xz-utils \
       zstd \
- && apt-get build-dep -y curl \
  && rm -rf /var/lib/apt/lists/*
 DOCKERFILE
 
@@ -124,8 +166,9 @@ docker run --rm -i \
   --device /dev/fuse \
   --cap-add SYS_ADMIN \
   --security-opt apparmor:unconfined \
+  -e "LIBCURL_TEST_IMPLEMENTATION=$IMPLEMENTATION" \
   -e "LIBCURL_TEST_ONLY=$ONLY" \
-  -v "$ROOT:/work:ro" \
+  -v "$HOST_WORK:/work:$HOST_WORK_MODE" \
   "$IMAGE_TAG" \
   bash -s <<'CONTAINER'
 set -euo pipefail
@@ -135,6 +178,7 @@ export LC_ALL=C.UTF-8
 export DEBIAN_FRONTEND=noninteractive
 
 ROOT=/work
+IMPLEMENTATION="${LIBCURL_TEST_IMPLEMENTATION:-original}"
 ONLY_FILTER="${LIBCURL_TEST_ONLY:-}"
 TEST_ROOT=/tmp/libcurl-dependent-tests
 SOURCE_EXPORT_ROOT=/tmp/libcurl-source-export
@@ -307,6 +351,8 @@ build_runtime_tree() {
 
 build_local_curl_runtime() {
   log_step "Building local libcurl runtime libraries"
+  apt-get update
+  apt-get build-dep -y curl
   prepare_runtime_build_trees
   configure_runtime_tree \
     openssl \
@@ -327,6 +373,25 @@ build_local_curl_runtime() {
   printf '/usr/local/lib\n' >/etc/ld.so.conf.d/zz-local-libcurl.conf
   ldconfig
   export LD_LIBRARY_PATH=/usr/local/lib
+}
+
+build_safe_curl_runtime() {
+  log_step "Building safe libcurl Debian packages"
+  [[ -d "$ROOT/safe" ]] || die "missing safe source export at $ROOT/safe"
+  [[ -f "$ROOT/dependents.json" ]] || die "missing dependent inventory at $ROOT/dependents.json"
+  apt-get update
+  apt-get install -y --no-install-recommends devscripts equivs
+  mk-build-deps -ir -t 'apt-get -y --no-install-recommends' "$ROOT/safe/debian/control"
+  run_logged safe-dpkg-build bash -lc "cd '$ROOT/safe' && dpkg-buildpackage -us -uc -b"
+  run_logged safe-deb-install bash -lc "
+    apt-get install -y --allow-downgrades --no-install-recommends \
+      '$ROOT'/curl_*.deb \
+      '$ROOT'/libcurl4t64_*.deb \
+      '$ROOT'/libcurl3t64-gnutls_*.deb \
+      '$ROOT'/libcurl4-gnutls-dev_*.deb \
+      '$ROOT'/libcurl4-doc_*.deb
+  "
+  ldconfig
 }
 
 write_http_server() {
@@ -1030,8 +1095,12 @@ EOF
 }
 
 validate_dependents_inventory
-export_tracked_source
-build_local_curl_runtime
+if [[ "$IMPLEMENTATION" == "original" ]]; then
+  export_tracked_source
+  build_local_curl_runtime
+else
+  build_safe_curl_runtime
+fi
 prepare_http_fixtures
 start_http_server
 

@@ -2,13 +2,14 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 --implementation <compat|packaged> [--flavor <openssl|gnutls>] [--build-state <path>] [--binary <path>]" >&2
+  echo "usage: $0 --implementation <compat|packaged> [--flavor <openssl|gnutls>] [--build-state <path>] [--binary <path>] [--package-root <path>]" >&2
 }
 
 implementation=""
 flavor="openssl"
 build_state=""
 binary_override=""
+package_root=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --implementation)
@@ -27,6 +28,10 @@ while [[ $# -gt 0 ]]; do
       binary_override="${2:-}"
       shift 2
       ;;
+    --package-root)
+      package_root="${2:-}"
+      shift 2
+      ;;
     *)
       usage
       exit 2
@@ -38,6 +43,27 @@ done
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 safe_dir="$(cd "${script_dir}/.." && pwd)"
+tmp_root="$(mktemp -d)"
+cleanup() {
+  "${script_dir}/http-fixtures.sh" stop --pid-file "${tmp_root}/fixture.pid" >/dev/null 2>&1 || true
+  rm -rf "${tmp_root}"
+}
+trap cleanup EXIT
+
+find_deb() {
+  local root="$1"
+  local package="$2"
+  local deb
+  for deb in "${root}"/*.deb "${root}/../"*.deb; do
+    [[ -e "${deb}" ]] || continue
+    if [[ "$(dpkg-deb -f "${deb}" Package)" == "${package}" ]]; then
+      printf '%s\n' "${deb}"
+      return 0
+    fi
+  done
+  echo "missing built deb for ${package} under ${root} or ${root}/.." >&2
+  return 1
+}
 
 if [[ "${implementation}" == "compat" ]]; then
   if [[ -z "${build_state}" ]]; then
@@ -49,17 +75,22 @@ if [[ "${implementation}" == "compat" ]]; then
   lib_dir="$(jq -r '.stage.lib_dir' "${build_state}")"
   [[ -x "${binary}" ]] || { echo "missing curl binary: ${binary}" >&2; exit 1; }
 else
-  binary="${binary_override:-${PACKAGED_CURL_BIN:-$(command -v curl || true)}}"
-  lib_dir="${PACKAGED_LIBRARY_PATH:-}"
+  if [[ -n "${package_root}" ]]; then
+    package_root="$(cd "${package_root}" && pwd)"
+    package_extract="${tmp_root}/packages"
+    mkdir -p "${package_extract}"
+    dpkg-deb -x "$(find_deb "${package_root}" curl)" "${package_extract}"
+    dpkg-deb -x "$(find_deb "${package_root}" libcurl4t64)" "${package_extract}"
+    multiarch="$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
+    binary="${binary_override:-${package_extract}/usr/bin/curl}"
+    lib_dir="${package_extract}/usr/lib/${multiarch}"
+  else
+    binary="${binary_override:-${PACKAGED_CURL_BIN:-$(command -v curl || true)}}"
+    lib_dir="${PACKAGED_LIBRARY_PATH:-}"
+  fi
   [[ -n "${binary}" ]] || { echo "missing packaged curl binary" >&2; exit 1; }
+  [[ -x "${binary}" ]] || { echo "missing packaged curl binary: ${binary}" >&2; exit 1; }
 fi
-
-tmp_root="$(mktemp -d)"
-cleanup() {
-  "${script_dir}/http-fixtures.sh" stop --pid-file "${tmp_root}/fixture.pid" >/dev/null 2>&1 || true
-  rm -rf "${tmp_root}"
-}
-trap cleanup EXIT
 
 fixture_root="${tmp_root}/fixture-root"
 "${script_dir}/http-fixtures.sh" prepare --root "${fixture_root}"

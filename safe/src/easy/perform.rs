@@ -48,6 +48,7 @@ const CURLOPT_INTERLEAVEDATA: CURLoption = 10195;
 const CURLOPT_SEEKFUNCTION: CURLoption = 20167;
 const CURLOPT_SEEKDATA: CURLoption = 10168;
 const CURLOPT_COOKIE: CURLoption = 10022;
+const CURLOPT_ACCEPT_ENCODING: CURLoption = 10102;
 const CURLOPT_KEYPASSWD: CURLoption = 10026;
 const CURLOPT_HTTPPOST: CURLoption = 10024;
 const CURLOPT_HTTPHEADER: CURLoption = 10023;
@@ -76,13 +77,21 @@ const CURLOPT_XFERINFODATA: CURLoption = 10057;
 const CURLOPT_DEBUGDATA: CURLoption = 10095;
 const CURLOPT_PROXYPORT: CURLoption = 59;
 const CURLOPT_HTTPPROXYTUNNEL: CURLoption = 61;
+const CURLOPT_CONNECTTIMEOUT: CURLoption = 78;
 const CURLOPT_HTTP_VERSION: CURLoption = 84;
+const CURLOPT_FTP_USE_EPSV: CURLoption = 85;
 const CURLOPT_TIMEOUT_MS: CURLoption = 155;
+const CURLOPT_CONNECTTIMEOUT_MS: CURLoption = 156;
+const CURLOPT_HTTP_TRANSFER_DECODING: CURLoption = 157;
+const CURLOPT_HTTP_CONTENT_DECODING: CURLoption = 158;
 const CURLOPT_POSTREDIR: CURLoption = 161;
+const CURLOPT_TRANSFER_ENCODING: CURLoption = 207;
 const CURLOPT_SSL_VERIFYPEER: CURLoption = 64;
 const CURLOPT_CAINFO: CURLoption = 10065;
 const CURLOPT_MAXREDIRS: CURLoption = 68;
+const CURLOPT_FILETIME: CURLoption = 69;
 const CURLOPT_MAXCONNECTS: CURLoption = 71;
+const CURLOPT_FORBID_REUSE: CURLoption = 75;
 const CURLOPT_BUFFERSIZE: CURLoption = 98;
 const CURLOPT_CERTINFO: CURLoption = 172;
 const CURLOPT_HEADERFUNCTION: CURLoption = 20079;
@@ -98,6 +107,7 @@ const CURLOPT_PROXYTYPE: CURLoption = 101;
 const CURLOPT_UNRESTRICTED_AUTH: CURLoption = 105;
 const CURLOPT_HTTPAUTH: CURLoption = 107;
 const CURLOPT_PROXYAUTH: CURLoption = 111;
+const CURLOPT_IPRESOLVE: CURLoption = 113;
 const CURLOPT_NETRC_FILE: CURLoption = 10118;
 const CURLOPT_COOKIELIST: CURLoption = 10135;
 const CURLOPT_POSTFIELDSIZE: CURLoption = 60;
@@ -105,6 +115,10 @@ const CURLOPT_INFILESIZE_LARGE: CURLoption = 30115;
 const CURLOPT_RESUME_FROM_LARGE: CURLoption = 30116;
 const CURLOPT_POSTFIELDSIZE_LARGE: CURLoption = 30120;
 const CURLOPT_CONNECT_ONLY: CURLoption = 141;
+const CURLOPT_FTP_FILEMETHOD: CURLoption = 138;
+const CURLOPT_PROTOCOLS: CURLoption = 181;
+const CURLOPT_REDIR_PROTOCOLS: CURLoption = 182;
+const CURLOPT_TCP_KEEPALIVE: CURLoption = 213;
 const CURLOPT_SSH_AUTH_TYPES: CURLoption = 151;
 const CURLOPT_SSH_PUBLIC_KEYFILE: CURLoption = 10152;
 const CURLOPT_SSH_PRIVATE_KEYFILE: CURLoption = 10153;
@@ -126,6 +140,7 @@ const CURLOPT_STREAM_DEPENDS_E: CURLoption = 10241;
 const CURLOPT_RTSP_SESSION_ID: CURLoption = 10190;
 const CURLOPT_RTSP_STREAM_URI: CURLoption = 10191;
 const CURLOPT_RTSP_TRANSPORT: CURLoption = 10192;
+const CURLOPT_PROGRESSFUNCTION: CURLoption = 20056;
 const CURLOPT_XFERINFOFUNCTION: CURLoption = 20219;
 const CURLOPT_XOAUTH2_BEARER: CURLoption = 10220;
 const CURLOPT_PINNEDPUBLICKEY: CURLoption = 10230;
@@ -152,6 +167,8 @@ const CURLOPT_WS_OPTIONS: CURLoption = 320;
 const CURLOPT_TRAILERFUNCTION: CURLoption = 20283;
 const CURLOPT_TRAILERDATA: CURLoption = 10284;
 const CURLOPT_SSL_ENABLE_ALPN: CURLoption = 226;
+const CURLOPT_EXPECT_100_TIMEOUT_MS: CURLoption = 227;
+const CURLOPT_SSL_VERIFYSTATUS: CURLoption = 232;
 const CURLOPT_DOH_URL: CURLoption = 10279;
 const CURLOPT_AWS_SIGV4: CURLoption = 10305;
 const CURLOPT_HTTP09_ALLOWED: CURLoption = 285;
@@ -173,6 +190,8 @@ const CURLOPT_PROXY_SSLCERT_BLOB: CURLoption = 40293;
 const CURLOPT_PROXY_SSLKEY_BLOB: CURLoption = 40294;
 const CURLOPT_ISSUERCERT_BLOB: CURLoption = 40295;
 const CURLOPT_PROXY_ISSUERCERT_BLOB: CURLoption = 40297;
+const CURLOPT_SSL_OPTIONS: CURLoption = 216;
+const CURLOPT_PROXY_SSL_OPTIONS: CURLoption = 261;
 const CURLOPT_CAINFO_BLOB: CURLoption = 40309;
 const CURLOPT_PROXY_CAINFO_BLOB: CURLoption = 40310;
 
@@ -184,9 +203,11 @@ const CURLINFO_CONNECT_TIME: u32 = 0x300000 + 5;
 const CURLINFO_PRETRANSFER_TIME: u32 = 0x300000 + 6;
 const CURLINFO_SSL_VERIFYRESULT: u32 = 0x200000 + 13;
 const CURLINFO_FILETIME: u32 = 0x200000 + 14;
+const CURLINFO_CONTENT_LENGTH_DOWNLOAD: u32 = 0x300000 + 15;
 const CURLINFO_STARTTRANSFER_TIME: u32 = 0x300000 + 17;
 const CURLINFO_CONTENT_TYPE: u32 = 0x100000 + 18;
 const CURLINFO_REDIRECT_TIME: u32 = 0x300000 + 19;
+const CURLINFO_SIZE_DOWNLOAD: u32 = 0x300000 + 8;
 const CURLINFO_REDIRECT_COUNT: u32 = 0x200000 + 20;
 const CURLINFO_HTTP_CONNECTCODE: u32 = 0x200000 + 22;
 const CURLINFO_OS_ERRNO: u32 = 0x200000 + 25;
@@ -210,6 +231,8 @@ const CURLINFO_PROTOCOL: u32 = 0x200000 + 48;
 const CURLINFO_SCHEME: u32 = 0x100000 + 49;
 const CURLINFO_RTSP_SESSION_ID: u32 = 0x100000 + 36;
 const CURLINFO_FILETIME_T: u32 = 0x600000 + 14;
+const CURLINFO_CONTENT_LENGTH_DOWNLOAD_T: u32 = 0x600000 + 15;
+const CURLINFO_SIZE_DOWNLOAD_T: u32 = 0x600000 + 8;
 const CURLINFO_TOTAL_TIME_T: u32 = 0x600000 + 50;
 const CURLINFO_NAMELOOKUP_TIME_T: u32 = 0x600000 + 51;
 const CURLINFO_CONNECT_TIME_T: u32 = 0x600000 + 52;
@@ -547,6 +570,8 @@ struct EasyInfo {
     http_version: c_long,
     protocol: c_long,
     filetime: curl_off_t,
+    content_length_download: curl_off_t,
+    size_download: curl_off_t,
 }
 
 impl Default for EasyInfo {
@@ -581,6 +606,8 @@ impl Default for EasyInfo {
             http_version: 0,
             protocol: 0,
             filetime: -1,
+            content_length_download: -1,
+            size_download: 0,
         }
     }
 }
@@ -623,6 +650,8 @@ pub(crate) struct RecordedTransferInfo {
     pub http_version: c_long,
     pub protocol: c_long,
     pub filetime: curl_off_t,
+    pub content_length_download: curl_off_t,
+    pub size_download: curl_off_t,
 }
 
 impl Default for RecordedTransferInfo {
@@ -655,6 +684,8 @@ impl Default for RecordedTransferInfo {
             http_version: 0,
             protocol: 0,
             filetime: -1,
+            content_length_download: -1,
+            size_download: 0,
         }
     }
 }
@@ -1014,6 +1045,21 @@ pub(crate) fn easy_setopt_long(handle: *mut CURL, option: CURLoption, value: c_l
             shadow.metadata.tunnel_proxy = value != 0;
             CURLE_OK
         }
+        CURLOPT_CONNECTTIMEOUT
+        | CURLOPT_CONNECTTIMEOUT_MS
+        | CURLOPT_EXPECT_100_TIMEOUT_MS
+        | CURLOPT_FTP_FILEMETHOD
+        | CURLOPT_FTP_USE_EPSV
+        | CURLOPT_FILETIME
+        | CURLOPT_FORBID_REUSE
+        | CURLOPT_HTTP_TRANSFER_DECODING
+        | CURLOPT_HTTP_CONTENT_DECODING
+        | CURLOPT_IPRESOLVE
+        | CURLOPT_TCP_KEEPALIVE
+        | CURLOPT_TRANSFER_ENCODING
+        | CURLOPT_SSL_VERIFYSTATUS
+        | CURLOPT_SSL_OPTIONS
+        | CURLOPT_PROXY_SSL_OPTIONS => CURLE_OK,
         CURLOPT_BUFFERSIZE => {
             shadow.metadata.buffer_size = value;
             CURLE_OK
@@ -1087,6 +1133,14 @@ pub(crate) fn easy_setopt_long(handle: *mut CURL, option: CURLoption, value: c_l
         }
         CURLOPT_HTTP09_ALLOWED => {
             shadow.metadata.http09_allowed = value != 0;
+            CURLE_OK
+        }
+        CURLOPT_PROTOCOLS => {
+            shadow.metadata.allowed_protocols = protocols_from_mask(value);
+            CURLE_OK
+        }
+        CURLOPT_REDIR_PROTOCOLS => {
+            shadow.metadata.redirect_protocols = protocols_from_mask(value);
             CURLE_OK
         }
         CURLOPT_SSH_AUTH_TYPES | CURLOPT_SSH_COMPRESSION | CURLOPT_UPLOAD_BUFFERSIZE => CURLE_OK,
@@ -1178,6 +1232,7 @@ pub(crate) fn easy_setopt_ptr(
             shadow.metadata.cookie = copy_c_string(value.cast());
             CURLE_OK
         }
+        CURLOPT_ACCEPT_ENCODING => CURLE_OK,
         CURLOPT_KEYPASSWD => {
             shadow.metadata.key_password = copy_c_string(value.cast());
             CURLE_OK
@@ -1531,6 +1586,7 @@ pub(crate) fn easy_setopt_function(
             shadow.callbacks.xferinfo_function = unsafe { core::mem::transmute(value) };
             CURLE_OK
         }
+        CURLOPT_PROGRESSFUNCTION => CURLE_OK,
         CURLOPT_SSH_KEYFUNCTION | CURLOPT_SSH_HOSTKEYFUNCTION => CURLE_OK,
         CURLOPT_HSTSREADFUNCTION => {
             shadow.callbacks.hsts_read_function = unsafe { core::mem::transmute(value) };
@@ -1737,6 +1793,8 @@ pub(crate) fn record_transfer_info(handle: *mut CURL, info: RecordedTransferInfo
         shadow.info.http_version = info.http_version;
         shadow.info.protocol = info.protocol;
         shadow.info.filetime = info.filetime;
+        shadow.info.content_length_download = info.content_length_download;
+        shadow.info.size_download = info.size_download;
         shadow.info.retry_after_set = false;
         shadow.info.retry_after = 0;
         if let Some(retry_after) = info.retry_after {
@@ -1841,6 +1899,44 @@ fn parse_protocols_str(value: *const c_char) -> Result<Option<Vec<String>>, CURL
     }
 }
 
+fn protocols_from_mask(mask: c_long) -> Option<Vec<String>> {
+    if mask == !0 {
+        return None;
+    }
+
+    let protocol_bits = [
+        (CURLPROTO_DICT, "dict"),
+        (CURLPROTO_FILE, "file"),
+        (CURLPROTO_FTP, "ftp"),
+        (CURLPROTO_FTPS, "ftps"),
+        (CURLPROTO_GOPHER, "gopher"),
+        (CURLPROTO_HTTP, "http"),
+        (CURLPROTO_HTTPS, "https"),
+        (CURLPROTO_IMAP, "imap"),
+        (CURLPROTO_IMAPS, "imaps"),
+        (CURLPROTO_LDAP, "ldap"),
+        (CURLPROTO_LDAPS, "ldaps"),
+        (CURLPROTO_MQTT, "mqtt"),
+        (CURLPROTO_POP3, "pop3"),
+        (CURLPROTO_POP3S, "pop3s"),
+        (CURLPROTO_RTSP, "rtsp"),
+        (CURLPROTO_SCP, "scp"),
+        (CURLPROTO_SFTP, "sftp"),
+        (CURLPROTO_SMB, "smb"),
+        (CURLPROTO_SMBS, "smbs"),
+        (CURLPROTO_SMTP, "smtp"),
+        (CURLPROTO_SMTPS, "smtps"),
+        (CURLPROTO_TELNET, "telnet"),
+        (CURLPROTO_TFTP, "tftp"),
+    ];
+
+    let protocols = protocol_bits
+        .iter()
+        .filter_map(|(bit, name)| ((mask & *bit) != 0).then_some((*name).to_string()))
+        .collect::<Vec<_>>();
+    (!protocols.is_empty()).then_some(protocols)
+}
+
 pub(crate) fn protocol_allowed(allowed: Option<&[String]>, url: &str) -> bool {
     let Some(allowed) = allowed else {
         return true;
@@ -1900,31 +1996,31 @@ fn scheme_ptr(url: Option<&str>) -> *mut c_char {
         return ptr::null_mut();
     };
     match scheme.to_ascii_lowercase().as_str() {
-        "dict" => c"dict".as_ptr().cast_mut(),
-        "file" => c"file".as_ptr().cast_mut(),
-        "ftp" => c"ftp".as_ptr().cast_mut(),
-        "ftps" => c"ftps".as_ptr().cast_mut(),
-        "gopher" => c"gopher".as_ptr().cast_mut(),
-        "http" => c"http".as_ptr().cast_mut(),
-        "https" => c"https".as_ptr().cast_mut(),
-        "imap" => c"imap".as_ptr().cast_mut(),
-        "imaps" => c"imaps".as_ptr().cast_mut(),
-        "ldap" => c"ldap".as_ptr().cast_mut(),
-        "ldaps" => c"ldaps".as_ptr().cast_mut(),
-        "mqtt" => c"mqtt".as_ptr().cast_mut(),
-        "pop3" => c"pop3".as_ptr().cast_mut(),
-        "pop3s" => c"pop3s".as_ptr().cast_mut(),
-        "rtsp" => c"rtsp".as_ptr().cast_mut(),
-        "scp" => c"scp".as_ptr().cast_mut(),
-        "smb" => c"smb".as_ptr().cast_mut(),
-        "smbs" => c"smbs".as_ptr().cast_mut(),
-        "sftp" => c"sftp".as_ptr().cast_mut(),
-        "smtp" => c"smtp".as_ptr().cast_mut(),
-        "smtps" => c"smtps".as_ptr().cast_mut(),
-        "telnet" => c"telnet".as_ptr().cast_mut(),
-        "tftp" => c"tftp".as_ptr().cast_mut(),
-        "wss" => c"wss".as_ptr().cast_mut(),
-        "ws" => c"ws".as_ptr().cast_mut(),
+        "dict" => cstr!("dict").as_ptr().cast_mut(),
+        "file" => cstr!("file").as_ptr().cast_mut(),
+        "ftp" => cstr!("ftp").as_ptr().cast_mut(),
+        "ftps" => cstr!("ftps").as_ptr().cast_mut(),
+        "gopher" => cstr!("gopher").as_ptr().cast_mut(),
+        "http" => cstr!("http").as_ptr().cast_mut(),
+        "https" => cstr!("https").as_ptr().cast_mut(),
+        "imap" => cstr!("imap").as_ptr().cast_mut(),
+        "imaps" => cstr!("imaps").as_ptr().cast_mut(),
+        "ldap" => cstr!("ldap").as_ptr().cast_mut(),
+        "ldaps" => cstr!("ldaps").as_ptr().cast_mut(),
+        "mqtt" => cstr!("mqtt").as_ptr().cast_mut(),
+        "pop3" => cstr!("pop3").as_ptr().cast_mut(),
+        "pop3s" => cstr!("pop3s").as_ptr().cast_mut(),
+        "rtsp" => cstr!("rtsp").as_ptr().cast_mut(),
+        "scp" => cstr!("scp").as_ptr().cast_mut(),
+        "smb" => cstr!("smb").as_ptr().cast_mut(),
+        "smbs" => cstr!("smbs").as_ptr().cast_mut(),
+        "sftp" => cstr!("sftp").as_ptr().cast_mut(),
+        "smtp" => cstr!("smtp").as_ptr().cast_mut(),
+        "smtps" => cstr!("smtps").as_ptr().cast_mut(),
+        "telnet" => cstr!("telnet").as_ptr().cast_mut(),
+        "tftp" => cstr!("tftp").as_ptr().cast_mut(),
+        "wss" => cstr!("wss").as_ptr().cast_mut(),
+        "ws" => cstr!("ws").as_ptr().cast_mut(),
         _ => ptr::null_mut(),
     }
 }
@@ -2062,6 +2158,14 @@ pub(crate) fn easy_getinfo_double(
                 .map(|shadow| shadow.info.redirect_time_us)
                 .unwrap_or(0),
         ),
+        CURLINFO_CONTENT_LENGTH_DOWNLOAD => {
+            shadow
+                .map(|shadow| shadow.info.content_length_download as f64)
+                .unwrap_or(-1.0)
+        }
+        CURLINFO_SIZE_DOWNLOAD => shadow
+            .map(|shadow| shadow.info.size_download as f64)
+            .unwrap_or(0.0),
         _ => return None,
     };
     unsafe { *value = result };
@@ -2092,9 +2196,9 @@ pub(crate) fn easy_getinfo_string(
                         .effective_url
                         .as_ref()
                         .map(|value| value.as_ptr().cast_mut())
-                        .unwrap_or(c"".as_ptr().cast_mut())
+                        .unwrap_or(cstr!("").as_ptr().cast_mut())
                 })
-                .unwrap_or(c"".as_ptr().cast_mut()),
+                .unwrap_or(cstr!("").as_ptr().cast_mut()),
             CURLINFO_CONTENT_TYPE => shadow
                 .and_then(|shadow| shadow.info.content_type.as_ref())
                 .map(|value| value.as_ptr().cast_mut())
@@ -2164,6 +2268,10 @@ pub(crate) fn easy_getinfo_off_t(
     let shadow = guard.get(&(handle as usize));
     let result = match info {
         CURLINFO_FILETIME_T => shadow.map(|shadow| shadow.info.filetime).unwrap_or(-1),
+        CURLINFO_CONTENT_LENGTH_DOWNLOAD_T => shadow
+            .map(|shadow| shadow.info.content_length_download)
+            .unwrap_or(-1),
+        CURLINFO_SIZE_DOWNLOAD_T => shadow.map(|shadow| shadow.info.size_download).unwrap_or(0),
         CURLINFO_RETRY_AFTER => shadow
             .and_then(|shadow| {
                 shadow

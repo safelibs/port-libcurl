@@ -43,7 +43,7 @@ struct SafeTlsConnection {
     _opaque: [u8; 0],
 }
 
-unsafe extern "C" {
+extern "C" {
     fn port_safe_tls_connect(
         fd: c_int,
         host: *const c_char,

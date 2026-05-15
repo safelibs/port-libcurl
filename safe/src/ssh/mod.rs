@@ -35,7 +35,7 @@ const CURL_SAFE_SSH_CALLBACK: c_int = 7;
 const IO_TIMEOUT: Duration = Duration::from_secs(30);
 const UPLOAD_CHUNK_SIZE: usize = 16 * 1024;
 
-unsafe extern "C" {
+extern "C" {
     fn port_safe_ssh_transfer(
         fd: c_int,
         scheme: *const c_char,

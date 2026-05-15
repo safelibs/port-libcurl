@@ -1,6 +1,5 @@
-README
-docs/*.md
-docs/FAQ
-docs/KNOWN_BUGS
-docs/THANKS
-docs/TODO
+vendor/upstream/docs/*.md
+vendor/upstream/docs/FAQ
+vendor/upstream/docs/KNOWN_BUGS
+vendor/upstream/docs/THANKS
+vendor/upstream/docs/TODO

@@ -11,12 +11,12 @@ openssl-flavor = []
 gnutls-flavor = []
 
 [dependencies]
-idna = "1"
+idna = "0.5"
 
 [lib]
 name = "port_libcurl_safe"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib", "rlib", "staticlib"]
 
 [build-dependencies]
 cc = "1"

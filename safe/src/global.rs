@@ -9,7 +9,7 @@ use core::ffi::{c_char, c_long, c_void};
 use std::mem;
 use std::sync::Mutex;
 
-unsafe extern "C" {
+extern "C" {
     fn port_safe_resolve_reference_symbol(name: *const c_char) -> *mut c_void;
 }
 
@@ -48,9 +48,9 @@ pub(crate) fn compiled_ssl_backend_id() -> curl_sslbackend {
 
 fn compiled_ssl_backend_name() -> *const c_char {
     if BUILD_FLAVOR == "openssl" {
-        c"openssl".as_ptr()
+        cstr!("openssl").as_ptr()
     } else {
-        c"gnutls".as_ptr()
+        cstr!("gnutls").as_ptr()
     }
 }
 
@@ -61,9 +61,9 @@ static SSL_BACKENDS: SyncBackends = SyncBackends([curl_ssl_backend {
         CURLSSLBACKEND_GNUTLS
     },
     name: if cfg!(feature = "openssl-flavor") {
-        c"openssl".as_ptr()
+        cstr!("openssl").as_ptr()
     } else {
-        c"gnutls".as_ptr()
+        cstr!("gnutls").as_ptr()
     },
 }]);
 

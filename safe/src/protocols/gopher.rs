@@ -79,7 +79,7 @@ pub(crate) fn perform_transfer(
             )
         });
     let code = match result {
-        Ok(()) => {
+        Ok(_) => {
             info.total_time_us = transfer::elapsed_us(started.elapsed());
             crate::easy::perform::record_transfer_info(handle, info);
             crate::abi::CURLE_OK

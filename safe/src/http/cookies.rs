@@ -7,7 +7,7 @@ use std::fs;
 use std::net::IpAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-unsafe extern "C" {
+extern "C" {
     fn psl_builtin() -> *const c_void;
     fn psl_is_cookie_domain_acceptable(
         psl: *const c_void,

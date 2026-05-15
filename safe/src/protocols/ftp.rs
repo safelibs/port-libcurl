@@ -307,6 +307,7 @@ fn perform_transfer_inner(
             content_length,
             &mut low_speed,
         )
+        .map(|_| ())
     };
     transfer::close_transport(data.stream, callbacks);
     if let Err(code) = body_result {

@@ -55,8 +55,10 @@ impl ConnectOverride {
         let host_match = self
             .source_host
             .as_deref()
-            .is_none_or(|candidate| candidate.eq_ignore_ascii_case(host));
-        let port_match = self.source_port.is_none_or(|candidate| candidate == port);
+            .map_or(true, |candidate| candidate.eq_ignore_ascii_case(host));
+        let port_match = self
+            .source_port
+            .map_or(true, |candidate| candidate == port);
         host_match && port_match
     }
 }

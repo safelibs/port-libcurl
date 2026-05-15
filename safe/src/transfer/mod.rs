@@ -82,7 +82,7 @@ const H2_NV_FLAG_NONE: u8 = 0;
 const H2_NV_FLAG_NO_INDEX: u8 = 0x01;
 const MAX_CONTENT_ENCODING_STEPS: usize = 5;
 
-unsafe extern "C" {
+extern "C" {
     static mut stdin: *mut c_void;
     static mut stdout: *mut c_void;
     fn fread(ptr: *mut c_void, size: usize, nmemb: usize, stream: *mut c_void) -> usize;
@@ -1320,6 +1320,10 @@ fn execute_http_transfer(
         info,
     };
     outcome.info.http_version = response.http_version;
+    outcome.info.content_length_download = response
+        .content_length
+        .map(|length| length as curl_off_t)
+        .unwrap_or(-1);
 
     let resume_requested = metadata.resume_from > 0;
     let ignore_body = if resume_requested && response.status_code == 416 {
@@ -1349,7 +1353,7 @@ fn execute_http_transfer(
 
     let mut low_speed = LowSpeedGuard::new(plan.low_speed);
     invoke_progress_callback(callbacks, 0, response.content_length)?;
-    if response.chunked {
+    let downloaded = if response.chunked {
         transfer_chunked_body(
             &mut stream,
             handle,
@@ -1359,7 +1363,7 @@ fn execute_http_transfer(
             request_index,
             response.body_prefix,
             &mut low_speed,
-        )?;
+        )?
     } else {
         transfer_body(
             &mut stream,
@@ -1368,8 +1372,9 @@ fn execute_http_transfer(
             response.body_prefix,
             response.content_length,
             &mut low_speed,
-        )?;
-    }
+        )?
+    };
+    outcome.info.size_download = downloaded as curl_off_t;
     outcome.info.total_time_us = elapsed_us(request_started.elapsed());
     Ok(outcome)
 }
@@ -1395,7 +1400,7 @@ pub(crate) fn transfer_body(
     mut body_prefix: Vec<u8>,
     content_length: Option<usize>,
     low_speed: &mut LowSpeedGuard,
-) -> Result<(), CURLcode> {
+) -> Result<usize, CURLcode> {
     let mut delivered = 0usize;
 
     if !body_prefix.is_empty() {
@@ -1429,7 +1434,7 @@ pub(crate) fn transfer_body(
         }
     }
 
-    Ok(())
+    Ok(delivered)
 }
 
 fn transfer_chunked_body(
@@ -1441,7 +1446,7 @@ fn transfer_chunked_body(
     request_index: usize,
     mut buffer: Vec<u8>,
     low_speed: &mut LowSpeedGuard,
-) -> Result<(), CURLcode> {
+) -> Result<usize, CURLcode> {
     let mut delivered = 0usize;
     loop {
         let line = read_line_buffered(stream, &mut buffer, low_speed)?;
@@ -1470,7 +1475,7 @@ fn transfer_chunked_body(
         low_speed.observe_progress(chunk_size)?;
         invoke_progress_callback(callbacks, delivered, None)?;
     }
-    Ok(())
+    Ok(delivered)
 }
 
 fn read_line_buffered(
@@ -2446,6 +2451,11 @@ fn execute_http2_transfer(
     flush_cookie_jar(handle, metadata);
     flush_altsvc_cache(handle, metadata);
     state.info.http_version = CURL_HTTP_VERSION_2_0;
+    state.info.content_length_download = response
+        .content_length
+        .map(|length| length as curl_off_t)
+        .unwrap_or(-1);
+    state.info.size_download = state.received_body_bytes as curl_off_t;
     state.info.total_time_us = elapsed_us(request_started.elapsed());
     Ok(TransferOutcome {
         result: state.result,
@@ -2847,7 +2857,8 @@ fn native_http2_compat_enabled(
 
     match metadata.http_version {
         CURL_HTTP_VERSION_1_0 | CURL_HTTP_VERSION_1_1 => false,
-        CURL_HTTP_VERSION_2_0 | CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE => true,
+        CURL_HTTP_VERSION_2_0 => request.scheme.eq_ignore_ascii_case("https"),
+        CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE => true,
         CURL_HTTP_VERSION_2TLS => request.scheme.eq_ignore_ascii_case("https"),
         0 => request.scheme.eq_ignore_ascii_case("https") && metadata.ssl_enable_alpn,
         _ => request.scheme.eq_ignore_ascii_case("https") && metadata.ssl_enable_alpn,
@@ -3073,13 +3084,25 @@ pub(crate) fn deliver_header(
     }
 
     if callbacks.header_data != 0 {
-        let wrote = unsafe {
-            fwrite(
-                raw_line.as_ptr().cast(),
-                1,
-                raw_line.len(),
-                callbacks.header_data as *mut c_void,
-            )
+        let wrote = if let Some(callback) = callbacks.write_function {
+            let mut line = raw_line.to_vec();
+            unsafe {
+                callback(
+                    line.as_mut_ptr().cast(),
+                    1,
+                    line.len(),
+                    callbacks.header_data as *mut c_void,
+                )
+            }
+        } else {
+            unsafe {
+                fwrite(
+                    raw_line.as_ptr().cast(),
+                    1,
+                    raw_line.len(),
+                    callbacks.header_data as *mut c_void,
+                )
+            }
         };
         if wrote == raw_line.len() {
             return Ok(());

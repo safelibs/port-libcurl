@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 --flavor <openssl|gnutls> [--implementation <compat|packaged>] [--build-state <path>] [--binary <path>] [--compile-only]" >&2
+  echo "usage: $0 --flavor <openssl|gnutls> [--implementation <compat|packaged>] [--build-state <path>] [--binary <path>] [--compile-only] [--package-root <path>]" >&2
 }
 
 flavor=""
@@ -10,6 +10,7 @@ implementation="compat"
 build_state=""
 binary=""
 compile_only=0
+package_root=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --flavor)
@@ -32,6 +33,10 @@ while [[ $# -gt 0 ]]; do
       compile_only=1
       shift
       ;;
+    --package-root)
+      package_root="${2:-}"
+      shift 2
+      ;;
     *)
       usage
       exit 2
@@ -40,9 +45,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -z "${flavor}" ]] && usage && exit 2
+if [[ -n "${package_root}" && "${implementation}" == "compat" ]]; then
+  implementation="packaged"
+fi
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 safe_dir="$(cd "${script_dir}/.." && pwd)"
-src="${safe_dir}/vendor/upstream/debian/tests/LDAP-bindata.c"
+src="${safe_dir}/debian/tests/LDAP-bindata.c"
+if [[ ! -f "${src}" ]]; then
+  src="${safe_dir}/vendor/upstream/debian/tests/LDAP-bindata.c"
+fi
 [[ -f "${src}" ]] || {
   echo "missing tracked LDAP test source: ${src}" >&2
   echo "refresh vendored inputs with safe/scripts/vendor-compat-assets.sh from a full repo checkout" >&2
@@ -53,6 +64,48 @@ tmp_root="$(mktemp -d)"
 trap 'rm -rf "${tmp_root}"' EXIT
 out_bin="${binary:-${tmp_root}/ldap-bindata}"
 shim_include_dir="${safe_dir}/compat/ldap-devpkg/include"
+package_extract=""
+package_lib_dir=""
+
+find_deb() {
+  local root="$1"
+  local package="$2"
+  local deb
+  for deb in "${root}"/*.deb "${root}/../"*.deb; do
+    [[ -e "${deb}" ]] || continue
+    if [[ "$(dpkg-deb -f "${deb}" Package)" == "${package}" ]]; then
+      printf '%s\n' "${deb}"
+      return 0
+    fi
+  done
+  echo "missing built deb for ${package} under ${root} or ${root}/.." >&2
+  return 1
+}
+
+setup_packaged_libcurl() {
+  [[ -n "${package_root}" ]] || return 0
+  package_root="$(cd "${package_root}" && pwd)"
+  package_extract="${tmp_root}/packages"
+  mkdir -p "${package_extract}"
+  local runtime_pkg dev_pkg
+  case "${flavor}" in
+    openssl)
+      runtime_pkg="libcurl4t64"
+      dev_pkg="libcurl4-openssl-dev"
+      ;;
+    gnutls)
+      runtime_pkg="libcurl3t64-gnutls"
+      dev_pkg="libcurl4-gnutls-dev"
+      ;;
+    *)
+      echo "unsupported flavor: ${flavor}" >&2
+      exit 2
+      ;;
+  esac
+  dpkg-deb -x "$(find_deb "${package_root}" "${runtime_pkg}")" "${package_extract}"
+  dpkg-deb -x "$(find_deb "${package_root}" "${dev_pkg}")" "${package_extract}"
+  package_lib_dir="${package_extract}/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
+}
 
 setup_local_ldap_devpkg() {
   [[ -d "${shim_include_dir}" ]] || return 1
@@ -112,7 +165,17 @@ if [[ "${implementation}" == "compat" ]]; then
   include_dir="$(jq -r '.stage.include_dir' "${build_state}")"
   gcc "${src}" -I"${include_dir}" -L"${lib_dir}" -Wl,-rpath,"${lib_dir}" -lcurl $(pkgconf --cflags --libs ldap) -o "${out_bin}"
 else
-  gcc "${src}" $(pkgconf --cflags --libs ldap libcurl) -o "${out_bin}"
+  setup_packaged_libcurl
+  if [[ -n "${package_extract}" ]]; then
+    libcurl_flags="$(
+      PKG_CONFIG_SYSROOT_DIR="${package_extract}" \
+      PKG_CONFIG_LIBDIR="${package_lib_dir}/pkgconfig" \
+      pkgconf --cflags --libs libcurl
+    )"
+    gcc "${src}" $(pkgconf --cflags --libs ldap) ${libcurl_flags} -Wl,-rpath,"${package_lib_dir}" -o "${out_bin}"
+  else
+    gcc "${src}" $(pkgconf --cflags --libs ldap libcurl) -o "${out_bin}"
+  fi
 fi
 
 if (( compile_only )); then
@@ -131,6 +194,8 @@ fi
 
 if [[ "${implementation}" == "compat" ]]; then
   LD_LIBRARY_PATH="${lib_dir}:${LD_LIBRARY_PATH:-}" "${out_bin}"
+elif [[ -n "${package_lib_dir}" ]]; then
+  LD_LIBRARY_PATH="${package_lib_dir}:${LD_LIBRARY_PATH:-}" "${out_bin}"
 else
   "${out_bin}"
 fi

@@ -63,7 +63,7 @@ impl Drop for StoredCertInfo {
     }
 }
 
-unsafe extern "C" {
+extern "C" {
     fn port_safe_tls_certinfo(conn: *mut super::SafeTlsConnection, out_len: *mut usize) -> *mut u8;
 }
 

@@ -21,7 +21,7 @@ REPO_ROOT = SAFE_DIR.parent
 MANIFEST_PATH = SAFE_DIR / "metadata" / "test-manifest.json"
 VENDOR_ROOT = SAFE_DIR / "vendor" / "upstream"
 VENDOR_MANIFEST_PATH = VENDOR_ROOT / "manifest.json"
-COMPAT_ROOT = SAFE_DIR / ".compat"
+COMPAT_ROOT = Path(os.environ.get("SAFELIBS_COMPAT_ROOT", SAFE_DIR / ".compat"))
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s+"([^"]+)"', re.M)
 IGNORED_SAFE_DIR_NAMES = {".compat", ".reference", "__pycache__", "target"}
 IGNORED_SAFE_FILE_SUFFIXES = {".pyc", ".pyo"}
@@ -56,11 +56,17 @@ def flavor_config(flavor: str) -> FlavorConfig:
         raise HarnessError(f"unsupported flavor: {flavor}")
 
     root = COMPAT_ROOT / flavor
+    cargo_target_root = Path(
+        os.environ.get(
+            "SAFELIBS_COMPAT_CARGO_TARGET_ROOT",
+            SAFE_DIR / "target" / "compat-consumers",
+        )
+    )
     return FlavorConfig(
         name=flavor,
         cargo_feature=feature,
         soname=soname,
-        cargo_target_dir=SAFE_DIR / "target" / "compat-consumers" / flavor,
+        cargo_target_dir=cargo_target_root / flavor,
         stage_dir=root / "stage",
         worktree_dir=root / "worktree",
         objects_dir=root / "objects",
@@ -420,7 +426,7 @@ def stage_safe_library(flavor: FlavorConfig) -> dict:
 
     env = os.environ.copy()
     env["CARGO_TARGET_DIR"] = str(flavor.cargo_target_dir)
-    run(
+    cargo_args = [
         "cargo",
         "build",
         "--manifest-path",
@@ -429,9 +435,13 @@ def stage_safe_library(flavor: FlavorConfig) -> dict:
         "--features",
         flavor.cargo_feature,
         *profile_args,
-        cwd=REPO_ROOT,
-        env=env,
-    )
+    ]
+    cargo_flags = os.environ.get("SAFELIBS_COMPAT_CARGO_FLAGS", "")
+    if cargo_flags:
+        cargo_args.extend(shlex.split(cargo_flags))
+    elif os.environ.get("SAFELIBS_COMPAT_CARGO_LOCKED_OFFLINE"):
+        cargo_args.extend(["--locked", "--offline"])
+    run(*cargo_args, cwd=SAFE_DIR, env=env)
 
     built_safe = flavor.cargo_target_dir / profile_dir / "libport_libcurl_safe.so"
     reference_lib = SAFE_DIR / ".reference" / flavor.name / "dist" / f"libcurl-reference-{flavor.name}.so.4"

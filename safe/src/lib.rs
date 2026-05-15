@@ -9,6 +9,14 @@ compile_error!("enable exactly one of `openssl-flavor` or `gnutls-flavor`");
 #[cfg(not(any(feature = "openssl-flavor", feature = "gnutls-flavor")))]
 compile_error!("enable one of `openssl-flavor` or `gnutls-flavor`");
 
+macro_rules! cstr {
+    ($literal:literal) => {{
+        const BYTES: &[u8] = concat!($literal, "\0").as_bytes();
+        #[allow(unused_unsafe)]
+        unsafe { ::std::ffi::CStr::from_bytes_with_nul_unchecked(BYTES) }
+    }};
+}
+
 pub mod abi {
     include!("abi/generated.rs");
 }
@@ -53,7 +61,7 @@ pub const BUILD_FLAVOR: &str = if cfg!(feature = "openssl-flavor") {
     "gnutls"
 };
 
-unsafe extern "C" {
+extern "C" {
     #[link_name = "curl_easy_setopt"]
     fn retain_variadic_c_shims(
         handle: *mut crate::abi::CURL,

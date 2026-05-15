@@ -1,0 +1,14 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${prefix}/lib/@DEB_HOST_MULTIARCH@
+includedir=${prefix}/include/@DEB_HOST_MULTIARCH@
+supported_protocols="DICT FILE FTP FTPS GOPHER GOPHERS HTTP HTTPS IMAP IMAPS LDAP LDAPS MQTT POP3 POP3S RTMP RTSP SCP SFTP SMB SMBS SMTP SMTPS TELNET TFTP"
+supported_features="SSL IPv6 libz AsynchDNS IDN NTLM TLS-SRP HTTP2 UnixSockets PSL HSTS HTTPS-proxy alt-svc"
+
+Name: libcurl
+URL: https://curl.se/
+Description: Library to transfer files with ftp, http, etc.
+Version: @CURLVERSION@
+Libs: -L${libdir} -lcurl
+Libs.private: -lnghttp2 -lssh2 -lpsl -lz -ldl
+Cflags: -I${includedir}
