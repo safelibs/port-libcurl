@@ -485,6 +485,20 @@ def sync_worktree(flavor: FlavorConfig) -> None:
         shutil.rmtree(include_root)
     shutil.copytree(SAFE_DIR / "include", include_root)
 
+    http2_server = flavor.worktree_dir / "tests" / "http2-server.pl"
+    http2_server_text = http2_server.read_text(encoding="utf-8")
+    patched_http2_server_text = http2_server_text.replace(
+        '--frontend=\\"*,$listenport;no-tls\\" ',
+        '--frontend=\\"127.0.0.1,$listenport;no-tls\\" ',
+        1,
+    ).replace(
+        '--frontend=\\"*,$listenport2\\" ',
+        '--frontend=\\"127.0.0.1,$listenport2\\" ',
+        1,
+    )
+    if patched_http2_server_text != http2_server_text:
+        http2_server.write_text(patched_http2_server_text, encoding="utf-8")
+
     reference_config = flavor.reference_root / "lib" / "curl_config.h"
     reference_tests_config = flavor.reference_root / "tests" / "config"
     reference_curl_config = flavor.reference_root / "curl-config"

@@ -48,6 +48,7 @@ const CURLOPT_INTERLEAVEDATA: CURLoption = 10195;
 const CURLOPT_SEEKFUNCTION: CURLoption = 20167;
 const CURLOPT_SEEKDATA: CURLoption = 10168;
 const CURLOPT_COOKIE: CURLoption = 10022;
+const CURLOPT_KEYPASSWD: CURLoption = 10026;
 const CURLOPT_HTTPPOST: CURLoption = 10024;
 const CURLOPT_HTTPHEADER: CURLoption = 10023;
 const CURLOPT_POSTFIELDS: CURLoption = 10015;
@@ -100,6 +101,13 @@ const CURLOPT_INFILESIZE_LARGE: CURLoption = 30115;
 const CURLOPT_RESUME_FROM_LARGE: CURLoption = 30116;
 const CURLOPT_POSTFIELDSIZE_LARGE: CURLoption = 30120;
 const CURLOPT_CONNECT_ONLY: CURLoption = 141;
+const CURLOPT_SSH_AUTH_TYPES: CURLoption = 151;
+const CURLOPT_SSH_PUBLIC_KEYFILE: CURLoption = 10152;
+const CURLOPT_SSH_PRIVATE_KEYFILE: CURLoption = 10153;
+const CURLOPT_SSH_HOST_PUBLIC_KEY_MD5: CURLoption = 10162;
+const CURLOPT_SSH_KNOWNHOSTS: CURLoption = 10183;
+const CURLOPT_SSH_KEYFUNCTION: CURLoption = 20184;
+const CURLOPT_SSH_KEYDATA: CURLoption = 10185;
 const CURLOPT_OPENSOCKETDATA: CURLoption = 10164;
 const CURLOPT_COPYPOSTFIELDS: CURLoption = 10165;
 const CURLOPT_TCP_NODELAY: CURLoption = 121;
@@ -109,6 +117,8 @@ const CURLOPT_PROXYUSERNAME: CURLoption = 10175;
 const CURLOPT_PROXYPASSWORD: CURLoption = 10176;
 const CURLOPT_NOPROXY: CURLoption = 10177;
 const CURLOPT_RESOLVE: CURLoption = 10203;
+const CURLOPT_STREAM_DEPENDS: CURLoption = 10240;
+const CURLOPT_STREAM_DEPENDS_E: CURLoption = 10241;
 const CURLOPT_RTSP_SESSION_ID: CURLoption = 10190;
 const CURLOPT_RTSP_STREAM_URI: CURLoption = 10191;
 const CURLOPT_RTSP_TRANSPORT: CURLoption = 10192;
@@ -119,6 +129,9 @@ const CURLOPT_CONNECT_TO: CURLoption = 10243;
 const CURLOPT_PRE_PROXY: CURLoption = 10262;
 const CURLOPT_HEADEROPT: CURLoption = 229;
 const CURLOPT_SUPPRESS_CONNECT_HEADERS: CURLoption = 265;
+const CURLOPT_PIPEWAIT: CURLoption = 237;
+const CURLOPT_STREAM_WEIGHT: CURLoption = 239;
+const CURLOPT_SSH_COMPRESSION: CURLoption = 268;
 const CURLOPT_REQUEST_TARGET: CURLoption = 10266;
 const CURLOPT_ALTSVC_CTRL: CURLoption = 286;
 const CURLOPT_ALTSVC: CURLoption = 10287;
@@ -136,11 +149,17 @@ const CURLOPT_SSL_ENABLE_ALPN: CURLoption = 226;
 const CURLOPT_DOH_URL: CURLoption = 10279;
 const CURLOPT_AWS_SIGV4: CURLoption = 10305;
 const CURLOPT_HTTP09_ALLOWED: CURLoption = 285;
+const CURLOPT_UPLOAD_BUFFERSIZE: CURLoption = 280;
 const CURLOPT_MIMEPOST: CURLoption = 10269;
 const CURLOPT_OPENSOCKETFUNCTION: CURLoption = 20163;
 const CURLOPT_RTSP_REQUEST: CURLoption = 189;
 const CURLOPT_CLOSESOCKETFUNCTION: CURLoption = 20208;
 const CURLOPT_CLOSESOCKETDATA: CURLoption = 10209;
+const CURLOPT_SSH_HOST_PUBLIC_KEY_SHA256: CURLoption = 10311;
+const CURLOPT_SSH_HOSTKEYFUNCTION: CURLoption = 20316;
+const CURLOPT_SSH_HOSTKEYDATA: CURLoption = 10317;
+const CURLOPT_PROTOCOLS_STR: CURLoption = 10318;
+const CURLOPT_REDIR_PROTOCOLS_STR: CURLoption = 10319;
 const CURLOPT_QUICK_EXIT: CURLoption = 322;
 const CURLOPT_SSLCERT_BLOB: CURLoption = 40291;
 const CURLOPT_SSLKEY_BLOB: CURLoption = 40292;
@@ -196,6 +215,7 @@ const CURLINFO_RETRY_AFTER: u32 = 0x600000 + 57;
 const CURLINFO_EFFECTIVE_METHOD: u32 = 0x100000 + 58;
 const CURLINFO_REFERER: u32 = 0x100000 + 60;
 const CURL_ERROR_SIZE: usize = 256;
+const CURLE_UNSUPPORTED_PROTOCOL: CURLcode = 1;
 
 const CURL_HTTP_VERSION_1_0: c_long = 1;
 const CURL_HTTP_VERSION_1_1: c_long = 2;
@@ -256,6 +276,9 @@ pub(crate) struct EasyMetadata {
     pub password: Option<String>,
     pub proxy_username: Option<String>,
     pub proxy_password: Option<String>,
+    pub key_password: Option<String>,
+    pub ssh_public_keyfile: Option<String>,
+    pub ssh_private_keyfile: Option<String>,
     pub xoauth2_bearer: Option<String>,
     pub aws_sigv4: Option<String>,
     pub cookie: Option<String>,
@@ -278,6 +301,12 @@ pub(crate) struct EasyMetadata {
     pub connect_mode: c_long,
     pub ws_options: c_long,
     pub quick_exit: bool,
+    pub pipe_wait: bool,
+    pub stream_weight: c_long,
+    pub stream_depends: Option<usize>,
+    pub stream_depends_exclusive: bool,
+    pub allowed_protocols: Option<Vec<String>>,
+    pub redirect_protocols: Option<Vec<String>>,
     pub curlu_handle: Option<usize>,
     pub post_request: bool,
     pub post_fields: Option<PostFieldSource>,
@@ -362,6 +391,9 @@ impl Default for EasyMetadata {
             password: None,
             proxy_username: None,
             proxy_password: None,
+            key_password: None,
+            ssh_public_keyfile: None,
+            ssh_private_keyfile: None,
             xoauth2_bearer: None,
             aws_sigv4: None,
             cookie: None,
@@ -384,6 +416,12 @@ impl Default for EasyMetadata {
             connect_mode: 0,
             ws_options: 0,
             quick_exit: false,
+            pipe_wait: false,
+            stream_weight: 16,
+            stream_depends: None,
+            stream_depends_exclusive: false,
+            allowed_protocols: None,
+            redirect_protocols: None,
             curlu_handle: None,
             post_request: false,
             post_fields: None,
@@ -1020,10 +1058,21 @@ pub(crate) fn easy_setopt_long(handle: *mut CURL, option: CURLoption, value: c_l
             shadow.metadata.suppress_connect_headers = value != 0;
             CURLE_OK
         }
+        CURLOPT_PIPEWAIT => {
+            shadow.metadata.pipe_wait = value != 0;
+            CURLE_OK
+        }
+        CURLOPT_STREAM_WEIGHT => {
+            if (1..=256).contains(&value) {
+                shadow.metadata.stream_weight = value;
+            }
+            CURLE_OK
+        }
         CURLOPT_HTTP09_ALLOWED => {
             shadow.metadata.http09_allowed = value != 0;
             CURLE_OK
         }
+        CURLOPT_SSH_AUTH_TYPES | CURLOPT_SSH_COMPRESSION | CURLOPT_UPLOAD_BUFFERSIZE => CURLE_OK,
         CURLOPT_ALTSVC_CTRL => {
             shadow.metadata.altsvc_ctrl = value;
             shadow.http_state.altsvc.ctrl_bits = value;
@@ -1112,6 +1161,35 @@ pub(crate) fn easy_setopt_ptr(
             shadow.metadata.cookie = copy_c_string(value.cast());
             CURLE_OK
         }
+        CURLOPT_KEYPASSWD => {
+            shadow.metadata.key_password = copy_c_string(value.cast());
+            CURLE_OK
+        }
+        CURLOPT_SSH_PUBLIC_KEYFILE => {
+            shadow.metadata.ssh_public_keyfile = copy_c_string(value.cast());
+            CURLE_OK
+        }
+        CURLOPT_SSH_PRIVATE_KEYFILE => {
+            shadow.metadata.ssh_private_keyfile = copy_c_string(value.cast());
+            CURLE_OK
+        }
+        CURLOPT_SSH_HOST_PUBLIC_KEY_MD5
+        | CURLOPT_SSH_HOST_PUBLIC_KEY_SHA256
+        | CURLOPT_SSH_KNOWNHOSTS => CURLE_OK,
+        CURLOPT_PROTOCOLS_STR => match parse_protocols_str(value.cast()) {
+            Ok(protocols) => {
+                shadow.metadata.allowed_protocols = protocols;
+                CURLE_OK
+            }
+            Err(code) => code,
+        },
+        CURLOPT_REDIR_PROTOCOLS_STR => match parse_protocols_str(value.cast()) {
+            Ok(protocols) => {
+                shadow.metadata.redirect_protocols = protocols;
+                CURLE_OK
+            }
+            Err(code) => code,
+        },
         CURLOPT_POSTFIELDS => {
             shadow.metadata.post_fields = Some(PostFieldSource::Borrowed(value as usize));
             shadow.metadata.post_request = true;
@@ -1120,18 +1198,19 @@ pub(crate) fn easy_setopt_ptr(
             shadow.metadata.upload = false;
             CURLE_OK
         }
-        CURLOPT_COPYPOSTFIELDS => match copy_post_fields(value.cast(), shadow.metadata.post_field_size)
-        {
-            Some(body) => {
-                shadow.metadata.post_fields = Some(PostFieldSource::Owned(body));
-                shadow.metadata.post_request = true;
-                shadow.metadata.nobody = false;
-                shadow.metadata.http_get = false;
-                shadow.metadata.upload = false;
-                CURLE_OK
+        CURLOPT_COPYPOSTFIELDS => {
+            match copy_post_fields(value.cast(), shadow.metadata.post_field_size) {
+                Some(body) => {
+                    shadow.metadata.post_fields = Some(PostFieldSource::Owned(body));
+                    shadow.metadata.post_request = true;
+                    shadow.metadata.nobody = false;
+                    shadow.metadata.http_get = false;
+                    shadow.metadata.upload = false;
+                    CURLE_OK
+                }
+                None => CURLE_OUT_OF_MEMORY,
             }
-            None => CURLE_OUT_OF_MEMORY,
-        },
+        }
         CURLOPT_HTTPPOST => {
             shadow.metadata.httppost_handle = (!value.is_null()).then_some(value as usize);
             if !value.is_null() {
@@ -1178,6 +1257,7 @@ pub(crate) fn easy_setopt_ptr(
             shadow.callbacks.xferinfo_data = value as usize;
             CURLE_OK
         }
+        CURLOPT_SSH_KEYDATA | CURLOPT_SSH_HOSTKEYDATA => CURLE_OK,
         CURLOPT_SHARE => {
             if !value.is_null() && !crate::share::is_public_handle(value.cast()) {
                 return CURLE_BAD_FUNCTION_ARGUMENT;
@@ -1225,6 +1305,11 @@ pub(crate) fn easy_setopt_ptr(
         }
         CURLOPT_RESOLVE => {
             shadow.metadata.resolve_overrides = dns::collect_resolve_overrides(value.cast());
+            CURLE_OK
+        }
+        CURLOPT_STREAM_DEPENDS | CURLOPT_STREAM_DEPENDS_E => {
+            shadow.metadata.stream_depends = (!value.is_null()).then_some(value as usize);
+            shadow.metadata.stream_depends_exclusive = option == CURLOPT_STREAM_DEPENDS_E;
             CURLE_OK
         }
         CURLOPT_XOAUTH2_BEARER => {
@@ -1409,6 +1494,7 @@ pub(crate) fn easy_setopt_function(
             shadow.callbacks.xferinfo_function = unsafe { core::mem::transmute(value) };
             CURLE_OK
         }
+        CURLOPT_SSH_KEYFUNCTION | CURLOPT_SSH_HOSTKEYFUNCTION => CURLE_OK,
         CURLOPT_HSTSREADFUNCTION => {
             shadow.callbacks.hsts_read_function = unsafe { core::mem::transmute(value) };
             CURLE_OK
@@ -1647,7 +1733,10 @@ fn effective_method_from_metadata(metadata: &EasyMetadata) -> String {
     if metadata.nobody {
         return "HEAD".to_string();
     }
-    if metadata.post_request || metadata.mimepost_handle.is_some() || metadata.httppost_handle.is_some() {
+    if metadata.post_request
+        || metadata.mimepost_handle.is_some()
+        || metadata.httppost_handle.is_some()
+    {
         return "POST".to_string();
     }
     if metadata.upload {
@@ -1669,6 +1758,66 @@ fn copy_post_fields(value: *const c_char, size: Option<usize>) -> Option<Vec<u8>
         unsafe { CStr::from_ptr(value) }.to_bytes().to_vec()
     };
     Some(bytes)
+}
+
+const SUPPORTED_PROTOCOL_NAMES: &[&str] = &[
+    "dict", "file", "ftp", "ftps", "gopher", "gophers", "http", "https", "imap", "imaps", "mqtt",
+    "pop3", "pop3s", "rtsp", "scp", "sftp", "smb", "smbs", "smtp", "smtps", "telnet", "tftp",
+];
+
+fn parse_protocols_str(value: *const c_char) -> Result<Option<Vec<String>>, CURLcode> {
+    if value.is_null() {
+        return Err(CURLE_BAD_FUNCTION_ARGUMENT);
+    }
+    let raw = unsafe { CStr::from_ptr(value) }.to_string_lossy();
+    if raw.is_empty() {
+        return Err(CURLE_BAD_FUNCTION_ARGUMENT);
+    }
+
+    let mut protocols = Vec::new();
+    for token in raw.split(',') {
+        if token.is_empty() {
+            continue;
+        }
+        if token.trim() != token {
+            return Err(CURLE_UNSUPPORTED_PROTOCOL);
+        }
+        let protocol = token.to_ascii_lowercase();
+        if protocol == "all" {
+            return Ok(None);
+        }
+        if !SUPPORTED_PROTOCOL_NAMES
+            .iter()
+            .any(|candidate| *candidate == protocol)
+        {
+            return Err(CURLE_UNSUPPORTED_PROTOCOL);
+        }
+        if !protocols.iter().any(|candidate| candidate == &protocol) {
+            protocols.push(protocol);
+        }
+    }
+
+    if protocols.is_empty() {
+        Err(CURLE_BAD_FUNCTION_ARGUMENT)
+    } else {
+        Ok(Some(protocols))
+    }
+}
+
+pub(crate) fn protocol_allowed(allowed: Option<&[String]>, url: &str) -> bool {
+    let Some(allowed) = allowed else {
+        return true;
+    };
+    let Some((scheme, _)) = url.split_once("://") else {
+        return false;
+    };
+    let scheme = scheme.to_ascii_lowercase();
+    let protocol = match scheme.as_str() {
+        "ws" => "http",
+        "wss" => "https",
+        _ => scheme.as_str(),
+    };
+    allowed.iter().any(|candidate| candidate == protocol)
 }
 
 pub(crate) fn protocol_from_url(url: Option<&str>) -> c_long {

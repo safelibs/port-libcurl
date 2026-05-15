@@ -165,6 +165,7 @@ pub unsafe extern "C" fn port_safe_export_curl_global_cleanup() {
     if should_clear {
         unsafe { crate::easy::reference::clear_all() };
         version::clear_cached_version();
+        crate::tls::clear_session_cache();
         alloc::reset_to_default();
         crate::easy::perform::clear_registry();
     }

@@ -336,6 +336,13 @@ fn shared_session_cache() -> &'static Mutex<HashMap<String, Vec<u8>>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+pub(crate) fn clear_session_cache() {
+    let mut cache = shared_session_cache()
+        .lock()
+        .expect("tls session cache mutex poisoned");
+    *cache = HashMap::new();
+}
+
 fn load_cached_session(share_handle: Option<usize>, key: &str) -> Option<Vec<u8>> {
     if let Some(found) = crate::share::with_shared_ssl_sessions_mut(share_handle, |sessions| {
         sessions.get(key).cloned()

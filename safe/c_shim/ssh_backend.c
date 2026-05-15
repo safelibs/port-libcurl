@@ -79,6 +79,36 @@ static int authenticate_password(LIBSSH2_SESSION *session, const char *username,
   return CURL_SAFE_SSH_OK;
 }
 
+static int authenticate_publickey(LIBSSH2_SESSION *session,
+                                  const char *username,
+                                  const char *public_keyfile,
+                                  const char *private_keyfile,
+                                  const char *passphrase,
+                                  char *errbuf, size_t errlen)
+{
+  int rc;
+
+  if(!username || !*username) {
+    set_error(errbuf, errlen, "missing SSH username");
+    return CURL_SAFE_SSH_AUTH;
+  }
+  if(!private_keyfile || !*private_keyfile) {
+    set_error(errbuf, errlen, "missing SSH private key");
+    return CURL_SAFE_SSH_AUTH;
+  }
+
+  rc = libssh2_userauth_publickey_fromfile_ex(
+    session, username, (unsigned int)strlen(username),
+    (public_keyfile && *public_keyfile) ? public_keyfile : NULL,
+    private_keyfile,
+    (passphrase && *passphrase) ? passphrase : NULL);
+  if(rc) {
+    set_error(errbuf, errlen, "SSH public key authentication failed");
+    return CURL_SAFE_SSH_AUTH;
+  }
+  return CURL_SAFE_SSH_OK;
+}
+
 static int map_sftp_error(unsigned long code, char *errbuf, size_t errlen)
 {
   switch(code) {
@@ -274,7 +304,11 @@ static int sftp_upload(LIBSSH2_SESSION *session, const char *path,
 }
 
 int port_safe_ssh_transfer(int fd, const char *scheme, const char *username,
-                           const char *password, const char *path, int upload,
+                           const char *password,
+                           const char *public_keyfile,
+                           const char *private_keyfile,
+                           const char *key_passphrase,
+                           const char *path, int upload,
                            const unsigned char *upload_data, size_t upload_len,
                            port_safe_ssh_write_callback write_cb,
                            void *write_ctx,
@@ -305,7 +339,12 @@ int port_safe_ssh_transfer(int fd, const char *scheme, const char *username,
     return result;
   }
 
-  result = authenticate_password(session, username, password, errbuf, errlen);
+  if(private_keyfile && *private_keyfile)
+    result = authenticate_publickey(session, username, public_keyfile,
+                                    private_keyfile, key_passphrase,
+                                    errbuf, errlen);
+  else
+    result = authenticate_password(session, username, password, errbuf, errlen);
   if(result != CURL_SAFE_SSH_OK) {
     libssh2_session_disconnect(session, "authentication failed");
     libssh2_session_free(session);

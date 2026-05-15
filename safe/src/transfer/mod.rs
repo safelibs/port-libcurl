@@ -800,6 +800,24 @@ fn perform_transfer_impl(
         if hsts_enabled {
             current_url = maybe_upgrade_hsts_url(handle, &metadata, &current_url);
         }
+        let protocol_scope = if redirect_count == 0 {
+            metadata.allowed_protocols.as_deref()
+        } else {
+            metadata
+                .redirect_protocols
+                .as_deref()
+                .or(metadata.allowed_protocols.as_deref())
+        };
+        if !perform::protocol_allowed(protocol_scope, &current_url) {
+            perform::set_error_buffer(handle, "Protocol disabled");
+            return finalize_hsts(
+                handle,
+                &metadata,
+                callbacks,
+                hsts_enabled,
+                CURLE_UNSUPPORTED_PROTOCOL,
+            );
+        }
         let mut request = match RequestContext::new(
             &current_url,
             &metadata,
@@ -1872,7 +1890,7 @@ fn write_request(stream: &mut TransportStream, request: &RequestContext) -> Resu
     {
         encoded.push_str("Proxy-Connection: Keep-Alive\r\n");
     }
-    append_headers(&mut encoded, &request.request_headers);
+    append_headers_except(&mut encoded, &request.request_headers, "Trailer");
     if !has_header(&request.request_headers, "Accept") {
         encoded.push_str("Accept: */*\r\n");
     }
@@ -1883,6 +1901,7 @@ fn write_request(stream: &mut TransportStream, request: &RequestContext) -> Resu
         encoded.push_str(&body_length.to_string());
         encoded.push_str("\r\n");
     }
+    append_matching_headers(&mut encoded, &request.request_headers, "Trailer");
     if request.use_chunked_upload && !has_header(&request.request_headers, "Expect") {
         encoded.push_str("Expect: 100-continue\r\n");
     }
@@ -1900,14 +1919,41 @@ fn write_request(stream: &mut TransportStream, request: &RequestContext) -> Resu
 
 fn append_headers(encoded: &mut String, headers: &[String]) {
     for header in headers {
-        if let Some((_, value)) = header.split_once(':') {
-            if value.trim().is_empty() {
-                continue;
-            }
-        }
-        encoded.push_str(header);
-        encoded.push_str("\r\n");
+        append_header(encoded, header);
     }
+}
+
+fn append_headers_except(encoded: &mut String, headers: &[String], excluded_name: &str) {
+    for header in headers {
+        if header_name_eq(header, excluded_name) {
+            continue;
+        }
+        append_header(encoded, header);
+    }
+}
+
+fn append_matching_headers(encoded: &mut String, headers: &[String], included_name: &str) {
+    for header in headers {
+        if header_name_eq(header, included_name) {
+            append_header(encoded, header);
+        }
+    }
+}
+
+fn append_header(encoded: &mut String, header: &str) {
+    if let Some((_, value)) = header.split_once(':') {
+        if value.trim().is_empty() {
+            return;
+        }
+    }
+    encoded.push_str(header);
+    encoded.push_str("\r\n");
+}
+
+fn header_name_eq(header: &str, name: &str) -> bool {
+    header
+        .split_once(':')
+        .is_some_and(|(candidate, _)| candidate.trim().eq_ignore_ascii_case(name))
 }
 
 fn h2_header_flags(name: &str) -> u8 {

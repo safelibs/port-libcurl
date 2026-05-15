@@ -41,6 +41,9 @@ unsafe extern "C" {
         scheme: *const c_char,
         username: *const c_char,
         password: *const c_char,
+        public_keyfile: *const c_char,
+        private_keyfile: *const c_char,
+        key_passphrase: *const c_char,
         path: *const c_char,
         upload: c_int,
         upload_data: *const u8,
@@ -140,6 +143,24 @@ pub(crate) fn perform_transfer(
         .map(CString::new)
         .transpose()
         .map_err(|_| CURLE_URL_MALFORMAT);
+    let public_key_c = metadata
+        .ssh_public_keyfile
+        .as_deref()
+        .map(CString::new)
+        .transpose()
+        .map_err(|_| CURLE_URL_MALFORMAT);
+    let private_key_c = metadata
+        .ssh_private_keyfile
+        .as_deref()
+        .map(CString::new)
+        .transpose()
+        .map_err(|_| CURLE_URL_MALFORMAT);
+    let key_passphrase_c = metadata
+        .key_password
+        .as_deref()
+        .map(CString::new)
+        .transpose()
+        .map_err(|_| CURLE_URL_MALFORMAT);
     let path_c = match CString::new(remote_path.as_str()) {
         Ok(value) => value,
         Err(_) => {
@@ -147,8 +168,20 @@ pub(crate) fn perform_transfer(
             return CURLE_URL_MALFORMAT;
         }
     };
-    let (user_c, pass_c) = match (user_c, pass_c) {
-        (Ok(user_c), Ok(pass_c)) => (user_c, pass_c),
+    let (user_c, pass_c, public_key_c, private_key_c, key_passphrase_c) = match (
+        user_c,
+        pass_c,
+        public_key_c,
+        private_key_c,
+        key_passphrase_c,
+    ) {
+        (Ok(user_c), Ok(pass_c), Ok(public_key_c), Ok(private_key_c), Ok(key_passphrase_c)) => (
+            user_c,
+            pass_c,
+            public_key_c,
+            private_key_c,
+            key_passphrase_c,
+        ),
         _ => {
             transfer::close_transport(TransportStream::Plain(stream), callbacks);
             return CURLE_URL_MALFORMAT;
@@ -182,6 +215,15 @@ pub(crate) fn perform_transfer(
                 .as_ref()
                 .map_or(core::ptr::null(), |value| value.as_ptr()),
             pass_c
+                .as_ref()
+                .map_or(core::ptr::null(), |value| value.as_ptr()),
+            public_key_c
+                .as_ref()
+                .map_or(core::ptr::null(), |value| value.as_ptr()),
+            private_key_c
+                .as_ref()
+                .map_or(core::ptr::null(), |value| value.as_ptr()),
+            key_passphrase_c
                 .as_ref()
                 .map_or(core::ptr::null(), |value| value.as_ptr()),
             path_c.as_ptr(),
