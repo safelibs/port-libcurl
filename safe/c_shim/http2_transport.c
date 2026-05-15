@@ -25,6 +25,8 @@ typedef ssize_t (*safe_h2_data_cb)(void *userp, const uint8_t *data, size_t len)
 #define SAFE_H2_BLOCK_RESPONSE 1
 #define SAFE_H2_BLOCK_TRAILER 2
 #define SAFE_H2_RECV_ERROR 56
+#define SAFE_H2_WOULD_BLOCK (-2)
+#define SAFE_H2_LOCAL_WINDOW_SIZE (128 * 1024 * 1024)
 
 struct safe_h2_bridge {
   safe_h2_send_cb send_cb;
@@ -196,6 +198,9 @@ static ssize_t safe_h2_send_callback(nghttp2_session *session, const uint8_t *da
   (void)flags;
 
   written = bridge->send_cb(bridge->userp, data, length);
+  if(written == SAFE_H2_WOULD_BLOCK) {
+    return NGHTTP2_ERR_WOULDBLOCK;
+  }
   if(written < 0) {
     if(errno == EAGAIN || errno == EWOULDBLOCK) {
       return NGHTTP2_ERR_WOULDBLOCK;
@@ -213,7 +218,14 @@ static ssize_t safe_h2_recv_callback(nghttp2_session *session, uint8_t *buf, siz
   (void)session;
   (void)flags;
 
+  if(bridge->stream_closed) {
+    return NGHTTP2_ERR_WOULDBLOCK;
+  }
+
   read_len = bridge->recv_cb(bridge->userp, buf, length);
+  if(read_len == SAFE_H2_WOULD_BLOCK) {
+    return NGHTTP2_ERR_WOULDBLOCK;
+  }
   if(read_len < 0) {
     if(errno == EAGAIN || errno == EWOULDBLOCK) {
       return NGHTTP2_ERR_WOULDBLOCK;
@@ -398,7 +410,7 @@ int port_safe_http2_perform(const struct safe_h2_nv *headers, size_t header_coun
                             size_t errlen) {
   nghttp2_session_callbacks *callbacks = NULL;
   nghttp2_session *session = NULL;
-  nghttp2_settings_entry settings[1];
+  nghttp2_settings_entry settings[2];
   nghttp2_nv *nva = NULL;
   nghttp2_data_provider data_prd;
   struct safe_h2_bridge bridge;
@@ -454,6 +466,15 @@ int port_safe_http2_perform(const struct safe_h2_nv *headers, size_t header_coun
     return -1;
   }
 
+  rv = nghttp2_session_set_local_window_size(session, NGHTTP2_FLAG_NONE, 0,
+                                             SAFE_H2_LOCAL_WINDOW_SIZE);
+  if(rv != 0) {
+    safe_h2_set_error(&bridge, nghttp2_strerror(rv));
+    nghttp2_session_del(session);
+    nghttp2_session_callbacks_del(callbacks);
+    return -1;
+  }
+
   nva = calloc(header_count, sizeof(*nva));
   if(!nva) {
     safe_h2_set_error(&bridge, "out of memory building HTTP/2 request headers");
@@ -471,7 +492,9 @@ int port_safe_http2_perform(const struct safe_h2_nv *headers, size_t header_coun
 
   settings[0].settings_id = NGHTTP2_SETTINGS_ENABLE_PUSH;
   settings[0].value = allow_push ? 1 : 0;
-  rv = nghttp2_submit_settings(session, NGHTTP2_FLAG_NONE, settings, 1);
+  settings[1].settings_id = NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE;
+  settings[1].value = SAFE_H2_LOCAL_WINDOW_SIZE;
+  rv = nghttp2_submit_settings(session, NGHTTP2_FLAG_NONE, settings, 2);
   if(rv != 0) {
     safe_h2_set_error(&bridge, nghttp2_strerror(rv));
     free(nva);

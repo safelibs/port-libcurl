@@ -31,6 +31,7 @@ struct options {
 struct transfer_slot {
   CURL *easy;
   uint64_t bytes;
+  char error_buffer[CURL_ERROR_SIZE];
 };
 
 static void usage(FILE *stream)
@@ -205,6 +206,7 @@ static void apply_transfer_options(
   curl_easy_setopt(easy, CURLOPT_NOSIGNAL, 1L);
   curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, discard_body);
   curl_easy_setopt(easy, CURLOPT_WRITEDATA, slot);
+  curl_easy_setopt(easy, CURLOPT_ERRORBUFFER, slot->error_buffer);
   curl_easy_setopt(easy, CURLOPT_PRIVATE, slot);
   curl_easy_setopt(easy, CURLOPT_HTTPGET, 1L);
   curl_easy_setopt(easy, CURLOPT_HTTP_VERSION, opts->http_version);
@@ -235,6 +237,7 @@ static void start_transfer(
   CURLMcode mc;
 
   slot->bytes = 0;
+  slot->error_buffer[0] = '\0';
   slot->easy = curl_easy_init();
   if(slot->easy == NULL) {
     fprintf(stderr, "curl_easy_init failed\n");
@@ -331,7 +334,9 @@ static void run_sample(const struct options *opts, uint64_t *bytes_out, double *
         exit(1);
       }
       if(msg->data.result != CURLE_OK) {
-        fprintf(stderr, "transfer failed: %s\n", curl_easy_strerror(msg->data.result));
+        fprintf(stderr, "transfer failed: %s%s%s\n",
+                curl_easy_strerror(msg->data.result),
+                slot->error_buffer[0] ? ": " : "", slot->error_buffer);
         exit(1);
       }
       if(curl_easy_getinfo(msg->easy_handle, CURLINFO_RESPONSE_CODE, &response_code) != CURLE_OK) {

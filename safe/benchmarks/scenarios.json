@@ -28,7 +28,7 @@
       "host": "localhost",
       "http_version": "2",
       "insecure": true,
-      "max_host_connections": 1,
+      "max_host_connections": 4,
       "parallel": 4,
       "path": "/bench-h2.bin",
       "pipewait": true,

@@ -124,7 +124,7 @@ PY
 start_http_fixture() {
   "${script_dir}/http-fixtures.sh" prepare --root "${http_root}"
   dd if=/dev/zero of="${http_root}/bench-http1.bin" bs=1M count=1 status=none
-  dd if=/dev/zero of="${http_root}/bench-h2.bin" bs=1M count=64 status=none
+  dd if=/dev/zero of="${http_root}/bench-h2.bin" bs=1M count=8 status=none
   "${script_dir}/http-fixtures.sh" start \
     --root "${http_root}" \
     --pid-file "${http_pid_file}" \
@@ -161,7 +161,8 @@ start_tls_proxy() {
 build_libraries() {
   bash "${script_dir}/build-reference-curl.sh" --flavor "${flavor}"
   if [[ "${implementation}" == "safe" ]]; then
-    bash "${script_dir}/build-compat-consumers.sh" --flavor "${flavor}" --target "http-client:h2-download"
+    SAFELIBS_COMPAT_CARGO_PROFILE=release \
+      bash "${script_dir}/build-compat-consumers.sh" --flavor "${flavor}" --target "http-client:h2-download"
   fi
 }
 

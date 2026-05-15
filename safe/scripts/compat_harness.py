@@ -405,6 +405,19 @@ def stage_safe_library(flavor: FlavorConfig) -> dict:
     (flavor.stage_dir / "include").mkdir(parents=True, exist_ok=True)
     (flavor.stage_dir / "lib").mkdir(parents=True, exist_ok=True)
 
+    cargo_profile = os.environ.get("SAFELIBS_COMPAT_CARGO_PROFILE", "debug").strip().lower()
+    if cargo_profile in {"", "debug", "dev"}:
+        profile_dir = "debug"
+        profile_args: list[str] = []
+    elif cargo_profile == "release":
+        profile_dir = "release"
+        profile_args = ["--release"]
+    else:
+        raise HarnessError(
+            "SAFELIBS_COMPAT_CARGO_PROFILE must be 'debug' or 'release', "
+            f"got {cargo_profile!r}"
+        )
+
     env = os.environ.copy()
     env["CARGO_TARGET_DIR"] = str(flavor.cargo_target_dir)
     run(
@@ -415,11 +428,12 @@ def stage_safe_library(flavor: FlavorConfig) -> dict:
         "--no-default-features",
         "--features",
         flavor.cargo_feature,
+        *profile_args,
         cwd=REPO_ROOT,
         env=env,
     )
 
-    built_safe = flavor.cargo_target_dir / "debug" / "libport_libcurl_safe.so"
+    built_safe = flavor.cargo_target_dir / profile_dir / "libport_libcurl_safe.so"
     reference_lib = SAFE_DIR / ".reference" / flavor.name / "dist" / f"libcurl-reference-{flavor.name}.so.4"
     if not built_safe.exists():
         raise HarnessError(f"missing built safe library: {built_safe}")
@@ -450,6 +464,7 @@ def stage_safe_library(flavor: FlavorConfig) -> dict:
         "lib_dir": lib_root,
         "library_path": stage_soname,
         "reference_library_path": lib_root / reference_lib.name,
+        "cargo_profile": profile_dir,
     }
 
 
@@ -822,6 +837,7 @@ def build_targets(flavor: FlavorConfig, targets: list[dict], jobs: int) -> dict:
             "library_path": Path(stage_info["library_path"]).as_posix(),
             "reference_library_path": Path(stage_info["reference_library_path"]).as_posix(),
             "soname": flavor.soname,
+            "cargo_profile": stage_info["cargo_profile"],
         },
         "targets": target_records,
     }

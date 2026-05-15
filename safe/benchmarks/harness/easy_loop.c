@@ -192,12 +192,14 @@ static void run_sample(const struct options *opts, uint64_t *bytes_out, double *
   CURLSH *share = NULL;
   struct curl_slist *resolve = NULL;
   struct write_state state;
+  char error_buffer[CURL_ERROR_SIZE];
   uint64_t start_ns;
   uint64_t stop_ns;
   long response_code = 0;
   long request_index;
 
   state.bytes = 0;
+  error_buffer[0] = '\0';
   easy = curl_easy_init();
   if(easy == NULL) {
     fprintf(stderr, "curl_easy_init failed\n");
@@ -225,6 +227,7 @@ static void run_sample(const struct options *opts, uint64_t *bytes_out, double *
   curl_easy_setopt(easy, CURLOPT_NOSIGNAL, 1L);
   curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, discard_body);
   curl_easy_setopt(easy, CURLOPT_WRITEDATA, &state);
+  curl_easy_setopt(easy, CURLOPT_ERRORBUFFER, error_buffer);
   curl_easy_setopt(easy, CURLOPT_HTTPGET, 1L);
   curl_easy_setopt(easy, CURLOPT_HTTP_VERSION, opts->http_version);
   if(opts->insecure) {
@@ -244,8 +247,9 @@ static void run_sample(const struct options *opts, uint64_t *bytes_out, double *
   for(request_index = 0; request_index < opts->requests; ++request_index) {
     CURLcode result = curl_easy_perform(easy);
     if(result != CURLE_OK) {
-      fprintf(stderr, "curl_easy_perform failed on request %ld: %s\n",
-              request_index, curl_easy_strerror(result));
+      fprintf(stderr, "curl_easy_perform failed on request %ld: %s%s%s\n",
+              request_index, curl_easy_strerror(result),
+              error_buffer[0] ? ": " : "", error_buffer);
       exit(1);
     }
     if(curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &response_code) != CURLE_OK) {

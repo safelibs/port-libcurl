@@ -77,6 +77,7 @@ const CURL_HTTP_VERSION_2TLS: c_long = 4;
 const CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE: c_long = 5;
 const SAFE_H2_BLOCK_RESPONSE: c_int = 1;
 const SAFE_H2_BLOCK_TRAILER: c_int = 2;
+const SAFE_H2_WOULD_BLOCK: isize = -2;
 const H2_NV_FLAG_NONE: u8 = 0;
 const H2_NV_FLAG_NO_INDEX: u8 = 0x01;
 const MAX_CONTENT_ENCODING_STEPS: usize = 5;
@@ -2182,6 +2183,9 @@ unsafe extern "C" fn http2_stream_send(userp: *mut c_void, data: *const u8, len:
     let bytes = unsafe { std::slice::from_raw_parts(data, len) };
     match stream.write(bytes) {
         Ok(written) => written as isize,
+        Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+            SAFE_H2_WOULD_BLOCK
+        }
         Err(_) => -1,
     }
 }
@@ -2192,6 +2196,9 @@ unsafe extern "C" fn http2_stream_recv(userp: *mut c_void, data: *mut u8, len: u
     let bytes = unsafe { std::slice::from_raw_parts_mut(data, len) };
     match stream.read(bytes) {
         Ok(read) => read as isize,
+        Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+            SAFE_H2_WOULD_BLOCK
+        }
         Err(_) => -1,
     }
 }
@@ -2320,8 +2327,7 @@ unsafe extern "C" fn http2_data_chunk(userp: *mut c_void, data: *const u8, len: 
     if should_discard_http2_body(state) {
         return len as isize;
     }
-    let mut body = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
-    match deliver_write(state.handle, state.callbacks, &mut body) {
+    match deliver_write_raw(state.handle, state.callbacks, data, len) {
         Ok(()) => len as isize,
         Err(code) => {
             state.result = code;
@@ -2342,7 +2348,7 @@ fn execute_http2_transfer(
     request_started: Instant,
 ) -> Result<TransferOutcome, CURLcode> {
     stream
-        .set_read_timeout(None)
+        .set_read_timeout(Some(IO_POLL_INTERVAL))
         .map_err(|_| CURLE_COULDNT_CONNECT)?;
     let allow_push = crate::multi::has_push_callback(handle);
     let headers = build_http2_request_headers(request)?;
@@ -2930,6 +2936,47 @@ pub(crate) fn deliver_write(
         if wrote == CURL_WRITEFUNC_PAUSE {
             add_pause_mask(handle, CURLPAUSE_RECV);
             continue;
+        }
+        perform::set_error_buffer(handle, "Failed writing received data");
+        return Err(CURLE_WRITE_ERROR);
+    }
+}
+
+fn deliver_write_raw(
+    handle: *mut CURL,
+    callbacks: EasyCallbacks,
+    data: *const u8,
+    len: usize,
+) -> Result<(), CURLcode> {
+    if data.is_null() && len != 0 {
+        perform::set_error_buffer(handle, "Failed writing received data");
+        return Err(CURLE_WRITE_ERROR);
+    }
+
+    loop {
+        wait_for_pause_clear(handle, CURLPAUSE_RECV);
+        let wrote = if let Some(callback) = callbacks.write_function {
+            let write_data = if callbacks.write_data == 0 {
+                unsafe { stdout }
+            } else {
+                callbacks.write_data as *mut c_void
+            };
+            unsafe { callback(data.cast::<c_char>() as *mut c_char, 1, len, write_data) }
+        } else {
+            let stream = if callbacks.write_data == 0 {
+                unsafe { stdout }
+            } else {
+                callbacks.write_data as *mut c_void
+            };
+            unsafe { fwrite(data.cast(), 1, len, stream) }
+        };
+        if wrote == len {
+            return Ok(());
+        }
+        if wrote == CURL_WRITEFUNC_PAUSE {
+            add_pause_mask(handle, CURLPAUSE_RECV);
+            let mut paused = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
+            return deliver_write(handle, callbacks, &mut paused);
         }
         perform::set_error_buffer(handle, "Failed writing received data");
         return Err(CURLE_WRITE_ERROR);
