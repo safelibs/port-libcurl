@@ -1,40 +1,23 @@
 # Phase Name
-TLS Backends, HTTP/2, Remaining Protocol Engines, and Tracked HTTP Client Coverage
+Rust Unit Port and Broad Link/Object Compatibility
 
 ## Implement Phase ID
-`impl-backends-protocols`
+`impl-unit-port`
 
 ## Preexisting Inputs
-- `original/lib/vtls/*.c`
-- `original/lib/vssh/*.c`
-- `original/lib/vquic/*.c`
-- `original/lib/http2.c`
-- `original/lib/file.c`
-- `original/lib/ftp.c`
-- `original/lib/imap.c`
-- `original/lib/pop3.c`
-- `original/lib/smtp.c`
-- `original/lib/ldap.c`
-- `original/lib/openldap.c`
-- `original/lib/smb.c`
-- `original/lib/telnet.c`
-- `original/lib/tftp.c`
-- `original/lib/dict.c`
-- `original/lib/gopher.c`
-- `original/lib/rtsp.c`
-- `original/lib/mqtt.c`
-- `original/lib/doh.c`
-- `original/lib/idn.c`
-- the tracked files under `original/tests/http/`
-- `safe/scripts/run-upstream-tests.sh`
-- `safe/scripts/run-http-client-tests.sh`
+- `safe/metadata/test-manifest.json`
+- `safe/scripts/build-compat-consumers.sh`
+- `safe/scripts/run-link-compat.sh`
+- the tracked files under `original/tests/unit/`
+- `original/tests/unit/Makefile.inc`
+- `original/tests/libtest/first.c`
+- `original/tests/libtest/test.h`
 - `safe/Cargo.toml`
 - `safe/build.rs`
 - `safe/src/lib.rs`
 - `safe/src/abi/generated.rs`
 - `safe/include/curl/*.h`
 - `safe/metadata/abi-manifest.json`
-- `safe/metadata/test-manifest.json`
 - `safe/metadata/cve-manifest.json`
 - `safe/abi/libcurl-openssl.map`
 - `safe/abi/libcurl-gnutls.map`
@@ -92,10 +75,10 @@ TLS Backends, HTTP/2, Remaining Protocol Engines, and Tracked HTTP Client Covera
 - `safe/compat/CMakeLists.txt`
 - `safe/compat/generated-sources.cmake`
 - `safe/scripts/export-tracked-tree.sh`
-- `safe/scripts/build-compat-consumers.sh`
 - `safe/scripts/run-curated-libtests.sh`
-- `safe/scripts/run-link-compat.sh`
+- `safe/scripts/run-upstream-tests.sh`
 - `safe/scripts/run-curl-tool-smoke.sh`
+- `safe/scripts/run-http-client-tests.sh`
 - `safe/scripts/run-ldap-devpkg-test.sh`
 - `safe/scripts/http-fixtures.sh`
 - `safe/scripts/http-fixture.py`
@@ -125,8 +108,6 @@ TLS Backends, HTTP/2, Remaining Protocol Engines, and Tracked HTTP Client Covera
 - `safe/tests/cve_cases/`
 - `safe/metadata/cve-to-test.json`
 - `safe/scripts/verify-cve-coverage.py`
-
-## New Outputs
 - `safe/src/tls/mod.rs`
 - `safe/src/tls/openssl.rs`
 - `safe/src/tls/gnutls.rs`
@@ -150,46 +131,52 @@ TLS Backends, HTTP/2, Remaining Protocol Engines, and Tracked HTTP Client Covera
 - `safe/src/doh.rs`
 - `safe/src/idn.rs`
 
+## New Outputs
+- `safe/tests/unit_port.rs`
+- `safe/tests/unit_port_cases/`
+- `safe/tests/port-map.json`
+- `safe/compat/link-manifest.json`
+
 ## File Changes
-- Port the flavor-specific TLS logic into small backend adapters with a shared Rust policy layer.
-- Port the remaining non-HTTP protocol engines and backend integrations.
-- Add tracked HTTP-client support for server push headers, multiplexing, pause/resume, TLS reuse, and WebSockets.
+- Port the 46 internal unit source ids to Rust integration tests while preserving numeric ids and explicit source-to-port mappings.
+- Extend the relink harness from targeted link-and-run tests to a broad curated object matrix derived from tracked source files.
 
 ## Implementation Details
-- Keep the backend boundary small. Policy, state, and reuse rules stay in Rust; backend modules perform only backend-specific cryptographic and certificate operations.
-- Preserve `curl_global_sslset`, pinned public key behavior, ALPN, session-cache semantics, backend-specific error reporting, and certificate-info extraction.
-- Cover the certificate-validation and pinning issues highlighted in `relevant_cves.json`, including OpenSSL and GnuTLS backend differences.
-- Implement `curl_pushheader_byname` and `curl_pushheader_bynum` as part of the HTTP/2 server-push surface exercised by `h2-serverpush.c`.
-- The source tree contains QUIC/HTTP/3 code, but Ubuntu 24.04 package builds do not currently enable the corresponding extra dependencies in `original/debian/control`. The safe port should preserve the Ubuntu package feature matrix first; HTTP/3 paths should only be exposed in a given flavor when that flavor is built with matching backend support.
-- The tracked `tests/http/clients` programs are canonical existing inputs. The runner should provision only the dependencies needed by those tracked clients and should never fabricate the absent pytest tree.
-- The phase-6 curated `runtests.pl` subset must contain only ids that upstream will execute without `-f`. Do not schedule the former-unit ids `1300`, `1309`, `1323`, `1602`, `1603`, `1604`, `1661`, or `2601` here; phase 7 discharges that coverage through `safe/tests/unit_port.rs`.
-- Ensure all protocol handlers plug into the shared easy/multi/connection engine from earlier phases rather than bypassing it with protocol-local lifetimes.
+- `safe/tests/port-map.json` should map each original `unitNNNN.c` source file to its Rust integration-test location and note whether the unit was part of upstream `UNITPROGS` or only present as a source input.
+- `safe/tests/unit_port.rs` must execute the logical content of all 46 original unit ids, not just the 3 upstream-enabled `UNITPROGS`.
+- `safe/compat/link-manifest.json` should define at least:
+  - a curated broad set for phase-7 verification
+  - a final `all-objects` set used in phase 10
+- Each manifest set should refer to stable target ids already defined in `safe/metadata/test-manifest.json`; compile flags, generated-source rules, and translation-unit membership must come from that earlier manifest and the per-flavor compatibility-build state rather than being duplicated or rediscovered here.
+- The link manifest should be derived from the tracked-target metadata in `safe/metadata/test-manifest.json`, not from ad hoc scans of build directories or prebuilt `.o` files.
+- Each manifest entry must declare the relink target id, the target/object ids from `safe/metadata/test-manifest.json`, flavor applicability, and a runtime adapter such as `libtest`, `curl-tool-smoke`, `http-client`, or `ldap-devpkg`, plus any required test ids or client names. `safe/scripts/run-link-compat.sh` must first ensure that `safe/scripts/build-compat-consumers.sh` has emitted the matching per-flavor build-state, then resolve the actual `.o` paths from that state, execute the adapter after relinking, and fail if any selected entry lacks build metadata or runtime metadata.
+- The final `all-objects` set must contain only runnable entries. Pure link-only diagnostics are allowed in non-final exploratory sets, but they must not satisfy the final link-compatibility proof.
 
 ## Verification Phases
-### `check-backends-protocols-openssl`
+### `check-unit-port`
 - Type: `check`
-- Bounce Target: `impl-backends-protocols`
-- Purpose: validate the OpenSSL flavor across the remaining protocol and backend surface, including the tracked HTTP client programs.
+- Bounce Target: `impl-unit-port`
+- Purpose: run the Rust port of every original unit source id for both flavors.
 - Commands it should run:
 ```bash
-bash safe/scripts/run-upstream-tests.sh --flavor openssl --tests 1 105 506 586 1500 1900 1915 2304 3000 3025 3100
-bash safe/scripts/run-http-client-tests.sh --flavor openssl --clients h2-download h2-serverpush h2-pausing h2-upgrade-extreme tls-session-reuse ws-data ws-pingpong
+cargo test --manifest-path safe/Cargo.toml --no-default-features --features openssl-flavor --test unit_port
+cargo test --manifest-path safe/Cargo.toml --no-default-features --features gnutls-flavor --test unit_port
 ```
 
-### `check-backends-protocols-gnutls`
+### `check-link-compat-curated`
 - Type: `check`
-- Bounce Target: `impl-backends-protocols`
-- Purpose: validate the GnuTLS flavor across the same protocol and backend surface.
+- Bounce Target: `impl-unit-port`
+- Purpose: validate the generalized link-compat harness across a broad tracked object-file set built from original consumer sources, including execution of the relinked binaries.
 - Commands it should run:
 ```bash
-bash safe/scripts/run-upstream-tests.sh --flavor gnutls --tests 1 105 506 586 1500 1900 1915 2304 3000 3025 3100
-bash safe/scripts/run-http-client-tests.sh --flavor gnutls --clients h2-download h2-serverpush h2-pausing h2-upgrade-extreme tls-session-reuse ws-data ws-pingpong
+bash safe/scripts/run-link-compat.sh --flavor openssl --all-curated
+bash safe/scripts/run-link-compat.sh --flavor gnutls --all-curated
 ```
 
 ## Success Criteria
 - Every listed `Preexisting Input` is consumed as an existing artifact rather than rediscovered, regenerated, or refetched.
 - Every listed `New Output` for this implement phase exists and is ready for downstream phases in the linear workflow.
-- The verifier phase(s) `check-backends-protocols-openssl`, `check-backends-protocols-gnutls` pass exactly as written for `impl-backends-protocols`.
+- The verifier phase(s) `check-unit-port`, `check-link-compat-curated` pass exactly as written for `impl-unit-port`.
 
 ## Git Commit Requirement
 The implementer must commit this phase's work to git before yielding. Ignored-only or untracked-only outputs are not acceptable.

@@ -1,765 +1,285 @@
-### 10. Final Hardening, Unsafe Audit, and Full End-to-End Verification
+# Phase Name
+Remove Temporary C Fallbacks, Audit Unsafe Boundaries, and Run the Full No-Exclusions Matrix
 
-**Phase Name:** Final Hardening, Unsafe Audit, and Full End-to-End Verification
+## Implement Phase ID
+`impl-final-hardening`
 
-**Implement Phase ID:** `impl-final-hardening`
+## Preexisting Inputs
+- `safe/Cargo.toml`
+- `safe/build.rs`
+- `safe/src/lib.rs`
+- `safe/src/abi/generated.rs`
+- `safe/include/curl/*.h`
+- `safe/metadata/abi-manifest.json`
+- `safe/metadata/test-manifest.json`
+- `safe/metadata/cve-manifest.json`
+- `safe/abi/libcurl-openssl.map`
+- `safe/abi/libcurl-gnutls.map`
+- `safe/scripts/generate-manifests.py`
+- `safe/scripts/generate-bindings.py`
+- `safe/scripts/verify-manifests.py`
+- `safe/scripts/verify-public-headers.sh`
+- `safe/scripts/verify-export-names.sh`
+- `safe/scripts/verify-symbol-versions.sh`
+- `safe/scripts/build-reference-curl.sh`
+- `safe/debian/control`
+- `safe/debian/changelog`
+- `safe/debian/copyright`
+- `safe/debian/README.*`
+- `safe/debian/rules`
+- `safe/debian/source/format`
+- `safe/debian/*.install`
+- `safe/debian/*.links`
+- `safe/debian/*.docs`
+- `safe/debian/*.examples`
+- `safe/debian/*.lintian-overrides`
+- `safe/debian/*.manpages`
+- `safe/debian/*.symbols`
+- `safe/debian/patches/series`
+- `safe/c_shim/forwarders.c`
+- `safe/src/alloc.rs`
+- `safe/src/global.rs`
+- `safe/src/version.rs`
+- `safe/src/slist.rs`
+- `safe/src/mime.rs`
+- `safe/src/form.rs`
+- `safe/src/urlapi.rs`
+- `safe/src/share.rs`
+- `safe/src/easy/mod.rs`
+- `safe/src/easy/options.rs`
+- `safe/src/easy/handle.rs`
+- `safe/src/abi/public_types.rs`
+- `safe/src/abi/easy.rs`
+- `safe/src/abi/share.rs`
+- `safe/src/abi/url.rs`
+- `safe/c_shim/variadic.c`
+- `safe/c_shim/mprintf.c`
+- `safe/tests/public_abi.rs`
+- `safe/tests/abi_layout.rs`
+- `safe/tests/smoke/public_api_smoke.c`
+- `safe/scripts/run-public-abi-smoke.sh`
+- `safe/scripts/verify-abi-manifest.sh`
+- `safe/scripts/vendor-compat-assets.sh`
+- `safe/vendor/upstream/manifest.json`
+- `safe/vendor/upstream/src/*`
+- `safe/vendor/upstream/tests/*`
+- `safe/vendor/upstream/lib/*`
+- `safe/vendor/upstream/.pc/90_gnutls.patch/*`
+- `safe/vendor/upstream/debian/tests/LDAP-bindata.c`
+- `safe/compat/CMakeLists.txt`
+- `safe/compat/generated-sources.cmake`
+- `safe/scripts/export-tracked-tree.sh`
+- `safe/scripts/build-compat-consumers.sh`
+- `safe/scripts/run-curated-libtests.sh`
+- `safe/scripts/run-link-compat.sh`
+- `safe/scripts/run-upstream-tests.sh`
+- `safe/scripts/run-curl-tool-smoke.sh`
+- `safe/scripts/run-http-client-tests.sh`
+- `safe/scripts/run-ldap-devpkg-test.sh`
+- `safe/scripts/http-fixtures.sh`
+- `safe/scripts/http-fixture.py`
+- `safe/src/easy/perform.rs`
+- `safe/src/multi/mod.rs`
+- `safe/src/multi/state.rs`
+- `safe/src/multi/poll.rs`
+- `safe/src/conn/mod.rs`
+- `safe/src/conn/cache.rs`
+- `safe/src/conn/filter.rs`
+- `safe/src/dns/mod.rs`
+- `safe/src/transfer/mod.rs`
+- `safe/src/abi/multi.rs`
+- `safe/src/abi/connect_only.rs`
+- `safe/src/http/mod.rs`
+- `safe/src/http/request.rs`
+- `safe/src/http/response.rs`
+- `safe/src/http/proxy.rs`
+- `safe/src/http/auth.rs`
+- `safe/src/http/cookies.rs`
+- `safe/src/http/hsts.rs`
+- `safe/src/http/altsvc.rs`
+- `safe/src/http/headers_api.rs`
+- `safe/src/ws.rs`
+- `safe/src/rand.rs`
+- `safe/tests/cve_regressions.rs`
+- `safe/tests/cve_cases/`
+- `safe/metadata/cve-to-test.json`
+- `safe/scripts/verify-cve-coverage.py`
+- `safe/src/tls/mod.rs`
+- `safe/src/tls/openssl.rs`
+- `safe/src/tls/gnutls.rs`
+- `safe/src/tls/certinfo.rs`
+- `safe/src/vquic/mod.rs`
+- `safe/src/ssh/mod.rs`
+- `safe/src/protocols/mod.rs`
+- `safe/src/protocols/file.rs`
+- `safe/src/protocols/ftp.rs`
+- `safe/src/protocols/imap.rs`
+- `safe/src/protocols/pop3.rs`
+- `safe/src/protocols/smtp.rs`
+- `safe/src/protocols/ldap.rs`
+- `safe/src/protocols/smb.rs`
+- `safe/src/protocols/telnet.rs`
+- `safe/src/protocols/tftp.rs`
+- `safe/src/protocols/dict.rs`
+- `safe/src/protocols/gopher.rs`
+- `safe/src/protocols/rtsp.rs`
+- `safe/src/protocols/mqtt.rs`
+- `safe/src/doh.rs`
+- `safe/src/idn.rs`
+- `safe/tests/unit_port.rs`
+- `safe/tests/unit_port_cases/`
+- `safe/tests/port-map.json`
+- `safe/compat/link-manifest.json`
+- `safe/benchmarks/README.md`
+- `safe/benchmarks/scenarios.json`
+- `safe/benchmarks/thresholds.json`
+- `safe/benchmarks/harness/easy_loop.c`
+- `safe/benchmarks/harness/multi_parallel.c`
+- `safe/scripts/benchmark-local.sh`
+- `safe/scripts/compare-benchmarks.py`
+- `safe/docs/performance.md`
+- `safe/Cargo.lock`
+- `safe/.cargo/config.toml`
+- `safe/vendor/cargo/*`
+- `safe/debian/patches/*.patch`
+- `safe/debian/tests/control`
+- `safe/debian/tests/upstream-tests-openssl`
+- `safe/debian/tests/upstream-tests-gnutls`
+- `safe/debian/tests/curl-ldapi-test`
+- `safe/debian/tests/LDAP-bindata.c`
+- `safe/libcurl.pc`
+- `safe/curl-config`
+- `safe/docs/libcurl/libcurl.m4`
+- `safe/scripts/verify-autopkgtest-contract.sh`
+- `safe/scripts/verify-package-control-contract.py`
+- `safe/scripts/verify-package-install-layout.sh`
+- `safe/scripts/verify-devpkg-tooling-contract.sh`
+- `safe/scripts/run-packaged-autopkgtests.sh`
+- `test-original.sh`
+- `safe/debian/*`
 
-**Verification Phases:**
+## New Outputs
+- final Rust-owned libcurl core with no direct dependency on the original C library
+- `safe/docs/unsafe-audit.md`
+- finalized `safe/docs/performance.md`
+- finalized `safe/metadata/abi-manifest.json`
+- finalized `safe/metadata/test-manifest.json`
+- finalized `safe/metadata/cve-manifest.json`
+- `safe/scripts/audit-final-build-independence.sh`
 
-- `check-final-hardening-full`
-  - Type: `check`
-  - Fixed `bounce_target`: `impl-final-hardening`
-  - Purpose: rerun the full compatibility, security, packaging, dependent, and performance suite as the final linear workflow gate. The `Final Verification` section restates this command set and is not a separate generated phase.
-  - Commands:
-    ```bash
-    bash scripts/check-layout.sh
-    bash safe/scripts/verify-public-headers.sh --expected original/include/curl --actual safe/include/curl
-    python3 safe/scripts/verify-manifests.py \
-      --abi safe/metadata/abi-manifest.json \
-      --tests safe/metadata/test-manifest.json \
-      --cves safe/metadata/cve-manifest.json
-    bash safe/scripts/verify-abi-manifest.sh safe/metadata/abi-manifest.json
-    python3 safe/scripts/verify-cve-coverage.py
-    test -f safe/debian/patches/series
-    test "$(cat safe/debian/source/format)" = "3.0 (quilt)"
-    ! rg -n "/home/[A-Za-z][A-Za-z0-9_-]*/" safe/metadata safe/vendor/upstream/manifest.json
-    command -v nghttpx >/dev/null
-    command -v python3 >/dev/null
-    command -v cc >/dev/null
-    command -v openssl >/dev/null
-    command -v pkgconf >/dev/null
-    command -v ldapsearch >/dev/null
-    test -x /usr/sbin/slapd || command -v slapd >/dev/null
-    pkgconf --exists ldap
-    assert_dependent_safe_mode_executor() {
-      command -v docker >/dev/null
-      command -v git >/dev/null
-      command -v jq >/dev/null
-      test -c /dev/fuse
-      docker info >/dev/null
-      docker run --rm \
-        --device /dev/fuse \
-        --cap-add SYS_ADMIN \
-        --security-opt apparmor:unconfined \
-        ubuntu:24.04 \
-        sh -ec 'test -c /dev/fuse'
-    }
-    assert_dependent_safe_mode_executor
-    python3 - <<'PY'
-    import json
-    from pathlib import Path
+## File Changes
+- Delete the temporary all-symbol C fallback bridge.
+- Tighten or eliminate avoidable `unsafe` blocks.
+- Add an explicit unsafe-boundary audit document.
+- Delete the transitional reference-build dependency from the final library and package build.
+- Fix the remaining compatibility, package, and performance issues found by the full matrix.
 
-    tests = json.loads(Path("safe/metadata/test-manifest.json").read_text())
-    manifest = json.loads(Path("safe/compat/link-manifest.json").read_text())
-    all_entries = {entry["id"] for entry in manifest["entries"]}
-    target_ids = {entry["target_id"] for entry in manifest["entries"]}
-    selected = set(manifest["sets"]["all-objects"]["entries"])
-    targets = tests["compatibility_build"]["targets"]
-    expected = {
-        target["target_id"]
-        for target in targets
-        if target.get("role") == "libcurl-consumer"
-    }
-    expected.add("src:curl")
-    helper_ids = {
-        target["target_id"]
-        for target in targets
-        if target.get("role") == "helper"
-    }
-    required = {"http-client:ws-data", "http-client:ws-pingpong", "src:curl"}
-    if len(expected) != 263:
-        raise SystemExit(f"expected current metadata to derive 263 link targets, found {len(expected)}")
-    if not required <= expected:
-        raise SystemExit(f"derived link target set is missing required entries: {sorted(required - expected)}")
-    if target_ids != expected:
-        missing = sorted(expected - target_ids)[:20]
-        extra = sorted(target_ids - expected)[:20]
-        raise SystemExit(f"link manifest target coverage drifted; missing={missing} extra={extra}")
-    if target_ids & helper_ids:
-        raise SystemExit(f"link manifest includes helper-only targets: {sorted(target_ids & helper_ids)[:20]}")
-    if len(manifest["entries"]) != len(expected):
-        raise SystemExit(f"expected {len(expected)} object link entries, found {len(manifest['entries'])}")
-    if selected != all_entries:
-        missing = sorted(all_entries - selected)[:20]
-        extra = sorted(selected - all_entries)[:20]
-        raise SystemExit(f"all-objects set drifted; missing={missing} extra={extra}")
-    PY
+## Implementation Details
+- By the end of this phase, the only C code that should remain is the unavoidable ABI layer for varargs, the `curl_mprintf*` family, and boundary glue required by libc, TLS/SSH backends, or OS callbacks.
+- `safe/docs/unsafe-audit.md` should document every remaining `unsafe` block and classify it as one of: C ABI boundary, libc/socket call, TLS/SSH backend FFI, or raw-pointer adaptation required by a callback signature.
+- `run-upstream-tests.sh --require-all-runtests --no-exclusion-keywords` must execute every ordered `TESTCASES` token not disabled by the tracked vendored `tests/data/DISABLED` rules for the selected flavor, preserve the duplicate `test1190` invocation, refuse to pass `-f`, report the disabled-token set explicitly, and fail if it uses `nonflaky-test`, `TEST_NF`, `~flaky`, `~timing-dependent`, or any comparable extra exclusion mechanism. The unconditional former-unit ids `1300`, `1309`, `1323`, `1602`, `1603`, `1604`, `1661`, and `2601` are not forced through `runtests.pl`; they are discharged by the required Rust unit-port suite instead.
+- `build-compat-consumers.sh --all` in the final matrix must prove that every manifest-recorded compatibility target builds for the selected flavor. Targets whose manifest marks them as libcurl consumers must compile and link against the safe library; auxiliary helper targets such as `chkhostname` and the 10 server helpers must preserve their original upstream non-libcurl link lines and still build successfully.
+- `run-link-compat.sh --all-objects` in the final matrix must relink the complete runnable object manifest without recompilation and execute every relinked consumer under its declared runtime adapter; a link-only success is insufficient.
+- `run-curl-tool-smoke.sh` must remain part of the final matrix so the compatibility-built tool is exercised for both flavors and the packaged OpenSSL `curl` binary is exercised after `dpkg-buildpackage`.
+- `run-http-client-tests.sh --all` must execute all 7 tracked `tests/http/clients` programs for each flavor.
+- `cargo test --test unit_port` must execute the full Rust port of all 46 original unit source ids, not only the 3 upstream `UNITPROGS`.
+- `python3 safe/scripts/verify-cve-coverage.py --manifest safe/metadata/cve-manifest.json --mapping safe/metadata/cve-to-test.json --cases-dir safe/tests/cve_cases` must remain part of the final matrix so the security-manifest-to-regression mapping contract cannot silently regress after phase 5.
+- `safe/scripts/compare-benchmarks.py` must still pass in the final matrix; performance verification cannot disappear after the dedicated performance phase.
+- Package-related commands in the final matrix must run against a detached `safe/`-only export such as `/tmp/libcurl-safe-final-check`, not the live repo tree, so the final package proof remains self-contained.
+- The package-build subblock in the final matrix must assume the same prepared Ubuntu 24.04 executor contract as phase 9, plus `rust-clippy` for the required `cargo clippy` commands, and it must run `mk-build-deps -ir -t 'apt-get -y --no-install-recommends' debian/control` in the detached export before `dpkg-buildpackage`.
+- `python3 /tmp/libcurl-safe-final-check/scripts/verify-package-control-contract.py --expected-control original/debian/control --actual-control /tmp/libcurl-safe-final-check/debian/control --package-root /tmp/libcurl-safe-final-check --require-source-build-deps cargo:native rustc:native` must remain part of the final matrix so the package stanza contract is verified both before install-layout checks and after substvars expansion into the built `.deb` metadata, while also proving that the detached safe source package declares its Rust build-tool requirements explicitly.
+- `bash /tmp/libcurl-safe-final-check/scripts/verify-package-install-layout.sh --package-root /tmp/libcurl-safe-final-check` must remain part of the final matrix so the actual `.deb` payloads are checked for the required runtime-library symlinks, public headers, packaged `curl` binary/manpage, development metadata files, and `libcurl4-doc` docs/examples/manpages instead of being treated as valid merely because the package build completed.
+- `bash /tmp/libcurl-safe-final-check/scripts/verify-devpkg-tooling-contract.sh --package-root /tmp/libcurl-safe-final-check` must remain part of the final matrix so packaged `curl-config`, packaged `libcurl.pc`, and installed `usr/share/aclocal/libcurl.m4` are revalidated after the last cleanup and package rebuild.
+- `safe/scripts/audit-final-build-independence.sh` must fail if `safe/c_shim/forwarders.c` still exists, if `safe/Cargo.toml`, `safe/build.rs`, `safe/debian/rules`, or any other file consumed directly by the final library or package build still refers to `forwarders.c`, `safe/scripts/build-reference-curl.sh`, `safe/.reference/`, or `libcurl-reference-*`, or if `readelf -d` on either final flavor library or the packaged `/usr/bin/curl` reports `DT_NEEDED`, `RPATH`, or `RUNPATH` entries that point at the transitional reference build.
+- The final audit must inspect both flavor-specific Rust library outputs and the packaged OpenSSL `curl` binary; a surviving transitional dependency in any one of them is a phase failure even if the functional tests still pass.
+- Freeze the manifests only after the full matrix passes; those manifests become the maintenance contract for later changes.
 
-    python3 - <<'PY'
-    import stat
-    import subprocess
-    from pathlib import Path
+## Verification Phases
+### `check-final-full-matrix`
+- Type: `check`
+- Bounce Target: `impl-final-hardening`
+- Purpose: run the full ABI, package, link-and-run, security, benchmark, upstream, HTTP-client, unit-port, and downstream compatibility matrix for both flavors after all temporary fallback bridges are removed.
+- Commands it should run:
+```bash
+bash -lc '
+set -euo pipefail
+rm -rf /tmp/libcurl-safe-final-check
+bash safe/scripts/export-tracked-tree.sh --safe-only --dest /tmp/libcurl-safe-final-check
+test -f /tmp/libcurl-safe-final-check/Cargo.lock
+test -f /tmp/libcurl-safe-final-check/.cargo/config.toml
+test -d /tmp/libcurl-safe-final-check/vendor/cargo
+rg -n "replace-with *= *\"vendored-sources\"|directory *= *\"vendor/cargo\"" /tmp/libcurl-safe-final-check/.cargo/config.toml >/dev/null
+rg -n "cargo:native" /tmp/libcurl-safe-final-check/debian/control >/dev/null
+rg -n "rustc:native" /tmp/libcurl-safe-final-check/debian/control >/dev/null
+rg -n "CARGO_NET_OFFLINE=true|--offline" /tmp/libcurl-safe-final-check/debian/rules >/dev/null
+rg -n -- "--locked" /tmp/libcurl-safe-final-check/debian/rules >/dev/null
+test "$(cat /tmp/libcurl-safe-final-check/debian/source/format)" = "3.0 (quilt)"
+test -f /tmp/libcurl-safe-final-check/debian/patches/series
+while IFS= read -r patch; do
+  case "$patch" in
+    ''|'#'*) continue ;;
+  esac
+  test -f "/tmp/libcurl-safe-final-check/debian/patches/$patch"
+done </tmp/libcurl-safe-final-check/debian/patches/series
+cd /tmp/libcurl-safe-final-check
+mk-build-deps -ir -t 'apt-get -y --no-install-recommends' debian/control
+dpkg-buildpackage -us -uc -b
+'
+python3 safe/scripts/verify-manifests.py --abi safe/metadata/abi-manifest.json --tests safe/metadata/test-manifest.json --cves safe/metadata/cve-manifest.json
+bash safe/scripts/verify-public-headers.sh --expected original/include/curl --actual safe/include/curl
+bash safe/scripts/verify-export-names.sh --expected original/libcurl.def --flavor openssl
+bash safe/scripts/verify-export-names.sh --expected original/libcurl.def --flavor gnutls
+bash safe/scripts/verify-symbol-versions.sh --expected original/debian/libcurl4t64.symbols --flavor openssl
+bash safe/scripts/verify-symbol-versions.sh --expected original/debian/libcurl3t64-gnutls.symbols --flavor gnutls
+bash safe/scripts/build-compat-consumers.sh --flavor openssl --all
+bash safe/scripts/build-compat-consumers.sh --flavor gnutls --all
+cargo test --manifest-path safe/Cargo.toml --no-default-features --features openssl-flavor --test public_abi
+cargo test --manifest-path safe/Cargo.toml --no-default-features --features gnutls-flavor --test public_abi
+cargo test --manifest-path safe/Cargo.toml --no-default-features --features openssl-flavor --test abi_layout
+cargo test --manifest-path safe/Cargo.toml --no-default-features --features gnutls-flavor --test abi_layout
+bash safe/scripts/run-public-abi-smoke.sh --flavor openssl
+bash safe/scripts/run-public-abi-smoke.sh --flavor gnutls
+bash safe/scripts/run-link-compat.sh --flavor openssl --all-objects
+bash safe/scripts/run-link-compat.sh --flavor gnutls --all-objects
+bash safe/scripts/run-upstream-tests.sh --flavor openssl --require-all-runtests --no-exclusion-keywords
+bash safe/scripts/run-upstream-tests.sh --flavor gnutls --require-all-runtests --no-exclusion-keywords
+bash safe/scripts/run-curl-tool-smoke.sh --implementation compat --flavor openssl
+bash safe/scripts/run-curl-tool-smoke.sh --implementation compat --flavor gnutls
+bash /tmp/libcurl-safe-final-check/scripts/run-curl-tool-smoke.sh --implementation packaged --flavor openssl --package-root /tmp/libcurl-safe-final-check
+bash safe/scripts/run-http-client-tests.sh --flavor openssl --all
+bash safe/scripts/run-http-client-tests.sh --flavor gnutls --all
+cargo test --manifest-path safe/Cargo.toml --no-default-features --features openssl-flavor --test unit_port
+cargo test --manifest-path safe/Cargo.toml --no-default-features --features gnutls-flavor --test unit_port
+python3 safe/scripts/verify-cve-coverage.py --manifest safe/metadata/cve-manifest.json --mapping safe/metadata/cve-to-test.json --cases-dir safe/tests/cve_cases
+cargo test --manifest-path safe/Cargo.toml --no-default-features --features openssl-flavor --test cve_regressions
+cargo test --manifest-path safe/Cargo.toml --no-default-features --features gnutls-flavor --test cve_regressions
+rm -rf safe/.bench-output/final
+mkdir -p safe/.bench-output/final
+bash safe/scripts/benchmark-local.sh --implementation original --flavor openssl --matrix core --output-dir safe/.bench-output/final/original/openssl
+bash safe/scripts/benchmark-local.sh --implementation safe --flavor openssl --matrix core --output-dir safe/.bench-output/final/safe/openssl
+python3 safe/scripts/compare-benchmarks.py --baseline safe/.bench-output/final/original/openssl --candidate safe/.bench-output/final/safe/openssl --thresholds safe/benchmarks/thresholds.json
+bash safe/scripts/benchmark-local.sh --implementation original --flavor gnutls --matrix core --output-dir safe/.bench-output/final/original/gnutls
+bash safe/scripts/benchmark-local.sh --implementation safe --flavor gnutls --matrix core --output-dir safe/.bench-output/final/safe/gnutls
+python3 safe/scripts/compare-benchmarks.py --baseline safe/.bench-output/final/original/gnutls --candidate safe/.bench-output/final/safe/gnutls --thresholds safe/benchmarks/thresholds.json
+bash /tmp/libcurl-safe-final-check/scripts/run-ldap-devpkg-test.sh --flavor openssl --package-root /tmp/libcurl-safe-final-check
+bash /tmp/libcurl-safe-final-check/scripts/run-ldap-devpkg-test.sh --flavor gnutls --package-root /tmp/libcurl-safe-final-check
+bash /tmp/libcurl-safe-final-check/scripts/verify-devpkg-tooling-contract.sh --package-root /tmp/libcurl-safe-final-check
+python3 /tmp/libcurl-safe-final-check/scripts/verify-package-control-contract.py --expected-control original/debian/control --actual-control /tmp/libcurl-safe-final-check/debian/control --package-root /tmp/libcurl-safe-final-check --require-source-build-deps cargo:native rustc:native
+bash /tmp/libcurl-safe-final-check/scripts/verify-package-install-layout.sh --package-root /tmp/libcurl-safe-final-check
+bash /tmp/libcurl-safe-final-check/scripts/verify-autopkgtest-contract.sh --expected-control original/debian/tests/control --actual-control /tmp/libcurl-safe-final-check/debian/tests/control
+bash /tmp/libcurl-safe-final-check/scripts/run-packaged-autopkgtests.sh --package-root /tmp/libcurl-safe-final-check --test upstream-tests-openssl
+bash /tmp/libcurl-safe-final-check/scripts/run-packaged-autopkgtests.sh --package-root /tmp/libcurl-safe-final-check --test upstream-tests-gnutls
+bash /tmp/libcurl-safe-final-check/scripts/run-packaged-autopkgtests.sh --package-root /tmp/libcurl-safe-final-check --test curl-ldapi-test
+bash ./test-original.sh --implementation safe
+bash /tmp/libcurl-safe-final-check/scripts/audit-final-build-independence.sh --package-root /tmp/libcurl-safe-final-check
+cargo clippy --manifest-path safe/Cargo.toml --all-targets --no-default-features --features openssl-flavor -- -D warnings
+cargo clippy --manifest-path safe/Cargo.toml --all-targets --no-default-features --features gnutls-flavor -- -D warnings
+```
 
-    root = Path("safe/compat/config")
-    expected_protocols = {"HTTP", "HTTPS", "GOPHERS", "LDAP", "LDAPS", "RTMP"}
-    forbidden_protocols = {"WS", "WSS"}
-    forbidden_text = ("/home/", "../original", "/original", ".reference", "libcurl-reference", "reference_backend")
-    for flavor in ("openssl", "gnutls"):
-        base = root / flavor
-        required = [
-            base / "lib" / "curl_config.h",
-            base / "tests" / "config",
-            base / "curl-config",
-        ]
-        missing = [path.as_posix() for path in required if not path.exists()]
-        if missing:
-            raise SystemExit(f"{flavor} missing final compatibility config artifacts: {missing}")
-        if not (base / "curl-config").stat().st_mode & stat.S_IXUSR:
-            raise SystemExit(f"{base / 'curl-config'} is not executable")
-        combined = "\n".join(path.read_text(errors="ignore") for path in required)
-        for needle in forbidden_text:
-            if needle in combined:
-                raise SystemExit(f"{flavor} compatibility config embeds forbidden reference/path marker: {needle}")
-        if "#define USE_WEBSOCKETS" in (base / "lib" / "curl_config.h").read_text(errors="ignore"):
-            raise SystemExit(f"{flavor} compatibility curl_config.h defines USE_WEBSOCKETS despite Ubuntu disabled-WebSocket contract")
-        result = subprocess.run(
-            [(base / "curl-config").as_posix(), "--protocols"],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            raise SystemExit(f"{flavor} curl-config --protocols failed: {result.stderr}")
-        protocols = set(result.stdout.split())
-        missing_protocols = expected_protocols - protocols
-        if missing_protocols:
-            raise SystemExit(f"{flavor} compatibility curl-config missing protocols {sorted(missing_protocols)}")
-        unexpected = forbidden_protocols & protocols
-        if unexpected:
-            raise SystemExit(f"{flavor} compatibility curl-config unexpectedly advertises WebSocket protocols: {sorted(unexpected)}")
-    PY
-    if rg -n 'safe/\.reference|\.reference/|reference_root|reference_config|reference_tests_config|reference_curl_config' \
-      safe/scripts \
-      -g '!build-reference-curl.sh' \
-      -g '!benchmark-local.sh' \
-      -g '!verify-*'; then
-      echo "compatibility harness still depends on reference-sidecar configured metadata" >&2
-      exit 1
-    fi
-    package_sidecar_forbidden='build-reference-curl|forwarders\.c|REFERENCE_LIBRARY|run_reference_build|libcurl-reference|safe/\.reference|(^|/)\.reference($|/)|\.reference/|reference_library_path|port_safe_resolve_reference_symbol|bridge_resolve_symbol|bridge_open_reference|reference_backend|reference backend|libcurl reference'
-    if rg -n "$package_sidecar_forbidden" safe/build.rs safe/debian/rules safe/debian/*.install safe/debian/*.links scripts/build-debs.sh scripts/lib/build-deb-common.sh; then
-      echo "final package build path still references transitional libcurl sidecar machinery" >&2
-      exit 1
-    fi
-    package_consumer_sidecar_forbidden='safe/\.reference|(^|/)\.reference($|/)|\.reference/|libcurl-reference|reference_library_path|reference_root|reference_config|reference_curl_config|reference_tests_config|port_safe_resolve_reference_symbol|bridge_resolve_symbol|bridge_open_reference|REFERENCE_LIBRARY|run_reference_build|build-reference-curl|forwarders\.c|reference_backend|reference backend|libcurl reference'
-    package_consumer_paths=()
-    for path in \
-      safe/scripts/run-public-abi-smoke.sh \
-      safe/scripts/compat_harness.py \
-      safe/scripts/export-tracked-tree.sh \
-      safe/scripts/build-compat-consumers.sh \
-      safe/scripts/run-link-compat.sh \
-      safe/scripts/run-upstream-tests.sh \
-      safe/scripts/run-curated-libtests.sh \
-      safe/scripts/run-curl-tool-smoke.sh \
-      safe/scripts/run-http-client-tests.sh \
-      safe/scripts/run-websocket-disabled-smoke.sh \
-      safe/scripts/run-ldap-devpkg-test.sh \
-      safe/scripts/run-ldaps-functional-test.sh \
-      safe/scripts/run-rtmp-functional-tests.sh \
-      safe/debian/tests/control \
-      safe/debian/tests/upstream-tests-openssl \
-      safe/debian/tests/upstream-tests-gnutls \
-      safe/debian/tests/curl-ldapi-test \
-      safe/debian/tests/LDAP-bindata.c \
-      scripts/run-upstream-tests.sh \
-      scripts/run-port-tests.sh \
-      scripts/run-validation-tests.sh \
-      scripts/run-tests.sh \
-      test-original.sh
-    do
-      test -e "$path" || { echo "missing final package-consuming path: $path" >&2; exit 1; }
-      package_consumer_paths+=("$path")
-    done
-    if rg -n "$package_consumer_sidecar_forbidden" "${package_consumer_paths[@]}"; then
-      echo "final package-consuming path still references transitional libcurl sidecar machinery" >&2
-      exit 1
-    fi
-    assert_no_sidecar_outputs() {
-      local label="$1"
-      shift
-      local path
-      for path in "$@"; do
-        [ -e "$path" ] || continue
-        if find "$path" \( -type d -name .reference -o -name 'libcurl-reference-*' \) -print -quit | grep -q .; then
-          echo "$label produced a .reference directory or libcurl-reference artifact under $path" >&2
-          exit 1
-        fi
-        local -a marker_files=()
-        mapfile -d '' marker_files < <(
-          find "$path" -type f \
-            ! -path '*/.git/*' \
-            ! -path '*/.plan/*' \
-            ! -path '*/safe/scripts/build-reference-curl.sh' \
-            ! -path '*/safe/scripts/benchmark-local.sh' \
-            ! -path '*/scripts/build-reference-curl.sh' \
-            ! -path '*/scripts/benchmark-local.sh' \
-            ! -path '*/safe/scripts/verify-*' \
-            ! -path '*/scripts/verify-*' \
-            -print0
-        )
-        if ((${#marker_files[@]})) && rg -a -n "$package_consumer_sidecar_forbidden" "${marker_files[@]}"; then
-          echo "$label recorded sidecar resolver markers under $path" >&2
-          exit 1
-        fi
-      done
-    }
-    rm -rf safe/.reference safe/.compat safe/target/public-abi safe/target/compat-consumers .work/validation
+## Success Criteria
+- Every listed `Preexisting Input` is consumed as an existing artifact rather than rediscovered, regenerated, or refetched.
+- Every listed `New Output` for this implement phase exists and is ready for downstream phases in the linear workflow.
+- The verifier phase(s) `check-final-full-matrix` pass exactly as written for `impl-final-hardening`.
 
-    test ! -e safe/src/easy/reference.rs
-    test ! -e safe/c_shim/forwarders.c
-    reference_forbidden='port_safe_resolve_reference_symbol|libcurl-reference|easy::reference|mod reference|load_reference|ReferenceRegistry|ReferenceHandle|reference_library_path|reference_backend|transitional bridge|build-reference-curl|REFERENCE_LIBRARY|BRIDGE_FLAVOR|bridge_open_reference|bridge_resolve_symbol|g_reference_handle|dlopen\('
-    if rg -n "$reference_forbidden" safe/src safe/c_shim safe/build.rs safe/debian; then
-      echo "unexpected transitional reference fallback remains" >&2
-      exit 1
-    fi
-    if rg -n "$reference_forbidden|render_forwarders|forwarders\\.c" safe/scripts -g '!build-reference-curl.sh' -g '!benchmark-local.sh' -g '!verify-*'; then
-      echo "unexpected safe-script dependency on transitional reference fallback remains" >&2
-      exit 1
-    fi
-    if rg -n "reference_backend|reference backend|libcurl reference" safe/tests safe/metadata/cve-to-test.json; then
-      echo "unexpected final CVE/test reference-backend placeholder remains" >&2
-      exit 1
-    fi
-    python3 - <<'PY'
-    import json
-    from pathlib import Path
-
-    mapping = json.loads(Path("safe/metadata/cve-to-test.json").read_text())
-    bad = []
-    for entry in mapping["mappings"]:
-        case_file = entry.get("case_file", "")
-        justification = entry.get("justification", "").lower()
-        if "reference_backend" in case_file or "reference backend" in justification or "libcurl reference" in justification:
-            bad.append(entry["cve_id"])
-    if bad:
-        raise SystemExit("final CVE mappings still depend on reference-backend placeholders: " + ", ".join(sorted(bad)))
-    PY
-
-    test -f safe/docs/unsafe-audit.md
-    python3 - <<'PY'
-    import re
-    from pathlib import Path
-
-    audit_path = Path("safe/docs/unsafe-audit.md")
-    audit = audit_path.read_text()
-    if not audit.strip():
-        raise SystemExit("safe/docs/unsafe-audit.md is empty")
-
-    boundary_line = re.compile(r'#\s*\[\s*(?:no_mangle|export_name)|\bunsafe\b|extern\s+"C"')
-    required = {}
-    for path in sorted(Path("safe/src").rglob("*.rs")):
-        ids = []
-        for lineno, line in enumerate(path.read_text(errors="ignore").splitlines(), 1):
-            stripped = line.strip()
-            if not stripped or stripped.startswith("//"):
-                continue
-            if boundary_line.search(line):
-                ids.append(f"{path}:{lineno}")
-        if ids:
-            required[str(path)] = ids
-
-    for path in sorted(Path("safe/c_shim").glob("*.c")):
-        required[str(path)] = [f"{path}:c-shim"]
-
-    missing = []
-    for path, ids in required.items():
-        pos = audit.find(path)
-        if pos < 0:
-            missing.append(f"{path}: missing audit section")
-            continue
-        next_heading = audit.find("\n##", pos + len(path))
-        section = audit[pos:] if next_heading < 0 else audit[pos:next_heading]
-        for marker in ("Purpose:", "Invariants:"):
-            if marker not in section:
-                missing.append(f"{path}: audit section missing {marker}")
-        if "Necessity:" not in section and "Why unsafe remains:" not in section:
-            missing.append(f"{path}: audit section missing Necessity or Why unsafe remains")
-        for boundary_id in ids:
-            if boundary_id not in section:
-                missing.append(f"{boundary_id}: undocumented boundary id")
-
-    documented_paths = set(re.findall(r"safe/(?:src/[^`\s:)]+\.rs|c_shim/[^`\s:)]+\.c)", audit))
-    stale = sorted(path for path in documented_paths if not Path(path).exists())
-    if stale:
-        missing.extend(f"{path}: stale audit path" for path in stale)
-
-    if missing:
-        raise SystemExit("unsafe audit coverage failure:\n" + "\n".join(missing[:200]))
-    print(f"unsafe audit covers {sum(len(v) for v in required.values())} Rust/C boundary ids across {len(required)} files")
-    PY
-
-    for flavor in openssl gnutls; do
-      case "$flavor" in
-        openssl)
-          feature=openssl-flavor
-          symbols=original/debian/libcurl4t64.symbols
-          ;;
-        gnutls)
-          feature=gnutls-flavor
-          symbols=original/debian/libcurl3t64-gnutls.symbols
-          ;;
-      esac
-      artifact="safe/target/final-$flavor/debug/libport_libcurl_safe.so"
-      CARGO_TARGET_DIR="safe/target/final-$flavor" \
-        cargo test --manifest-path safe/Cargo.toml --no-default-features --features "$feature"
-      CARGO_TARGET_DIR="safe/target/final-$flavor" \
-        cargo build --manifest-path safe/Cargo.toml --no-default-features --features "$feature"
-      CARGO_TARGET_DIR="safe/target/final-$flavor" \
-        cargo clippy --manifest-path safe/Cargo.toml --no-default-features --features "$feature" --all-targets -- -D warnings
-      test -f "$artifact"
-      python3 safe/scripts/verify-protocol-feature-contract.py \
-        --flavor "$flavor" \
-        --artifact "$artifact" \
-        --assert-routing
-      bash safe/scripts/run-rtmp-functional-tests.sh \
-        --flavor "$flavor" \
-        --artifact "$artifact" \
-        --schemes rtmp,rtmpe,rtmps,rtmpt,rtmpte,rtmpts \
-        --require-download \
-        --require-upload
-      bash safe/scripts/run-ldaps-functional-test.sh \
-        --flavor "$flavor" \
-        --artifact "$artifact"
-      if readelf -Wd "$artifact" | rg -n 'NEEDED.*libcurl-reference|(RPATH|RUNPATH).*(libcurl-reference|\.reference|/home/|\.\./original|/original|safe/target|(^|[:\[]|/)target/|\.compat|debian/build|/tmp/|/var/tmp/)|libcurl-reference|\.reference'; then
-        echo "safe shared library has sidecar or local build/staging dependency/search path: $artifact" >&2
-        exit 1
-      fi
-      bash safe/scripts/run-public-abi-smoke.sh --flavor "$flavor"
-      assert_no_sidecar_outputs "final public ABI smoke for $flavor" safe/.reference safe/.compat "safe/target/public-abi/$flavor"
-      bash safe/scripts/verify-export-names.sh --expected "$symbols" --flavor "$flavor" --artifact "$artifact"
-      bash safe/scripts/verify-symbol-versions.sh --expected "$symbols" --flavor "$flavor" --artifact "$artifact"
-      bash safe/scripts/build-compat-consumers.sh --flavor "$flavor" --all
-      if jq -e '.. | strings | select(test("libcurl-reference|reference_library_path|reference_backend"))' "safe/.compat/$flavor/build-state.json"; then
-        echo "compat safe staging still records transitional reference sidecar data for $flavor" >&2
-        exit 1
-      fi
-      assert_no_sidecar_outputs "final compatibility staging for $flavor" safe/.reference safe/.compat safe/target/compat-consumers
-      bash safe/scripts/run-link-compat.sh --flavor "$flavor" --set all-objects
-      bash safe/scripts/run-upstream-tests.sh --flavor "$flavor" --require-all-runtests
-      assert_no_sidecar_outputs "final upstream safe tests for $flavor" safe/.reference safe/.compat safe/target/compat-consumers
-      bash safe/scripts/run-http-client-tests.sh --flavor "$flavor" --clients h2-download h2-pausing h2-serverpush h2-upgrade-extreme tls-session-reuse
-      bash safe/scripts/run-websocket-disabled-smoke.sh --flavor "$flavor" --clients ws-data ws-pingpong
-      assert_no_sidecar_outputs "final HTTP and disabled-WebSocket client tests for $flavor" safe/.reference safe/.compat safe/target/compat-consumers
-    done
-
-    export DEBIAN_FRONTEND=noninteractive
-    export CARGO_NET_OFFLINE=true
-
-    check_deb_payload_contract() {
-      local deb_dir="$1"
-      python3 safe/scripts/verify-package-payload-contract.py \
-        --deb-dir "$deb_dir" \
-        --require-safelibs-version
-    }
-
-    check_deb_control_contract() {
-      local deb_dir="$1"
-      local safe_control="$2"
-      python3 safe/scripts/verify-debian-control-contract.py \
-        --contract safe/metadata/debian-control-contract.json \
-        --safe-control "$safe_control" \
-        --original-control original/debian/control \
-        --deb-dir "$deb_dir"
-    }
-
-    check_autopkgtest_control_contract() {
-      python3 - <<'PY'
-    from pathlib import Path
-
-    def parse_control(path):
-        stanzas = {}
-        current = {}
-        current_key = None
-        for line in Path(path).read_text().splitlines():
-            if not line.strip():
-                if current:
-                    stanzas[current["Tests"]] = current
-                current = {}
-                current_key = None
-                continue
-            if line[0].isspace():
-                if current_key is None:
-                    raise SystemExit(f"orphan continuation in {path}: {line}")
-                current[current_key] += "\n" + line.rstrip()
-                continue
-            key, value = line.split(":", 1)
-            current[key] = value.strip()
-            current_key = key
-        if current:
-            stanzas[current["Tests"]] = current
-        return stanzas
-
-    expected_names = ["upstream-tests-openssl", "upstream-tests-gnutls", "curl-ldapi-test"]
-    original = parse_control("original/debian/tests/control")
-    safe = parse_control("safe/debian/tests/control")
-    if sorted(safe) != sorted(expected_names):
-        raise SystemExit(f"unexpected safe autopkgtest names: {sorted(safe)}")
-    for name in expected_names:
-        if name not in original:
-            raise SystemExit(f"missing original autopkgtest reference: {name}")
-        for field in ("Depends", "Restrictions"):
-            if safe[name].get(field) != original[name].get(field):
-                raise SystemExit(
-                    f"{name} {field} drifted: expected {original[name].get(field)!r}, "
-                    f"found {safe[name].get(field)!r}"
-                )
-    PY
-    }
-
-    check_installed_no_reference_sidecar() {
-      local multiarch
-      multiarch="$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
-      if find /usr -path '*libcurl-reference*' -print -quit | grep -q .; then
-        echo "installed filesystem contains transitional libcurl reference sidecar" >&2
-        exit 1
-      fi
-      local -a installed_artifacts
-      mapfile -d '' installed_artifacts < <(find /usr/bin /usr/lib/"$multiarch" \( -name 'curl' -o -name 'libcurl*.so*' -o -name 'libcurl*.a' \) -print0)
-      if ((${#installed_artifacts[@]})) && rg -a -n 'libcurl-reference|safe/\.reference|(^|/)\.reference($|/)|\.reference/|reference_library_path|port_safe_resolve_reference_symbol|bridge_resolve_symbol|bridge_open_reference' "${installed_artifacts[@]}"; then
-        echo "installed curl/libcurl artifacts contain transitional reference sidecar marker" >&2
-        exit 1
-      fi
-      while IFS= read -r -d '' link; do
-        target="$(readlink "$link")"
-        if printf '%s -> %s\n' "$link" "$target" | rg -n 'libcurl-reference|\.reference|/home/|\.\./original|/original|safe/target|(^|[[:space:]]|/)target/|\.compat|debian/build|/tmp/|/var/tmp/'; then
-          echo "installed symlink points at a sidecar or local build/staging path: $link -> $target" >&2
-          exit 1
-        fi
-      done < <(find /usr/bin /usr/lib/"$multiarch" \( -name 'curl' -o -name 'libcurl*.so*' -o -name 'libcurl*.a' \) -type l -print0)
-      while IFS= read -r -d '' artifact; do
-        if file "$artifact" | grep -Eq 'ELF .* (shared object|executable|pie executable)'; then
-          if readelf -Wd "$artifact" | rg -n 'NEEDED.*libcurl-reference|(RPATH|RUNPATH).*(libcurl-reference|\.reference|/home/|\.\./original|/original|safe/target|(^|[:\[]|/)target/|\.compat|debian/build|/tmp/|/var/tmp/)|libcurl-reference|\.reference'; then
-            echo "installed ELF contains sidecar or local build/staging dependency/search path: $artifact" >&2
-            exit 1
-          fi
-        fi
-      done < <(printf '%s\0' "${installed_artifacts[@]}")
-    }
-
-    run_detached_package_runtime_checks() {
-      local src_dir="$1"
-      local deb_dir="$2"
-      local tmp_root="$3"
-      mkdir -p "$tmp_root/autopkgtest-openssl" "$tmp_root/autopkgtest-gnutls" "$tmp_root/autopkgtest-ldap"
-      (
-        cd "$src_dir"
-        sudo apt-get update
-        sudo env DEBIAN_FRONTEND=noninteractive mk-build-deps -ir -t 'apt-get -y --no-install-recommends' debian/control
-        sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-          "$deb_dir"/curl_*.deb \
-          "$deb_dir"/libcurl4t64_*.deb \
-          "$deb_dir"/libcurl4-openssl-dev_*.deb \
-          "$deb_dir"/libcurl4-doc_*.deb \
-          gcc libc-dev libldap-dev slapd ldap-utils openssl python3 pkgconf autoconf automake make
-        dpkg-query -W -f='${Package} ${Version}\n' curl libcurl4t64 libcurl4-openssl-dev libcurl4-doc \
-          | awk '$2 !~ /\+safelibs/ { print "non-safelibs package version: " $0 > "/dev/stderr"; bad=1 } END { exit bad }'
-        test "$(dpkg-query -S /usr/bin/curl | cut -d: -f1)" = "curl"
-        readelf -d /usr/bin/curl | grep -F 'Shared library: [libcurl.so.4]'
-        curl_lib="$(ldd /usr/bin/curl | awk '/libcurl\.so\.4/ { print $3; exit }')"
-        test -n "$curl_lib"
-        dpkg -S "$curl_lib" | grep -E '^libcurl4t64(:|,)'
-        multiarch="$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
-        test ! -e /usr/include/curl
-        for header in curl.h curlver.h easy.h header.h mprintf.h multi.h options.h stdcheaders.h system.h typecheck-gcc.h urlapi.h websockets.h; do
-          test -f "/usr/include/$multiarch/curl/$header"
-        done
-        check_installed_no_reference_sidecar
-        test -e "/usr/lib/$multiarch/libcurl.so"
-        test -f "/usr/lib/$multiarch/libcurl.a"
-        command -v curl-config >/dev/null
-        pkg-config --exists libcurl
-        pkg_config_includedir="$(pkg-config --variable=includedir libcurl)"
-        test "$pkg_config_includedir" = "/usr/include/$multiarch"
-        pkg-config --cflags libcurl | grep -F -- "-I/usr/include/$multiarch"
-        test -f /usr/share/aclocal/libcurl.m4
-        bash scripts/verify-dev-tooling-contract.sh \
-          --contract metadata/dev-tooling-contract.json \
-          --flavor openssl \
-          --expected-shared-lib libcurl.so.4
-        bash scripts/run-rtmp-functional-tests.sh \
-          --implementation packaged \
-          --flavor openssl \
-          --schemes rtmp,rtmpe,rtmps,rtmpt,rtmpte,rtmpts \
-          --require-download \
-          --require-upload
-        bash scripts/run-ldaps-functional-test.sh \
-          --implementation packaged \
-          --flavor openssl
-        AUTOPKGTEST_TMP="$tmp_root/autopkgtest-openssl" bash debian/tests/upstream-tests-openssl
-        AUTOPKGTEST_TMP="$tmp_root/autopkgtest-ldap" bash debian/tests/curl-ldapi-test
-        sudo env DEBIAN_FRONTEND=noninteractive apt-get purge -y libcurl4-openssl-dev
-        sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-          "$deb_dir"/libcurl3t64-gnutls_*.deb \
-          "$deb_dir"/libcurl4-gnutls-dev_*.deb
-        dpkg-query -W -f='${Package} ${Version}\n' libcurl3t64-gnutls libcurl4-gnutls-dev \
-          | awk '$2 !~ /\+safelibs/ { print "non-safelibs package version: " $0 > "/dev/stderr"; bad=1 } END { exit bad }'
-        test ! -e /usr/include/curl
-        for header in curl.h curlver.h easy.h header.h mprintf.h multi.h options.h stdcheaders.h system.h typecheck-gcc.h urlapi.h websockets.h; do
-          test -f "/usr/include/$multiarch/curl/$header"
-        done
-        check_installed_no_reference_sidecar
-        test -e "/usr/lib/$multiarch/libcurl-gnutls.so.4"
-        test -e "/usr/lib/$multiarch/libcurl-gnutls.so.3"
-        test -e "/usr/lib/$multiarch/libcurl-gnutls.so"
-        test -f "/usr/lib/$multiarch/libcurl-gnutls.a"
-        test -e "/usr/lib/$multiarch/libcurl.so"
-        test -e "/usr/lib/$multiarch/libcurl.a"
-        pkg_config_includedir="$(pkg-config --variable=includedir libcurl)"
-        test "$pkg_config_includedir" = "/usr/include/$multiarch"
-        pkg-config --cflags libcurl | grep -F -- "-I/usr/include/$multiarch"
-        bash scripts/verify-dev-tooling-contract.sh \
-          --contract metadata/dev-tooling-contract.json \
-          --flavor gnutls \
-          --expected-shared-lib libcurl-gnutls.so.4
-        bash scripts/run-rtmp-functional-tests.sh \
-          --implementation packaged \
-          --flavor gnutls \
-          --schemes rtmp,rtmpe,rtmps,rtmpt,rtmpte,rtmpts \
-          --require-download \
-          --require-upload
-        bash scripts/run-ldaps-functional-test.sh \
-          --implementation packaged \
-          --flavor gnutls
-        AUTOPKGTEST_TMP="$tmp_root/autopkgtest-gnutls" bash debian/tests/upstream-tests-gnutls
-      )
-      PACKAGED_CURL_BIN=/usr/bin/curl bash "$src_dir/scripts/run-curl-tool-smoke.sh" --implementation packaged
-    }
-
-    check_autopkgtest_control_contract
-    root_cargo_home="$(mktemp -d)"
-    export CARGO_HOME="$root_cargo_home"
-    test "$CARGO_HOME" != "$HOME/.cargo"
-    test -z "$(find "$CARGO_HOME" -mindepth 1 -maxdepth 1 -print -quit)"
-    python3 safe/scripts/verify-cargo-source-policy.py \
-      --manifest safe/Cargo.toml \
-      --lock safe/Cargo.lock \
-      --config safe/.cargo/config.toml \
-      --vendor safe/vendor/cargo
-    python3 safe/scripts/verify-package-no-refetch.py \
-      --package-root safe \
-      --root-build-script scripts/build-debs.sh \
-      --root-build-helper scripts/lib/build-deb-common.sh
-    python3 safe/scripts/verify-debian-control-contract.py \
-      --contract safe/metadata/debian-control-contract.json \
-      --safe-control safe/debian/control \
-      --original-control original/debian/control
-    python3 safe/scripts/verify-protocol-feature-contract.py \
-      --contract safe/metadata/dev-tooling-contract.json \
-      --package-root safe \
-      --debian-control safe/debian/control \
-      --check-source-deps-only
-    rg -n -- '--locked' safe/debian/rules
-    rg -n 'CARGO_NET_OFFLINE|--offline' safe/debian/rules
-    rm -rf build dist safe/.reference safe/.compat .work/validation
-    test -z "$(find "$CARGO_HOME" -mindepth 1 -maxdepth 1 -print -quit)"
-    bash scripts/build-debs.sh
-    git diff --exit-code -- safe/debian/changelog
-    if find dist -maxdepth 1 -type f ! -name '*.deb' -print -quit | grep -q .; then
-      echo "scripts/build-debs.sh must leave only .deb artifacts in dist/" >&2
-      find dist -maxdepth 1 -type f ! -name '*.deb' -print >&2
-      exit 1
-    fi
-    check_deb_payload_contract dist
-    check_deb_control_contract dist safe/debian/control
-    assert_no_sidecar_outputs "final root package build output" dist safe/.reference safe/.compat .work/validation
-    rm -rf "$root_cargo_home"
-    unset CARGO_HOME
-
-    detached_tmp="$(mktemp -d)"
-    bash safe/scripts/export-tracked-tree.sh --safe-only --dest "$detached_tmp/curl"
-    test ! -e "$detached_tmp/original"
-    test ! -e "$detached_tmp/curl/../original"
-    detached_package_consumer_paths=()
-    for path in \
-      "$detached_tmp/curl/scripts/run-public-abi-smoke.sh" \
-      "$detached_tmp/curl/scripts/compat_harness.py" \
-      "$detached_tmp/curl/scripts/export-tracked-tree.sh" \
-      "$detached_tmp/curl/scripts/build-compat-consumers.sh" \
-      "$detached_tmp/curl/scripts/run-link-compat.sh" \
-      "$detached_tmp/curl/scripts/run-upstream-tests.sh" \
-      "$detached_tmp/curl/scripts/run-curated-libtests.sh" \
-      "$detached_tmp/curl/scripts/run-curl-tool-smoke.sh" \
-      "$detached_tmp/curl/scripts/run-http-client-tests.sh" \
-      "$detached_tmp/curl/scripts/run-websocket-disabled-smoke.sh" \
-      "$detached_tmp/curl/scripts/run-ldap-devpkg-test.sh" \
-      "$detached_tmp/curl/scripts/run-ldaps-functional-test.sh" \
-      "$detached_tmp/curl/scripts/run-rtmp-functional-tests.sh" \
-      "$detached_tmp/curl/debian/tests/control" \
-      "$detached_tmp/curl/debian/tests/upstream-tests-openssl" \
-      "$detached_tmp/curl/debian/tests/upstream-tests-gnutls" \
-      "$detached_tmp/curl/debian/tests/curl-ldapi-test" \
-      "$detached_tmp/curl/debian/tests/LDAP-bindata.c"
-    do
-      test -e "$path" || { echo "missing final detached safe-only package-consuming path: $path" >&2; exit 1; }
-      detached_package_consumer_paths+=("$path")
-    done
-    if rg -n "$package_consumer_sidecar_forbidden" "${detached_package_consumer_paths[@]}"; then
-      echo "final detached safe-only export package-consuming path still references transitional libcurl sidecar machinery" >&2
-      exit 1
-    fi
-    assert_no_sidecar_outputs "final detached safe-only export before package build" "$detached_tmp/curl"
-    detached_cargo_home="$detached_tmp/cargo-home"
-    mkdir -p "$detached_cargo_home"
-    test "$detached_cargo_home" != "$HOME/.cargo"
-    test -z "$(find "$detached_cargo_home" -mindepth 1 -maxdepth 1 -print -quit)"
-    (
-      cd "$detached_tmp/curl"
-      export CARGO_HOME="$detached_cargo_home"
-      python3 scripts/verify-cargo-source-policy.py \
-        --manifest Cargo.toml \
-        --lock Cargo.lock \
-        --config .cargo/config.toml \
-        --vendor vendor/cargo
-      python3 scripts/verify-package-no-refetch.py --package-root .
-      if rg -n "$package_sidecar_forbidden" build.rs debian/rules debian/*.install debian/*.links; then
-        echo "final detached package build path still references transitional libcurl sidecar machinery" >&2
-        exit 1
-      fi
-      python3 scripts/verify-debian-control-contract.py \
-        --contract metadata/debian-control-contract.json \
-        --safe-control debian/control
-      python3 scripts/verify-protocol-feature-contract.py \
-        --contract metadata/dev-tooling-contract.json \
-        --package-root . \
-        --debian-control debian/control \
-        --check-source-deps-only
-      rg -n -- '--locked' debian/rules
-      rg -n 'CARGO_NET_OFFLINE|--offline' debian/rules
-      detached_version="$(dpkg-parsechangelog -S Version)"
-      case "$detached_version" in
-        *+safelibs*) ;;
-        *)
-          echo "detached changelog version lacks +safelibs: $detached_version" >&2
-          exit 1
-          ;;
-      esac
-      sudo env DEBIAN_FRONTEND=noninteractive mk-build-deps -ir -t 'apt-get -y --no-install-recommends' debian/control
-      test -z "$(find "$CARGO_HOME" -mindepth 1 -maxdepth 1 -print -quit)"
-      CARGO_HOME="$CARGO_HOME" CARGO_NET_OFFLINE=true dpkg-buildpackage -us -uc -b
-    )
-    check_deb_payload_contract "$detached_tmp"
-    check_deb_control_contract "$detached_tmp" "$detached_tmp/curl/debian/control"
-    assert_no_sidecar_outputs "final detached package build output" "$detached_tmp" "$detached_tmp/curl"
-    rm -rf dist
-    mkdir -p dist
-    cp "$detached_tmp"/*.deb dist/
-    check_deb_payload_contract dist
-    check_deb_control_contract dist "$detached_tmp/curl/debian/control"
-    run_detached_package_runtime_checks "$detached_tmp/curl" "$detached_tmp" "$detached_tmp/runtime"
-    assert_no_sidecar_outputs "final packaged autopkgtest and runtime smoke" "$detached_tmp/curl" "$detached_tmp/runtime"
-    rm -rf safe/.reference safe/.compat .work/validation
-    bash scripts/run-upstream-tests.sh
-    assert_no_sidecar_outputs "final root upstream-test hook" safe/.reference safe/.compat dist .work/validation
-    bash scripts/run-port-tests.sh
-    assert_no_sidecar_outputs "final root port-test hook" safe/.reference safe/.compat dist .work/validation
-    bash scripts/run-validation-tests.sh
-    assert_no_sidecar_outputs "final root validation hook" safe/.reference safe/.compat dist .work/validation
-    dep_tmp="$(mktemp -d)"
-    bash safe/scripts/export-tracked-tree.sh --with-root-harness --dest "$dep_tmp/harness"
-    test ! -e "$dep_tmp/original"
-    test ! -e "$dep_tmp/harness/original"
-    test ! -e "$dep_tmp/harness/safe/../original"
-    detached_root_harness_package_consumer_paths=()
-    for path in \
-      "$dep_tmp/harness/test-original.sh" \
-      "$dep_tmp/harness/scripts/run-upstream-tests.sh" \
-      "$dep_tmp/harness/scripts/run-port-tests.sh" \
-      "$dep_tmp/harness/scripts/run-validation-tests.sh" \
-      "$dep_tmp/harness/scripts/run-tests.sh" \
-      "$dep_tmp/harness/safe/scripts/run-public-abi-smoke.sh" \
-      "$dep_tmp/harness/safe/scripts/compat_harness.py" \
-      "$dep_tmp/harness/safe/scripts/export-tracked-tree.sh" \
-      "$dep_tmp/harness/safe/scripts/build-compat-consumers.sh" \
-      "$dep_tmp/harness/safe/scripts/run-link-compat.sh" \
-      "$dep_tmp/harness/safe/scripts/run-upstream-tests.sh" \
-      "$dep_tmp/harness/safe/scripts/run-curated-libtests.sh" \
-      "$dep_tmp/harness/safe/scripts/run-curl-tool-smoke.sh" \
-      "$dep_tmp/harness/safe/scripts/run-http-client-tests.sh" \
-      "$dep_tmp/harness/safe/scripts/run-websocket-disabled-smoke.sh" \
-      "$dep_tmp/harness/safe/scripts/run-ldap-devpkg-test.sh" \
-      "$dep_tmp/harness/safe/scripts/run-ldaps-functional-test.sh" \
-      "$dep_tmp/harness/safe/scripts/run-rtmp-functional-tests.sh" \
-      "$dep_tmp/harness/safe/debian/tests/control" \
-      "$dep_tmp/harness/safe/debian/tests/upstream-tests-openssl" \
-      "$dep_tmp/harness/safe/debian/tests/upstream-tests-gnutls" \
-      "$dep_tmp/harness/safe/debian/tests/curl-ldapi-test" \
-      "$dep_tmp/harness/safe/debian/tests/LDAP-bindata.c"
-    do
-      test -e "$path" || { echo "missing final detached root-harness package-consuming path: $path" >&2; exit 1; }
-      detached_root_harness_package_consumer_paths+=("$path")
-    done
-    if rg -n "$package_consumer_sidecar_forbidden" "${detached_root_harness_package_consumer_paths[@]}"; then
-      echo "final detached root-harness package-consuming path still references transitional libcurl sidecar machinery" >&2
-      exit 1
-    fi
-    assert_no_sidecar_outputs "final detached root-harness export before dependent safe mode" "$dep_tmp/harness"
-    detached_dist_abs="$(pwd)/dist"
-    (
-      cd "$dep_tmp/harness"
-      SAFE_MODE_ARTIFACT_ROOT="$dep_tmp/harness/.safe-mode-artifacts" \
-        bash ./test-original.sh --implementation safe --safe-deb-dir "$detached_dist_abs"
-    )
-    assert_no_sidecar_outputs "final dependent safe-mode output" "$dep_tmp/harness" "$dep_tmp/harness/.safe-mode-artifacts"
-    rm -rf "$dep_tmp"
-    rm -rf "$detached_tmp"
-    unset CARGO_HOME
-
-    perf_root="$(mktemp -d)"
-    for flavor in openssl gnutls; do
-      bash safe/scripts/benchmark-local.sh --implementation original --flavor "$flavor" --matrix core --output-dir "$perf_root/original-$flavor"
-      bash safe/scripts/benchmark-local.sh --implementation safe --flavor "$flavor" --matrix core --output-dir "$perf_root/safe-$flavor"
-      python3 safe/scripts/compare-benchmarks.py \
-        --baseline "$perf_root/original-$flavor" \
-        --candidate "$perf_root/safe-$flavor" \
-        --thresholds safe/benchmarks/thresholds.json \
-        --output "$perf_root/comparison-$flavor.json"
-    done
-    cat "$perf_root"/comparison-*.json
-    rm -rf "$perf_root"
-    ```
-
-**Preexisting Inputs:**
-
-- `safe/debian/control`, `safe/debian/rules`, `safe/debian/changelog`, `safe/debian/source/format`, `safe/debian/patches/series`, `safe/.cargo/config.toml`, `safe/vendor/cargo/`, `safe/metadata/debian-control-contract.json`, `safe/metadata/dev-tooling-contract.json`, `safe/scripts/verify-cargo-source-policy.py`, `safe/scripts/verify-debian-control-contract.py`, `safe/scripts/verify-dev-tooling-contract.sh`, `safe/scripts/verify-package-no-refetch.py`, `safe/scripts/verify-package-payload-contract.py`, `safe/scripts/run-packaged-autopkgtests.sh`, `safe/scripts/run-rtmp-functional-tests.sh`, `safe/scripts/run-ldaps-functional-test.sh`, `scripts/build-debs.sh`, `scripts/lib/build-deb-common.sh`, `scripts/run-upstream-tests.sh`, `scripts/run-port-tests.sh`, `scripts/run-validation-tests.sh`, and `test-original.sh`.
-- `safe/src/`, `safe/c_shim/`, `safe/scripts/`, `safe/metadata/`, `safe/tests/`, `safe/compat/`, `safe/benchmarks/`, `safe/debian/`, `.github/workflows/ci-release.yml`, `packaging/package.env`, `dependents.json`, `relevant_cves.json`, and `all_cves.json`.
-- `original/include/curl/`, `original/libcurl.def`, `original/lib/libcurl.vers.in`, `original/lib/Makefile.inc`, `original/src/Makefile.am`, `original/src/Makefile.inc`, `original/curl-config.in`, `original/libcurl.pc.in`, `original/docs/libcurl/libcurl.m4`, `original/debian/control`, `original/debian/changelog`, `original/debian/rules`, `original/debian/source/format`, `original/debian/tests/`, `original/debian/patches/`, `original/tests/runtests.pl`, `original/tests/data/Makefile.inc`, `original/tests/data/DISABLED`, `original/tests/libtest/`, `original/tests/server/`, `original/tests/unit/`, and `original/tests/http/`.
-
-**New Outputs:**
-
-- Final confirmation that Phase 9's sidecar-removal invariants still hold after final fixes, with any Phase 10-introduced regressions removed before yielding.
-- Final machine-verifiable unsafe-boundary documentation and reduced unsafe scope.
-- Final package and verification fixes.
-
-**File Changes:**
-
-- Keep Phase 9's sidecar-removal outputs absent. Do not reintroduce `safe/c_shim/forwarders.c`, `safe/src/easy/reference.rs`, `mod reference`, `port_safe_resolve_reference_symbol`, `load_reference`, `ReferenceRegistry`, `ReferenceHandle`, `reference_library_path`, `reference_backend`, package installation directives for `libcurl-reference-*.so.4`, generator support for `forwarders.c`, or any package-consuming dependency on `safe/.reference`.
-- Keep `safe/build.rs`, `safe/scripts/run-public-abi-smoke.sh`, `safe/scripts/compat_harness.py`, `safe/scripts/build-compat-consumers.sh`, root CI hooks, Debian autopkgtests, and dependent safe-mode harnesses sidecar-free while making final fixes. If a final verification failure exposes a sidecar marker introduced during Phase 10, remove that regression in Phase 10; do not defer or reassign Phase 9-owned source deletion to final hardening.
-- Keep only justified permanent C/unsafe boundaries: C variadic shims, mprintf varargs if retained, generated public export thunks, libc/socket/TLS/nghttp2/ssh FFI, and OS callbacks.
-- Add `safe/docs/unsafe-audit.md` documenting each remaining unsafe Rust boundary and C shim. The document must have one section per boundary file under `safe/src/**/*.rs` or `safe/c_shim/*.c`, include the file path, `Purpose:`, `Invariants:`, and `Necessity:` or `Why unsafe remains:`, and list every verifier boundary id reported by the final audit checker, using ids of the form `safe/src/path.rs:<line>` for Rust boundary lines and `safe/c_shim/name.c:c-shim` for C shim files.
-- Keep `safe/metadata/cve-to-test.json`, `safe/tests/cve_cases/*`, and `safe/tests/cve_regressions.rs` free of the `reference_backend_*`, "reference backend", and "libcurl reference" placeholders removed in Phase 9. If final hardening adds or changes CVE coverage through an unavoidable third-party C boundary, name the case after that boundary, document the invariant explicitly, and keep the test independent of any libcurl sidecar.
-
-**Implementation Details:**
-
-- The final code must not depend on a C libcurl sidecar for runtime behavior. Third-party libraries such as OpenSSL, GnuTLS, nghttp2, Ubuntu's selected libssh backend, librtmp, zlib, brotli, zstd, libidn2, libkrb5/GSS-API, libc, and libpsl are acceptable FFI dependencies when wrapped with clear invariants.
-- Phase 9 has already removed stale transitional sidecar files and non-benchmark markers. The final verifier must fail if `safe/src/easy/reference.rs`, `safe/c_shim/forwarders.c`, generator support for `forwarders.c`, `load_reference`, `ReferenceRegistry`, `reference_library_path`, `reference_backend`, or similar sidecar resolver names have been reintroduced outside the benchmark-only original-baseline helper paths or verifier/audit detector constants.
-- Benchmark-only original baselines may still build an original libcurl from `safe/vendor/upstream/`, but that code path must stay confined to benchmark commands and must not be reachable from `safe/build.rs`, the packaged safe libraries, public ABI smoke tests, compatibility config artifact flow, compatibility consumer staging, link compatibility runs, upstream safe test runs, or dependent safe-package tests.
-- Keep `unsafe` Rust isolated to ABI, allocator, pointer, callback, socket, and third-party library boundaries. Keep internal parsing, state machines, policy decisions, and data ownership in safe Rust.
-- The unsafe audit must be generated or updated after the final unsafe reduction, not before it. It must cover the final post-reference-removal tree and must be kept in sync with line-level boundary ids from the final checker. Removing an unsafe block or C shim requires removing its stale audit entry; adding one requires adding the matching audit id and invariants in the same commit.
-- All final verifier failures must bounce only to `impl-final-hardening`.
-- Implementer must commit this phase's work before yielding.
-
-**Verification:**
-
-- `check-final-hardening-full` is the final and complete verification gate.
-
-**Success Criteria:**
-
-- Every item listed under `New Outputs` is present, updated, or explicitly left unchanged because it already satisfied the plan.
-- Every required `File Changes` and `Implementation Details` invariant for this phase is satisfied.
-- Every verifier listed under `Verification Phases` passes exactly as written and bounces only to this phase on failure.
-- All listed `Preexisting Inputs` are consumed in place; existing artifacts are not rediscovered, refetched, or regenerated from untracked sources unless this phase explicitly updates a derived safe artifact from them.
-
-**Git Commit Requirement:**
-
-- The implementer must commit this phase's work to git before yielding.
+## Git Commit Requirement
+The implementer must commit this phase's work to git before yielding. Ignored-only or untracked-only outputs are not acceptable.
