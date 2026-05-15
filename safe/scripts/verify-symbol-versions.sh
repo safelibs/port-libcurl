@@ -46,6 +46,19 @@ case "${flavor}" in
     ;;
 esac
 
+expected_soname="$(awk 'NR==1 { print $1 }' "${expected}")"
+expected_namespace="$(awk '$1 ~ /^CURL_/ && $1 !~ /^curl_/ { split($1, a, "@"); print a[1]; exit }' "${expected}")"
+
+artifact_matches() {
+  local candidate="$1"
+  local actual_soname
+
+  [[ -f "${candidate}" ]] || return 1
+  actual_soname="$(readelf -Wd "${candidate}" 2>/dev/null | awk '/SONAME/ { gsub(/\[|\]/, "", $NF); print $NF; exit }')"
+  [[ "${actual_soname}" == "${expected_soname}" ]] || return 1
+  readelf --version-info "${candidate}" 2>/dev/null | grep -Fq "${expected_namespace}"
+}
+
 resolve_artifact() {
   local candidates=(
     "${safe_dir}/target/public-abi/${flavor}/stage/lib/${soname}"
@@ -54,34 +67,46 @@ resolve_artifact() {
     "${safe_dir}/target/public-abi/${flavor}/debug/deps/libport_libcurl_safe.so"
     "${safe_dir}/target/check-public-abi-${flavor}/debug/deps/libport_libcurl_safe.so"
     "${safe_dir}/target/impl-public-abi-${flavor}/debug/deps/libport_libcurl_safe.so"
+    "${safe_dir}/target/check-foundation-${flavor}/debug/libport_libcurl_safe.so"
     "${safe_dir}/target/check-foundation-${flavor}/debug/deps/libport_libcurl_safe.so"
+    "${safe_dir}/target/debug/libport_libcurl_safe.so"
+    "${safe_dir}/target/debug/deps/libport_libcurl_safe.so"
   )
   local candidate
   for candidate in "${candidates[@]}"; do
-    if [[ -f "${candidate}" ]]; then
+    if artifact_matches "${candidate}"; then
       printf '%s\n' "${candidate}"
       return 0
     fi
   done
-  candidate="$(find "${safe_dir}/target/public-abi/${flavor}/package" -type f -name "${soname}" 2>/dev/null | sort | head -n 1 || true)"
-  if [[ -n "${candidate}" && -f "${candidate}" ]]; then
+  candidate="$(find "${safe_dir}/target/public-abi/${flavor}/package" "${safe_dir}/target/check-foundation-${flavor}" -type f \( -name "${soname}" -o -name 'libport_libcurl_safe.so' \) 2>/dev/null | sort | while IFS= read -r path; do artifact_matches "${path}" && { printf '%s\n' "${path}"; break; }; done || true)"
+  if [[ -n "${candidate}" ]]; then
     printf '%s\n' "${candidate}"
     return 0
   fi
   return 1
 }
 
+build_flavor_artifact() {
+  cargo build \
+    --manifest-path "${safe_dir}/Cargo.toml" \
+    --no-default-features \
+    --features "${flavor}-flavor" \
+    --target-dir "${safe_dir}/target/check-foundation-${flavor}"
+}
+
 if [[ -z "${artifact}" ]]; then
   artifact="$(resolve_artifact || true)"
+  if [[ -z "${artifact}" ]]; then
+    build_flavor_artifact
+    artifact="$(resolve_artifact || true)"
+  fi
 fi
 
-if [[ ! -f "${artifact}" ]]; then
+if [[ ! -f "${artifact}" ]] || ! artifact_matches "${artifact}"; then
   echo "missing ABI artifact for ${flavor}: ${artifact:-<unresolved>}" >&2
   exit 1
 fi
-
-expected_soname="$(awk 'NR==1 { print $1 }' "${expected}")"
-expected_namespace="$(awk '$1 ~ /^CURL_/ && $1 !~ /^curl_/ { split($1, a, "@"); print a[1]; exit }' "${expected}")"
 
 actual_soname="$(readelf -Wd "${artifact}" | awk '/SONAME/ { gsub(/\[|\]/, "", $NF); print $NF; exit }')"
 if [[ "${actual_soname}" != "${expected_soname}" ]]; then

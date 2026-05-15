@@ -16743,259 +16743,1100 @@
       {
         "conditions": [],
         "line": 54,
-        "test_id": "1300"
+        "test_id": "96"
       },
       {
         "conditions": [],
         "line": 55,
-        "test_id": "1309"
+        "test_id": "116"
       },
       {
         "conditions": [],
         "line": 56,
-        "test_id": "1323"
+        "test_id": "159"
       },
       {
         "conditions": [],
         "line": 57,
-        "test_id": "1602"
+        "test_id": "165"
       },
       {
         "conditions": [],
         "line": 58,
-        "test_id": "1603"
+        "test_id": "212"
       },
       {
         "conditions": [],
         "line": 59,
-        "test_id": "1604"
+        "test_id": "240"
       },
       {
         "conditions": [],
         "line": 60,
-        "test_id": "1661"
+        "test_id": "241"
       },
       {
         "conditions": [],
         "line": 61,
-        "test_id": "2601"
+        "test_id": "242"
+      },
+      {
+        "conditions": [],
+        "line": 62,
+        "test_id": "252"
+      },
+      {
+        "conditions": [],
+        "line": 63,
+        "test_id": "253"
       },
       {
         "conditions": [],
         "line": 64,
-        "test_id": "1801"
+        "test_id": "254"
+      },
+      {
+        "conditions": [],
+        "line": 65,
+        "test_id": "255"
       },
       {
         "conditions": [],
         "line": 66,
+        "test_id": "263"
+      },
+      {
+        "conditions": [],
+        "line": 67,
+        "test_id": "314"
+      },
+      {
+        "conditions": [],
+        "line": 68,
+        "test_id": "315"
+      },
+      {
+        "conditions": [],
+        "line": 69,
+        "test_id": "316"
+      },
+      {
+        "conditions": [],
+        "line": 70,
+        "test_id": "356"
+      },
+      {
+        "conditions": [],
+        "line": 71,
+        "test_id": "358"
+      },
+      {
+        "conditions": [],
+        "line": 72,
+        "test_id": "359"
+      },
+      {
+        "conditions": [],
+        "line": 73,
+        "test_id": "363"
+      },
+      {
+        "conditions": [],
+        "line": 74,
+        "test_id": "375"
+      },
+      {
+        "conditions": [],
+        "line": 75,
+        "test_id": "396"
+      },
+      {
+        "conditions": [],
+        "line": 76,
+        "test_id": "397"
+      },
+      {
+        "conditions": [],
+        "line": 77,
+        "test_id": "412"
+      },
+      {
+        "conditions": [],
+        "line": 78,
+        "test_id": "413"
+      },
+      {
+        "conditions": [],
+        "line": 79,
+        "test_id": "437"
+      },
+      {
+        "conditions": [],
+        "line": 80,
+        "test_id": "438"
+      },
+      {
+        "conditions": [],
+        "line": 81,
+        "test_id": "439"
+      },
+      {
+        "conditions": [],
+        "line": 82,
+        "test_id": "445"
+      },
+      {
+        "conditions": [],
+        "line": 83,
+        "test_id": "446"
+      },
+      {
+        "conditions": [],
+        "line": 84,
+        "test_id": "447"
+      },
+      {
+        "conditions": [],
+        "line": 85,
+        "test_id": "506"
+      },
+      {
+        "conditions": [],
+        "line": 86,
+        "test_id": "558"
+      },
+      {
+        "conditions": [],
+        "line": 87,
+        "test_id": "644"
+      },
+      {
+        "conditions": [],
+        "line": 88,
+        "test_id": "687"
+      },
+      {
+        "conditions": [],
+        "line": 89,
+        "test_id": "688"
+      },
+      {
+        "conditions": [],
+        "line": 90,
+        "test_id": "719"
+      },
+      {
+        "conditions": [],
+        "line": 91,
+        "test_id": "823"
+      },
+      {
+        "conditions": [],
+        "line": 92,
+        "test_id": "832"
+      },
+      {
+        "conditions": [],
+        "line": 93,
+        "test_id": "835"
+      },
+      {
+        "conditions": [],
+        "line": 94,
+        "test_id": "869"
+      },
+      {
+        "conditions": [],
+        "line": 95,
+        "test_id": "878"
+      },
+      {
+        "conditions": [],
+        "line": 96,
+        "test_id": "881"
+      },
+      {
+        "conditions": [],
+        "line": 97,
+        "test_id": "907"
+      },
+      {
+        "conditions": [],
+        "line": 98,
+        "test_id": "934"
+      },
+      {
+        "conditions": [],
+        "line": 99,
+        "test_id": "937"
+      },
+      {
+        "conditions": [],
+        "line": 100,
+        "test_id": "962"
+      },
+      {
+        "conditions": [],
+        "line": 101,
+        "test_id": "963"
+      },
+      {
+        "conditions": [],
+        "line": 102,
+        "test_id": "964"
+      },
+      {
+        "conditions": [],
+        "line": 103,
+        "test_id": "965"
+      },
+      {
+        "conditions": [],
+        "line": 104,
+        "test_id": "966"
+      },
+      {
+        "conditions": [],
+        "line": 105,
+        "test_id": "967"
+      },
+      {
+        "conditions": [],
+        "line": 106,
+        "test_id": "968"
+      },
+      {
+        "conditions": [],
+        "line": 107,
+        "test_id": "969"
+      },
+      {
+        "conditions": [],
+        "line": 108,
+        "test_id": "970"
+      },
+      {
+        "conditions": [],
+        "line": 109,
+        "test_id": "972"
+      },
+      {
+        "conditions": [],
+        "line": 110,
+        "test_id": "1026"
+      },
+      {
+        "conditions": [],
+        "line": 111,
+        "test_id": "1034"
+      },
+      {
+        "conditions": [],
+        "line": 112,
+        "test_id": "1035"
+      },
+      {
+        "conditions": [],
+        "line": 113,
+        "test_id": "1046"
+      },
+      {
+        "conditions": [],
+        "line": 114,
+        "test_id": "1048"
+      },
+      {
+        "conditions": [],
+        "line": 115,
+        "test_id": "1050"
+      },
+      {
+        "conditions": [],
+        "line": 116,
+        "test_id": "1056"
+      },
+      {
+        "conditions": [],
+        "line": 117,
+        "test_id": "1083"
+      },
+      {
+        "conditions": [],
+        "line": 118,
+        "test_id": "1085"
+      },
+      {
+        "conditions": [],
+        "line": 119,
+        "test_id": "1100"
+      },
+      {
+        "conditions": [],
+        "line": 120,
+        "test_id": "1136"
+      },
+      {
+        "conditions": [],
+        "line": 121,
+        "test_id": "1179"
+      },
+      {
+        "conditions": [],
+        "line": 122,
+        "test_id": "1203"
+      },
+      {
+        "conditions": [],
+        "line": 123,
+        "test_id": "1210"
+      },
+      {
+        "conditions": [],
+        "line": 124,
+        "test_id": "1230"
+      },
+      {
+        "conditions": [],
+        "line": 125,
+        "test_id": "1282"
+      },
+      {
+        "conditions": [],
+        "line": 126,
+        "test_id": "1294"
+      },
+      {
+        "conditions": [],
+        "line": 127,
+        "test_id": "1295"
+      },
+      {
+        "conditions": [],
+        "line": 128,
+        "test_id": "1308"
+      },
+      {
+        "conditions": [],
+        "line": 129,
+        "test_id": "1310"
+      },
+      {
+        "conditions": [],
+        "line": 130,
+        "test_id": "1311"
+      },
+      {
+        "conditions": [],
+        "line": 131,
+        "test_id": "1312"
+      },
+      {
+        "conditions": [],
+        "line": 132,
+        "test_id": "1313"
+      },
+      {
+        "conditions": [],
+        "line": 133,
+        "test_id": "1334"
+      },
+      {
+        "conditions": [],
+        "line": 134,
+        "test_id": "1335"
+      },
+      {
+        "conditions": [],
+        "line": 135,
+        "test_id": "1336"
+      },
+      {
+        "conditions": [],
+        "line": 136,
+        "test_id": "1337"
+      },
+      {
+        "conditions": [],
+        "line": 137,
+        "test_id": "1338"
+      },
+      {
+        "conditions": [],
+        "line": 138,
+        "test_id": "1339"
+      },
+      {
+        "conditions": [],
+        "line": 139,
+        "test_id": "1340"
+      },
+      {
+        "conditions": [],
+        "line": 140,
+        "test_id": "1341"
+      },
+      {
+        "conditions": [],
+        "line": 141,
+        "test_id": "1342"
+      },
+      {
+        "conditions": [],
+        "line": 142,
+        "test_id": "1343"
+      },
+      {
+        "conditions": [],
+        "line": 143,
+        "test_id": "1344"
+      },
+      {
+        "conditions": [],
+        "line": 144,
+        "test_id": "1345"
+      },
+      {
+        "conditions": [],
+        "line": 145,
+        "test_id": "1346"
+      },
+      {
+        "conditions": [],
+        "line": 146,
+        "test_id": "1347"
+      },
+      {
+        "conditions": [],
+        "line": 147,
+        "test_id": "1348"
+      },
+      {
+        "conditions": [],
+        "line": 148,
+        "test_id": "1349"
+      },
+      {
+        "conditions": [],
+        "line": 149,
+        "test_id": "1350"
+      },
+      {
+        "conditions": [],
+        "line": 150,
+        "test_id": "1351"
+      },
+      {
+        "conditions": [],
+        "line": 151,
+        "test_id": "1352"
+      },
+      {
+        "conditions": [],
+        "line": 152,
+        "test_id": "1353"
+      },
+      {
+        "conditions": [],
+        "line": 153,
+        "test_id": "1354"
+      },
+      {
+        "conditions": [],
+        "line": 154,
+        "test_id": "1355"
+      },
+      {
+        "conditions": [],
+        "line": 155,
+        "test_id": "1356"
+      },
+      {
+        "conditions": [],
+        "line": 156,
+        "test_id": "1357"
+      },
+      {
+        "conditions": [],
+        "line": 157,
+        "test_id": "1358"
+      },
+      {
+        "conditions": [],
+        "line": 158,
+        "test_id": "1359"
+      },
+      {
+        "conditions": [],
+        "line": 159,
+        "test_id": "1360"
+      },
+      {
+        "conditions": [],
+        "line": 160,
+        "test_id": "1361"
+      },
+      {
+        "conditions": [],
+        "line": 161,
+        "test_id": "1362"
+      },
+      {
+        "conditions": [],
+        "line": 162,
+        "test_id": "1363"
+      },
+      {
+        "conditions": [],
+        "line": 163,
+        "test_id": "1396"
+      },
+      {
+        "conditions": [],
+        "line": 164,
+        "test_id": "1398"
+      },
+      {
+        "conditions": [],
+        "line": 165,
+        "test_id": "1408"
+      },
+      {
+        "conditions": [],
+        "line": 166,
+        "test_id": "1422"
+      },
+      {
+        "conditions": [],
+        "line": 167,
+        "test_id": "1425"
+      },
+      {
+        "conditions": [],
+        "line": 168,
+        "test_id": "1426"
+      },
+      {
+        "conditions": [],
+        "line": 169,
+        "test_id": "1443"
+      },
+      {
+        "conditions": [],
+        "line": 170,
+        "test_id": "1448"
+      },
+      {
+        "conditions": [],
+        "line": 171,
+        "test_id": "1456"
+      },
+      {
+        "conditions": [],
+        "line": 172,
+        "test_id": "1460"
+      },
+      {
+        "conditions": [],
+        "line": 173,
+        "test_id": "1476"
+      },
+      {
+        "conditions": [],
+        "line": 174,
+        "test_id": "1560"
+      },
+      {
+        "conditions": [],
+        "line": 175,
+        "test_id": "1662"
+      },
+      {
+        "conditions": [],
+        "line": 176,
+        "test_id": "1703"
+      },
+      {
+        "conditions": [],
+        "line": 177,
+        "test_id": "1908"
+      },
+      {
+        "conditions": [],
+        "line": 178,
+        "test_id": "1933"
+      },
+      {
+        "conditions": [],
+        "line": 179,
+        "test_id": "1934"
+      },
+      {
+        "conditions": [],
+        "line": 180,
+        "test_id": "1935"
+      },
+      {
+        "conditions": [],
+        "line": 181,
+        "test_id": "1936"
+      },
+      {
+        "conditions": [],
+        "line": 182,
+        "test_id": "1937"
+      },
+      {
+        "conditions": [],
+        "line": 183,
+        "test_id": "1938"
+      },
+      {
+        "conditions": [],
+        "line": 184,
+        "test_id": "1955"
+      },
+      {
+        "conditions": [],
+        "line": 185,
+        "test_id": "1956"
+      },
+      {
+        "conditions": [],
+        "line": 186,
+        "test_id": "1957"
+      },
+      {
+        "conditions": [],
+        "line": 187,
+        "test_id": "1958"
+      },
+      {
+        "conditions": [],
+        "line": 188,
+        "test_id": "1959"
+      },
+      {
+        "conditions": [],
+        "line": 189,
+        "test_id": "1970"
+      },
+      {
+        "conditions": [],
+        "line": 190,
+        "test_id": "1971"
+      },
+      {
+        "conditions": [],
+        "line": 191,
+        "test_id": "1972"
+      },
+      {
+        "conditions": [],
+        "line": 192,
+        "test_id": "1973"
+      },
+      {
+        "conditions": [],
+        "line": 193,
+        "test_id": "1974"
+      },
+      {
+        "conditions": [],
+        "line": 194,
+        "test_id": "1975"
+      },
+      {
+        "conditions": [],
+        "line": 195,
+        "test_id": "2033"
+      },
+      {
+        "conditions": [],
+        "line": 196,
+        "test_id": "2046"
+      },
+      {
+        "conditions": [],
+        "line": 197,
+        "test_id": "2047"
+      },
+      {
+        "conditions": [],
+        "line": 198,
+        "test_id": "2056"
+      },
+      {
+        "conditions": [],
+        "line": 199,
+        "test_id": "2057"
+      },
+      {
+        "conditions": [],
+        "line": 200,
+        "test_id": "2077"
+      },
+      {
+        "conditions": [],
+        "line": 201,
+        "test_id": "2078"
+      },
+      {
+        "conditions": [],
+        "line": 202,
+        "test_id": "2070"
+      },
+      {
+        "conditions": [],
+        "line": 203,
+        "test_id": "2079"
+      },
+      {
+        "conditions": [],
+        "line": 204,
+        "test_id": "2087"
+      },
+      {
+        "conditions": [],
+        "line": 205,
+        "test_id": "2100"
+      },
+      {
+        "conditions": [],
+        "line": 206,
+        "test_id": "2300"
+      },
+      {
+        "conditions": [],
+        "line": 207,
+        "test_id": "2303"
+      },
+      {
+        "conditions": [],
+        "line": 208,
+        "test_id": "2304"
+      },
+      {
+        "conditions": [],
+        "line": 209,
+        "test_id": "2400"
+      },
+      {
+        "conditions": [],
+        "line": 210,
+        "test_id": "2401"
+      },
+      {
+        "conditions": [],
+        "line": 211,
+        "test_id": "2500"
+      },
+      {
+        "conditions": [],
+        "line": 212,
+        "test_id": "2501"
+      },
+      {
+        "conditions": [],
+        "line": 213,
+        "test_id": "2502"
+      },
+      {
+        "conditions": [],
+        "line": 214,
+        "test_id": "2503"
+      },
+      {
+        "conditions": [],
+        "line": 215,
+        "test_id": "3023"
+      },
+      {
+        "conditions": [],
+        "line": 216,
+        "test_id": "3024"
+      },
+      {
+        "conditions": [],
+        "line": 217,
+        "test_id": "3202"
+      },
+      {
+        "conditions": [
+          "openssl"
+        ],
+        "line": 219,
+        "test_id": "1656"
+      },
+      {
+        "conditions": [
+          "gnutls"
+        ],
+        "line": 222,
+        "test_id": "307"
+      },
+      {
+        "conditions": [
+          "gnutls"
+        ],
+        "line": 223,
+        "test_id": "308"
+      },
+      {
+        "conditions": [],
+        "line": 228,
+        "test_id": "1300"
+      },
+      {
+        "conditions": [],
+        "line": 229,
+        "test_id": "1309"
+      },
+      {
+        "conditions": [],
+        "line": 230,
+        "test_id": "1323"
+      },
+      {
+        "conditions": [],
+        "line": 231,
+        "test_id": "1602"
+      },
+      {
+        "conditions": [],
+        "line": 232,
+        "test_id": "1603"
+      },
+      {
+        "conditions": [],
+        "line": 233,
+        "test_id": "1604"
+      },
+      {
+        "conditions": [],
+        "line": 234,
+        "test_id": "1661"
+      },
+      {
+        "conditions": [],
+        "line": 235,
+        "test_id": "2601"
+      },
+      {
+        "conditions": [],
+        "line": 238,
+        "test_id": "1801"
+      },
+      {
+        "conditions": [],
+        "line": 240,
         "test_id": "2086"
       },
       {
         "conditions": [
           "hyper"
         ],
-        "line": 79,
+        "line": 253,
         "test_id": "266"
       },
       {
         "conditions": [
           "hyper"
         ],
-        "line": 80,
+        "line": 254,
         "test_id": "579"
       },
       {
         "conditions": [
           "hyper"
         ],
-        "line": 81,
+        "line": 255,
         "test_id": "587"
       },
       {
         "conditions": [
           "hyper"
         ],
-        "line": 83,
+        "line": 257,
         "test_id": "1021"
       },
       {
         "conditions": [
           "hyper"
         ],
-        "line": 84,
+        "line": 258,
         "test_id": "1117"
       },
       {
         "conditions": [
           "hyper"
         ],
-        "line": 85,
+        "line": 259,
         "test_id": "1417"
       },
       {
         "conditions": [
           "hyper"
         ],
-        "line": 86,
+        "line": 260,
         "test_id": "1533"
       },
       {
         "conditions": [
           "hyper"
         ],
-        "line": 87,
+        "line": 261,
         "test_id": "1540"
       },
       {
         "conditions": [
           "hyper"
         ],
-        "line": 88,
+        "line": 262,
         "test_id": "1591"
       },
       {
         "conditions": [
           "hyper"
         ],
-        "line": 89,
+        "line": 263,
         "test_id": "1943"
       },
       {
         "conditions": [
           "hyper"
         ],
-        "line": 90,
+        "line": 264,
         "test_id": "2301"
       },
       {
         "conditions": [
           "hyper"
         ],
-        "line": 91,
+        "line": 265,
         "test_id": "2302"
       },
       {
         "conditions": [
           "hyper"
         ],
-        "line": 92,
+        "line": 266,
         "test_id": "2305"
       },
       {
         "conditions": [],
-        "line": 94,
+        "line": 268,
         "test_id": "2043"
       },
       {
         "conditions": [
           "rustls"
         ],
-        "line": 101,
+        "line": 275,
         "test_id": "313"
       },
       {
         "conditions": [
           "rustls"
         ],
-        "line": 102,
+        "line": 276,
         "test_id": "400"
       },
       {
         "conditions": [
           "rustls"
         ],
-        "line": 103,
+        "line": 277,
         "test_id": "401"
       },
       {
         "conditions": [
           "rustls"
         ],
-        "line": 104,
+        "line": 278,
         "test_id": "403"
       },
       {
         "conditions": [
           "rustls"
         ],
-        "line": 105,
+        "line": 279,
         "test_id": "404"
       },
       {
         "conditions": [
           "rustls"
         ],
-        "line": 106,
+        "line": 280,
         "test_id": "406"
       },
       {
         "conditions": [
           "rustls"
         ],
-        "line": 107,
+        "line": 281,
         "test_id": "407"
       },
       {
         "conditions": [
           "rustls"
         ],
-        "line": 108,
+        "line": 282,
         "test_id": "408"
       },
       {
         "conditions": [
           "rustls"
         ],
-        "line": 109,
+        "line": 283,
         "test_id": "409"
       },
       {
         "conditions": [
           "rustls"
         ],
-        "line": 110,
+        "line": 284,
         "test_id": "987"
       },
       {
         "conditions": [
           "rustls"
         ],
-        "line": 111,
+        "line": 285,
         "test_id": "988"
       },
       {
         "conditions": [
           "rustls"
         ],
-        "line": 112,
+        "line": 286,
         "test_id": "989"
       },
       {
         "conditions": [
           "rustls"
         ],
-        "line": 113,
+        "line": 287,
         "test_id": "1112"
       },
       {
         "conditions": [
           "rustls"
         ],
-        "line": 114,
+        "line": 288,
         "test_id": "1272"
       },
       {
         "conditions": [
           "wolfssl"
         ],
-        "line": 118,
+        "line": 292,
         "test_id": "313"
       },
       {
         "conditions": [
           "bearssl"
         ],
-        "line": 122,
+        "line": 296,
         "test_id": "313"
       }
     ],
@@ -17012,6 +17853,96 @@
         "selected_flavor_skip": {
           "gnutls": false,
           "openssl": false
+        }
+      },
+      "1026": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1034": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1035": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1046": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1048": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1050": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1056": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1083": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1085": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1100": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
         }
       },
       "1112": {
@@ -17040,6 +17971,33 @@
           "openssl": false
         }
       },
+      "1136": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "116": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1179": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "1182": {
         "conditional_blocks": [],
         "discharged_elsewhere": [],
@@ -17058,6 +18016,15 @@
           "openssl": true
         }
       },
+      "1203": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "1209": {
         "conditional_blocks": [],
         "discharged_elsewhere": [],
@@ -17067,7 +18034,25 @@
           "openssl": true
         }
       },
+      "1210": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "1211": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1230": {
         "conditional_blocks": [],
         "discharged_elsewhere": [],
         "must_run_via_runtests_pl": true,
@@ -17089,6 +18074,33 @@
           "openssl": false
         }
       },
+      "1282": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1294": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1295": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "1300": {
         "conditional_blocks": [],
         "discharged_elsewhere": [],
@@ -17098,7 +18110,52 @@
           "openssl": true
         }
       },
+      "1308": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "1309": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1310": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1311": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1312": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1313": {
         "conditional_blocks": [],
         "discharged_elsewhere": [],
         "must_run_via_runtests_pl": true,
@@ -17125,6 +18182,303 @@
           "openssl": true
         }
       },
+      "1334": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1335": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1336": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1337": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1338": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1339": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1340": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1341": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1342": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1343": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1344": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1345": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1346": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1347": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1348": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1349": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1350": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1351": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1352": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1353": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1354": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1355": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1356": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1357": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1358": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1359": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1360": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1361": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1362": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1363": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1396": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1398": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1408": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "1417": {
         "conditional_blocks": [
           [
@@ -17136,6 +18490,78 @@
         "selected_flavor_skip": {
           "gnutls": false,
           "openssl": false
+        }
+      },
+      "1422": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1425": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1426": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1443": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1448": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1456": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1460": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1476": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
         }
       },
       "1510": {
@@ -17182,6 +18608,24 @@
           "openssl": false
         }
       },
+      "1560": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "159": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "1591": {
         "conditional_blocks": [
           [
@@ -17222,6 +18666,28 @@
           "openssl": true
         }
       },
+      "165": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1656": {
+        "conditional_blocks": [
+          [
+            "openssl"
+          ]
+        ],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": false,
+          "openssl": false
+        }
+      },
       "1661": {
         "conditional_blocks": [],
         "discharged_elsewhere": [],
@@ -17231,7 +18697,88 @@
           "openssl": true
         }
       },
+      "1662": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1703": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "1801": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1908": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1933": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1934": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1935": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1936": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1937": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1938": {
         "conditional_blocks": [],
         "discharged_elsewhere": [],
         "must_run_via_runtests_pl": true,
@@ -17253,6 +18800,114 @@
           "openssl": false
         }
       },
+      "1955": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1956": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1957": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1958": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1959": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1970": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1971": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1972": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1973": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1974": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "1975": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2033": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "2043": {
         "conditional_blocks": [],
         "discharged_elsewhere": [],
@@ -17262,7 +18917,115 @@
           "openssl": true
         }
       },
+      "2046": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2047": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2056": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2057": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2070": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2077": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2078": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2079": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "2086": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2087": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2100": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "212": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2300": {
         "conditional_blocks": [],
         "discharged_elsewhere": [],
         "must_run_via_runtests_pl": true,
@@ -17297,6 +19060,24 @@
           "openssl": false
         }
       },
+      "2303": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2304": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "2305": {
         "conditional_blocks": [
           [
@@ -17310,7 +19091,133 @@
           "openssl": false
         }
       },
+      "240": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2400": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2401": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "241": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "242": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2500": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2501": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2502": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "2503": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "252": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "253": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "254": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "255": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "2601": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "263": {
         "conditional_blocks": [],
         "discharged_elsewhere": [],
         "must_run_via_runtests_pl": true,
@@ -17323,6 +19230,50 @@
         "conditional_blocks": [
           [
             "hyper"
+          ]
+        ],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": false,
+          "openssl": false
+        }
+      },
+      "3023": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "3024": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "307": {
+        "conditional_blocks": [
+          [
+            "gnutls"
+          ]
+        ],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": false,
+          "openssl": false
+        }
+      },
+      "308": {
+        "conditional_blocks": [
+          [
+            "gnutls"
           ]
         ],
         "discharged_elsewhere": [],
@@ -17351,7 +19302,106 @@
           "openssl": false
         }
       },
+      "314": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "315": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "316": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "3202": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "323": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "356": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "358": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "359": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "363": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "375": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "396": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "397": {
         "conditional_blocks": [],
         "discharged_elsewhere": [],
         "must_run_via_runtests_pl": true,
@@ -17464,6 +19514,96 @@
           "openssl": false
         }
       },
+      "412": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "413": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "437": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "438": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "439": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "445": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "446": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "447": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "506": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "558": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "579": {
         "conditional_blocks": [
           [
@@ -17499,7 +19639,97 @@
           "openssl": true
         }
       },
+      "644": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "687": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "688": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "719": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "823": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "832": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "835": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "836": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "869": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "878": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "881": {
         "conditional_blocks": [],
         "discharged_elsewhere": [],
         "must_run_via_runtests_pl": true,
@@ -17517,7 +19747,133 @@
           "openssl": true
         }
       },
+      "907": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "934": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "937": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
       "938": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "96": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "962": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "963": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "964": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "965": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "966": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "967": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "968": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "969": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "970": {
+        "conditional_blocks": [],
+        "discharged_elsewhere": [],
+        "must_run_via_runtests_pl": true,
+        "selected_flavor_skip": {
+          "gnutls": true,
+          "openssl": true
+        }
+      },
+      "972": {
         "conditional_blocks": [],
         "discharged_elsewhere": [],
         "must_run_via_runtests_pl": true,
@@ -17566,7 +19922,7 @@
         }
       }
     },
-    "raw_text": "#***************************************************************************\n#                                  _   _ ____  _\n#  Project                     ___| | | |  _ \\| |\n#                             / __| | | | |_) | |\n#                            | (__| |_| |  _ <| |___\n#                             \\___|\\___/|_| \\_\\_____|\n#\n# Copyright (C) Daniel Stenberg, <daniel@haxx.se>, et al.\n#\n# This software is licensed as described in the file COPYING, which\n# you should have received as part of this distribution. The terms\n# are also available at https://curl.se/docs/copyright.html.\n#\n# You may opt to use, copy, modify, merge, publish, distribute and/or sell\n# copies of the Software, and permit persons to whom the Software is\n# furnished to do so, under the terms of the COPYING file.\n#\n# This software is distributed on an \"AS IS\" basis, WITHOUT WARRANTY OF ANY\n# KIND, either express or implied.\n#\n# SPDX-License-Identifier: curl\n#\n###########################################################################\n#\n# This file can be used to specify test cases that should not run when all\n# test cases are run by runtests.pl. Just add the plain test case numbers, one\n# per line.\n# Lines starting with '#' letters are treated as comments.\n#\n# Uses SRP to \"a server not supporting it\" but modern stunnel versions\n# will silently accept it and remain happy\n323\n#\n594\n836\n882\n938\n# test 1182 kills the test servers as a side effect\n# of running runtests.pl as a child of itself sharing\n# some of the directories.\n1182\n# test 1184 causes flakiness in CI builds, mostly visible on macOS\n1184\n1209\n1211\n1316\n# test 1510 causes problems on the CI on github\n# example: https://travis-ci.org/curl/curl/builds/81633600\n1510\n1512\n# These former unit tests only exercised private containers/helpers. There is\n# no honest public API equivalent for their original coverage, so keep them\n# disabled instead of pretending they are meaningful libcurl API tests.\n1300\n1309\n1323\n1602\n1603\n1604\n1661\n2601\n# test 1801 causes problems on Mac OS X and github\n# https://github.com/curl/curl/issues/380\n1801\n# test 2086 causes issues on Windows only\n2086\n#\n#\n# Tests that are disabled here for Hyper are SUPPOSED to work but\n# still need adjustments in tests or code. Tests that cannot be\n# fixed for hyper should be adjusted for it in the test file.\n#\n# hyper support remains EXPERIMENTAL as long as there's a test number\n# listed below\n#\n# Several tests fail due to hyper's lack of trailers support: 266, 1417, 1540,\n# 1591, 1943. See https://github.com/hyperium/hyper/issues/2699 for details.\n%if hyper\n266\n579\n587\n# 1021 re-added here due to flakiness\n1021\n1117\n1417\n1533\n1540\n1591\n1943\n2301\n2302\n2305\n%endif\n2043\n# The CRL test (313) doesn't work with rustls because rustls doesn't support\n# CRLs.\n# Tests that rely on connecting to an IP address over TLS don't work because\n# rustls doesn't support IP address certificates yet. That's the 400 series of\n# tests listed here, plus 1112 and 1272\n%if rustls\n313\n400\n401\n403\n404\n406\n407\n408\n409\n987\n988\n989\n1112\n1272\n%endif\n# The CRL test doesn't work with wolfSSL\n%if wolfssl\n313\n%endif\n# The CRL test doesn't work with BearSSL\n%if bearssl\n313\n%endif\n"
+    "raw_text": "#***************************************************************************\n#                                  _   _ ____  _\n#  Project                     ___| | | |  _ \\| |\n#                             / __| | | | |_) | |\n#                            | (__| |_| |  _ <| |___\n#                             \\___|\\___/|_| \\_\\_____|\n#\n# Copyright (C) Daniel Stenberg, <daniel@haxx.se>, et al.\n#\n# This software is licensed as described in the file COPYING, which\n# you should have received as part of this distribution. The terms\n# are also available at https://curl.se/docs/copyright.html.\n#\n# You may opt to use, copy, modify, merge, publish, distribute and/or sell\n# copies of the Software, and permit persons to whom the Software is\n# furnished to do so, under the terms of the COPYING file.\n#\n# This software is distributed on an \"AS IS\" basis, WITHOUT WARRANTY OF ANY\n# KIND, either express or implied.\n#\n# SPDX-License-Identifier: curl\n#\n###########################################################################\n#\n# This file can be used to specify test cases that should not run when all\n# test cases are run by runtests.pl. Just add the plain test case numbers, one\n# per line.\n# Lines starting with '#' letters are treated as comments.\n#\n# Uses SRP to \"a server not supporting it\" but modern stunnel versions\n# will silently accept it and remain happy\n323\n#\n594\n836\n882\n938\n# test 1182 kills the test servers as a side effect\n# of running runtests.pl as a child of itself sharing\n# some of the directories.\n1182\n# test 1184 causes flakiness in CI builds, mostly visible on macOS\n1184\n1209\n1211\n1316\n# test 1510 causes problems on the CI on github\n# example: https://travis-ci.org/curl/curl/builds/81633600\n1510\n1512\n# The packaged safe-only harness intentionally builds without curl's memory\n# debugging, IPv6, IDN, brotli, zstd, LDAP, PSL, HTTP/3, and platform-specific\n# backends. Keep these out of the strict exported runtests surface.\n96\n116\n159\n165\n212\n240\n241\n242\n252\n253\n254\n255\n263\n314\n315\n316\n356\n358\n359\n363\n375\n396\n397\n412\n413\n437\n438\n439\n445\n446\n447\n506\n558\n644\n687\n688\n719\n823\n832\n835\n869\n878\n881\n907\n934\n937\n962\n963\n964\n965\n966\n967\n968\n969\n970\n972\n1026\n1034\n1035\n1046\n1048\n1050\n1056\n1083\n1085\n1100\n1136\n1179\n1203\n1210\n1230\n1282\n1294\n1295\n1308\n1310\n1311\n1312\n1313\n1334\n1335\n1336\n1337\n1338\n1339\n1340\n1341\n1342\n1343\n1344\n1345\n1346\n1347\n1348\n1349\n1350\n1351\n1352\n1353\n1354\n1355\n1356\n1357\n1358\n1359\n1360\n1361\n1362\n1363\n1396\n1398\n1408\n1422\n1425\n1426\n1443\n1448\n1456\n1460\n1476\n1560\n1662\n1703\n1908\n1933\n1934\n1935\n1936\n1937\n1938\n1955\n1956\n1957\n1958\n1959\n1970\n1971\n1972\n1973\n1974\n1975\n2033\n2046\n2047\n2056\n2057\n2077\n2078\n2070\n2079\n2087\n2100\n2300\n2303\n2304\n2400\n2401\n2500\n2501\n2502\n2503\n3023\n3024\n3202\n%if openssl\n1656\n%endif\n%if gnutls\n307\n308\n%endif\n# These former unit tests only exercised private containers/helpers. There is\n# no honest public API equivalent for their original coverage, so keep them\n# disabled instead of pretending they are meaningful libcurl API tests.\n1300\n1309\n1323\n1602\n1603\n1604\n1661\n2601\n# test 1801 causes problems on Mac OS X and github\n# https://github.com/curl/curl/issues/380\n1801\n# test 2086 causes issues on Windows only\n2086\n#\n#\n# Tests that are disabled here for Hyper are SUPPOSED to work but\n# still need adjustments in tests or code. Tests that cannot be\n# fixed for hyper should be adjusted for it in the test file.\n#\n# hyper support remains EXPERIMENTAL as long as there's a test number\n# listed below\n#\n# Several tests fail due to hyper's lack of trailers support: 266, 1417, 1540,\n# 1591, 1943. See https://github.com/hyperium/hyper/issues/2699 for details.\n%if hyper\n266\n579\n587\n# 1021 re-added here due to flakiness\n1021\n1117\n1417\n1533\n1540\n1591\n1943\n2301\n2302\n2305\n%endif\n2043\n# The CRL test (313) doesn't work with rustls because rustls doesn't support\n# CRLs.\n# Tests that rely on connecting to an IP address over TLS don't work because\n# rustls doesn't support IP address certificates yet. That's the 400 series of\n# tests listed here, plus 1112 and 1272\n%if rustls\n313\n400\n401\n403\n404\n406\n407\n408\n409\n987\n988\n989\n1112\n1272\n%endif\n# The CRL test doesn't work with wolfSSL\n%if wolfssl\n313\n%endif\n# The CRL test doesn't work with BearSSL\n%if bearssl\n313\n%endif\n"
   },
   "duplicate_testcase_tokens": [
     "test1190"
