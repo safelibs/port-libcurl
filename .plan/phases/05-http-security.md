@@ -1,187 +1,82 @@
-# Phase Name
-HTTP, Redirect, Cookies/HSTS, Headers API, Authentication, WebSockets, and CVE Regressions
+### 5. HTTP Semantics, Security Policies, CVE Regression Matrix, Headers API, Cookies, HSTS, ALTSVC, Auth, Proxies, and WebSocket Disabled ABI
 
-## Implement Phase ID
-`impl-http-security`
+**Phase Name:** HTTP Semantics, Security Policies, CVE Regression Matrix, Headers API, Cookies, HSTS, ALTSVC, Auth, Proxies, and WebSocket Disabled ABI
 
-## Preexisting Inputs
-- `original/lib/http.c`
-- `original/lib/http1.c`
-- `original/lib/http_proxy.c`
-- `original/lib/headers.c`
-- `original/lib/cookie.c`
-- `original/lib/hsts.c`
-- `original/lib/altsvc.c`
-- `original/lib/http_digest.c`
-- `original/lib/http_ntlm.c`
-- `original/lib/http_negotiate.c`
-- `original/lib/content_encoding.c`
-- `original/lib/ws.c`
-- `original/lib/rand.c`
-- `relevant_cves.json`
-- `original/debian/patches/CVE-*.patch`
-- `safe/metadata/cve-manifest.json`
-- `safe/scripts/run-curated-libtests.sh`
-- `safe/scripts/run-http-client-tests.sh`
-- `safe/Cargo.toml`
-- `safe/build.rs`
-- `safe/src/lib.rs`
-- `safe/src/abi/generated.rs`
-- `safe/include/curl/*.h`
-- `safe/metadata/abi-manifest.json`
-- `safe/metadata/test-manifest.json`
-- `safe/abi/libcurl-openssl.map`
-- `safe/abi/libcurl-gnutls.map`
-- `safe/scripts/generate-manifests.py`
-- `safe/scripts/generate-bindings.py`
-- `safe/scripts/verify-manifests.py`
-- `safe/scripts/verify-public-headers.sh`
-- `safe/scripts/verify-export-names.sh`
-- `safe/scripts/verify-symbol-versions.sh`
-- `safe/scripts/build-reference-curl.sh`
-- `safe/debian/control`
-- `safe/debian/changelog`
-- `safe/debian/copyright`
-- `safe/debian/README.*`
-- `safe/debian/rules`
-- `safe/debian/source/format`
-- `safe/debian/*.install`
-- `safe/debian/*.links`
-- `safe/debian/*.docs`
-- `safe/debian/*.examples`
-- `safe/debian/*.lintian-overrides`
-- `safe/debian/*.manpages`
-- `safe/debian/*.symbols`
-- `safe/debian/patches/series`
-- `safe/c_shim/forwarders.c`
-- `safe/src/alloc.rs`
-- `safe/src/global.rs`
-- `safe/src/version.rs`
-- `safe/src/slist.rs`
-- `safe/src/mime.rs`
-- `safe/src/form.rs`
-- `safe/src/urlapi.rs`
-- `safe/src/share.rs`
-- `safe/src/easy/mod.rs`
-- `safe/src/easy/options.rs`
-- `safe/src/easy/handle.rs`
-- `safe/src/abi/public_types.rs`
-- `safe/src/abi/easy.rs`
-- `safe/src/abi/share.rs`
-- `safe/src/abi/url.rs`
-- `safe/c_shim/variadic.c`
-- `safe/c_shim/mprintf.c`
-- `safe/tests/public_abi.rs`
-- `safe/tests/abi_layout.rs`
-- `safe/tests/smoke/public_api_smoke.c`
-- `safe/scripts/run-public-abi-smoke.sh`
-- `safe/scripts/verify-abi-manifest.sh`
-- `safe/scripts/vendor-compat-assets.sh`
-- `safe/vendor/upstream/manifest.json`
-- `safe/vendor/upstream/src/*`
-- `safe/vendor/upstream/tests/*`
-- `safe/vendor/upstream/lib/*`
-- `safe/vendor/upstream/.pc/90_gnutls.patch/*`
-- `safe/vendor/upstream/debian/tests/LDAP-bindata.c`
-- `safe/compat/CMakeLists.txt`
-- `safe/compat/generated-sources.cmake`
-- `safe/scripts/export-tracked-tree.sh`
-- `safe/scripts/build-compat-consumers.sh`
-- `safe/scripts/run-link-compat.sh`
-- `safe/scripts/run-upstream-tests.sh`
-- `safe/scripts/run-curl-tool-smoke.sh`
-- `safe/scripts/run-ldap-devpkg-test.sh`
-- `safe/scripts/http-fixtures.sh`
-- `safe/scripts/http-fixture.py`
-- `safe/src/easy/perform.rs`
-- `safe/src/multi/mod.rs`
-- `safe/src/multi/state.rs`
-- `safe/src/multi/poll.rs`
-- `safe/src/conn/mod.rs`
-- `safe/src/conn/cache.rs`
-- `safe/src/conn/filter.rs`
-- `safe/src/dns/mod.rs`
-- `safe/src/transfer/mod.rs`
-- `safe/src/abi/multi.rs`
-- `safe/src/abi/connect_only.rs`
+**Implement Phase ID:** `impl-http-security`
 
-## New Outputs
-- `safe/src/http/mod.rs`
-- `safe/src/http/request.rs`
-- `safe/src/http/response.rs`
-- `safe/src/http/proxy.rs`
-- `safe/src/http/auth.rs`
-- `safe/src/http/cookies.rs`
-- `safe/src/http/hsts.rs`
-- `safe/src/http/altsvc.rs`
-- `safe/src/http/headers_api.rs`
-- `safe/src/ws.rs`
-- `safe/src/rand.rs`
-- `safe/tests/cve_regressions.rs`
-- `safe/tests/cve_cases/`
-- `safe/metadata/cve-to-test.json`
-- `safe/scripts/verify-cve-coverage.py`
+**Verification Phases:**
 
-## File Changes
-- Port HTTP and proxy request construction, response parsing, redirect following, header lookup, cookies, HSTS, alt-svc, and WebSocket framing into Rust.
-- Add an explicit CVE-to-regression mapping generated from the curated JSON and the Debian patch files.
-- Replace the relevant temporary C fallbacks for HTTP and WebSocket behavior.
+- `check-http-security-cves`
+  - Type: `check`
+  - Fixed `bounce_target`: `impl-http-security`
+  - Purpose: verify all curated CVEs have case mappings and run the native Rust CVE regression suite for both flavors.
+  - Commands:
+    ```bash
+    python3 safe/scripts/verify-cve-coverage.py
+    CARGO_TARGET_DIR=safe/target/check-http-security-openssl \
+      cargo test --manifest-path safe/Cargo.toml --no-default-features --features openssl-flavor --test cve_regressions
+    CARGO_TARGET_DIR=safe/target/check-http-security-gnutls \
+      cargo test --manifest-path safe/Cargo.toml --no-default-features --features gnutls-flavor --test cve_regressions
+    ```
 
-## Implementation Details
-- Redirect and credential-forwarding rules must become explicit typed policy rather than scattered flag checks, so the port closes the credential-leakage classes represented in `relevant_cves.json`.
-- Connection reuse must become authentication-aware and proxy-aware, so the port closes the reuse classes represented by CVEs such as `CVE-2026-3784` and `CVE-2026-1965`.
-- Port cookie and HSTS state into Rust data structures that preserve upstream behavior while making origin scoping, persistence, PSL checks, and serialization rules explicit and testable.
-- Preserve `curl_easy_header` and `curl_easy_nextheader` semantics for `struct curl_header`, including pointer lifetime, origin filtering, request/response selection, and anchor handling.
-- Port `curl_ws_recv`, `curl_ws_send`, and `curl_ws_meta` while replacing weak randomness or predictable mask generation with strong OS-backed entropy and explicit failure handling.
-- `safe/metadata/cve-to-test.json` should map every curated CVE from `safe/metadata/cve-manifest.json` either to a dedicated regression case or to a specific shared regression case with written justification. No curated CVE should remain unmapped by the end of this phase.
-- `safe/scripts/verify-cve-coverage.py` must fail if any curated CVE is missing from `safe/metadata/cve-to-test.json`, if a mapping points to a nonexistent file under `safe/tests/cve_cases/`, or if a shared-case mapping omits its written justification.
-- `safe/tests/cve_regressions.rs` must consume `safe/metadata/cve-to-test.json` directly or from a generated compile-time artifact and fail if the mapping artifact and the implemented regression cases drift out of sync.
+- `check-http-security-upstream`
+  - Type: `check`
+  - Fixed `bounce_target`: `impl-http-security`
+  - Purpose: run upstream libtests that exercise HTTP redirects, proxy auth, cookies, HSTS, headers, credentials, content decoding, and WebSocket disabled-build ABI behavior.
+  - Commands:
+    ```bash
+    bash safe/scripts/run-curated-libtests.sh --flavor openssl --tests 555 560 567 571 574 578 586 589 597 1500 1501 1502 1520 1521 1527 1530 1531 1533 1550 1553 1556 1557 1559 1565 1567 1591 1593 1596 1600 1601 1602 1603 1604 1605 1606 1607 1608 1609 1610 1611 1612 1614 1620 1621 1650 1651 1652 1653 1654 1655 1656 1660 1661
+    bash safe/scripts/run-curated-libtests.sh --flavor gnutls --tests 555 560 567 571 574 578 586 589 597 1500 1501 1502 1520 1521 1527 1530 1531 1533 1550 1553 1556 1557 1559 1565 1567 1591 1593 1596 1600 1601 1602 1603 1604 1605 1606 1607 1608 1609 1610 1611 1612 1620 1621 1650 1651 1652 1653 1654 1655 1656 1660 1661
+    ```
 
-## Verification Phases
-### `check-http-security-curated`
-- Type: `check`
-- Bounce Target: `impl-http-security`
-- Purpose: validate HTTP request/response handling, redirect policy, headers API, cookies, HSTS, auth, and related easy-handle behavior with focused upstream tests.
-- Commands it should run:
-```bash
-bash safe/scripts/run-curated-libtests.sh --flavor openssl 659 1526 1900 1905 1915 1970 1971 1972 1973 1974 1975 2304 2305
-bash safe/scripts/run-curated-libtests.sh --flavor gnutls 659 1526 1900 1905 1915 1970 1971 1972 1973 1974 1975 2304 2305
-```
+**Preexisting Inputs:**
 
-### `check-http-security-websockets`
-- Type: `check`
-- Bounce Target: `impl-http-security`
-- Purpose: verify the tracked WebSocket client programs against the Rust implementation.
-- Commands it should run:
-```bash
-bash safe/scripts/run-http-client-tests.sh --flavor openssl --clients ws-data ws-pingpong
-bash safe/scripts/run-http-client-tests.sh --flavor gnutls --clients ws-data ws-pingpong
-```
+- `safe/src/easy/perform.rs`, `safe/src/transfer/mod.rs`, `safe/src/multi/mod.rs`, `safe/src/multi/state.rs`, `safe/src/multi/poll.rs`, `safe/src/dns/mod.rs`, `safe/src/conn/cache.rs`, `safe/src/conn/filter.rs`, `safe/src/protocols/mod.rs`, `safe/src/protocols/file.rs`, and `safe/src/abi/connect_only.rs`.
+- `safe/scripts/run-curated-libtests.sh`, `safe/scripts/run-link-compat.sh`, `safe/scripts/build-compat-consumers.sh`, `safe/compat/link-manifest.json`, and `safe/metadata/test-manifest.json`.
+- `relevant_cves.json`, `all_cves.json`, `original/debian/patches/CVE-*.patch`, `safe/metadata/cve-manifest.json`, `safe/metadata/cve-to-test.json`, and `safe/tests/cve_cases/*.json`.
+- `original/lib/http.c`, `original/lib/http1.c`, `original/lib/headers.c`, `original/lib/cookie.c`, `original/lib/hsts.c`, `original/lib/altsvc.c`, `original/lib/http_proxy.c`, `original/lib/http_digest.c`, `original/lib/http_ntlm.c`, `original/lib/http_aws_sigv4.c`, `original/lib/content_encoding.c`, `original/lib/ws.c`.
+- Existing `safe/src/http/*.rs`, `safe/src/ws.rs`, `safe/src/rand.rs`, `safe/tests/cve_regressions.rs`.
 
-### `check-http-security-cve-map`
-- Type: `check`
-- Bounce Target: `impl-http-security`
-- Purpose: verify that every curated CVE in the manifest is mapped to an implemented regression case before the regression suite is accepted.
-- Commands it should run:
-```bash
-python3 safe/scripts/verify-cve-coverage.py --manifest safe/metadata/cve-manifest.json --mapping safe/metadata/cve-to-test.json --cases-dir safe/tests/cve_cases
-```
+**New Outputs:**
 
-### `check-http-security-cves`
-- Type: `check`
-- Bounce Target: `impl-http-security`
-- Purpose: verify that the CVE regression suite covers all curated security cases and passes in both flavors.
-- Commands it should run:
-```bash
-python3 safe/scripts/verify-cve-coverage.py --manifest safe/metadata/cve-manifest.json --mapping safe/metadata/cve-to-test.json --cases-dir safe/tests/cve_cases
-cargo test --manifest-path safe/Cargo.toml --no-default-features --features openssl-flavor --test cve_regressions
-cargo test --manifest-path safe/Cargo.toml --no-default-features --features gnutls-flavor --test cve_regressions
-```
+- Completed native HTTP/1.1 policy implementation.
+- Expanded CVE case files and runtime tests where current shared reference-backend mappings are too broad.
+- Ubuntu-compatible disabled WebSocket ABI behavior: `curl_ws_recv` and `curl_ws_send` return `CURLE_NOT_BUILT_IN`, `curl_ws_meta` returns `NULL`, and `ws://`/`wss://` are not routed or advertised.
 
-## Success Criteria
-- Every listed `Preexisting Input` is consumed as an existing artifact rather than rediscovered, regenerated, or refetched.
-- Every listed `New Output` for this implement phase exists and is ready for downstream phases in the linear workflow.
-- The verifier phase(s) `check-http-security-curated`, `check-http-security-websockets`, `check-http-security-cve-map`, `check-http-security-cves` pass exactly as written for `impl-http-security`.
+**File Changes:**
 
-## Git Commit Requirement
-The implementer must commit this phase's work to git before yielding. Ignored-only or untracked-only outputs are not acceptable.
+- `safe/src/http/request.rs`: redirects, referer stripping, credential isolation, method rewriting, body/retry rules, proxy tunnel request targets.
+- `safe/src/http/response.rs`: response/header limits, 1xx/CONNECT/trailer origins, content-length/range/chunked parsing.
+- `safe/src/http/auth.rs`: Basic, Digest, NTLM/Negotiate boundaries, Bearer, AWS SigV4, and proxy auth reuse isolation.
+- `safe/src/http/proxy.rs`: HTTP proxy tunneling, proxy headers, proxy credential separation, no-proxy matching.
+- `safe/src/http/cookies.rs`: Netscape cookie jar loading/saving, PSL rejection, host-only/domain/path/secure matching, session clearing, and Set-Cookie parsing.
+- `safe/src/http/hsts.rs`: HSTS file/callback handling, includeSubDomains, IP exclusion, expiry, persistence, and lookup.
+- `safe/src/http/altsvc.rs`: ALTSVC persistence, host isolation, HSTS interaction, and origin constraints.
+- `safe/src/http/headers_api.rs`: `curl_easy_header` and `curl_easy_nextheader` semantics.
+- `safe/src/ws.rs`: preserve exported `curl_ws_meta`, `curl_ws_recv`, and `curl_ws_send` ABI symbols while matching Ubuntu's disabled-WebSocket build: recv/send return `CURLE_NOT_BUILT_IN` for all inputs and meta returns `NULL`.
+- `safe/src/rand.rs`: cryptographic randomness for HTTP auth, TLS-adjacent nonce material, and any enabled third-party boundary that needs randomness, with deterministic test injection only behind test-only code. WebSocket mask-generation paths must not be reachable while `USE_WEBSOCKETS` is disabled.
+- `safe/tests/cve_regressions.rs` and `safe/tests/cve_cases/*.json`: map every curated CVE to an executable or justified shared case.
+
+**Implementation Details:**
+
+- Rust memory safety is not enough for this phase. Each CVE class in `relevant_cves.json` must be mapped to explicit behavior: certificate/transport validation, credential leakage, redirects, cookies, HSTS, connection reuse, parser canonicalization, randomness, platform loading, resource limits, and API contracts.
+- Any case currently labeled as `reference_backend_*` must either move to a native test when the native code owns the behavior or retain a written temporary justification that the behavior is still delegated in this phase. Phase 9 must remove any remaining reference-backend labels and replace unavoidable third-party coverage with boundary-specific non-reference case names, because Phase 9 scans whole detached source exports for these markers.
+- WebSocket CVE cases must be rewritten around the disabled Ubuntu contract unless the package contract is intentionally changed to enable WebSockets. The disabled-contract tests must prove the ABI symbols remain exported, `curl_ws_recv`/`curl_ws_send` return `CURLE_NOT_BUILT_IN`, `curl_ws_meta` returns `NULL`, `ws://`/`wss://` are not in protocol/tooling lists, and no WebSocket handshake or mask-generation path is reachable.
+- Response header memory must be bounded. Exceeding configured limits must produce libcurl-compatible errors rather than allocation growth.
+- Auth and cookies must never leak across origins, redirects, proxies, or reused connections unless the corresponding libcurl option explicitly allows it.
+- Implementer must commit this phase's work before yielding.
+
+**Verification:**
+
+- Both check phases must pass for both flavors.
+
+**Success Criteria:**
+
+- Every item listed under `New Outputs` is present, updated, or explicitly left unchanged because it already satisfied the plan.
+- Every required `File Changes` and `Implementation Details` invariant for this phase is satisfied.
+- Every verifier listed under `Verification Phases` passes exactly as written and bounces only to this phase on failure.
+- All listed `Preexisting Inputs` are consumed in place; existing artifacts are not rediscovered, refetched, or regenerated from untracked sources unless this phase explicitly updates a derived safe artifact from them.
+
+**Git Commit Requirement:**
+
+- The implementer must commit this phase's work to git before yielding.

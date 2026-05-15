@@ -1,151 +1,77 @@
-# Phase Name
-Easy Perform, Multi Engine, Conncache, Resolver Ownership, Share Locking, and Transfer Loop
+### 4. Easy/Multi Transfer Core, DNS, Connection Cache, Connect-Only, Callbacks, and Basic Protocol Routing
 
-## Implement Phase ID
-`impl-transfer-core`
+**Phase Name:** Easy/Multi Transfer Core, DNS, Connection Cache, Connect-Only, Callbacks, and Basic Protocol Routing
 
-## Preexisting Inputs
-- `original/lib/easy.c`
-- `original/lib/multi.c`
-- `original/lib/multihandle.h`
-- `original/lib/conncache.c`
-- `original/lib/connect.c`
-- `original/lib/cfilters.h`
-- `original/lib/transfer.c`
-- `original/lib/share.c`
-- `original/lib/speedcheck.c`
-- `original/lib/hostip.c`
-- `original/lib/hostip4.c`
-- `original/lib/hostip6.c`
-- `original/lib/hostsyn.c`
-- `safe/src/easy/handle.rs`
-- `safe/src/global.rs`
-- `safe/src/alloc.rs`
-- `safe/scripts/run-curated-libtests.sh`
-- `safe/scripts/run-link-compat.sh`
-- `safe/Cargo.toml`
-- `safe/build.rs`
-- `safe/src/lib.rs`
-- `safe/src/abi/generated.rs`
-- `safe/include/curl/*.h`
-- `safe/metadata/abi-manifest.json`
-- `safe/metadata/test-manifest.json`
-- `safe/metadata/cve-manifest.json`
-- `safe/abi/libcurl-openssl.map`
-- `safe/abi/libcurl-gnutls.map`
-- `safe/scripts/generate-manifests.py`
-- `safe/scripts/generate-bindings.py`
-- `safe/scripts/verify-manifests.py`
-- `safe/scripts/verify-public-headers.sh`
-- `safe/scripts/verify-export-names.sh`
-- `safe/scripts/verify-symbol-versions.sh`
-- `safe/scripts/build-reference-curl.sh`
-- `safe/debian/control`
-- `safe/debian/changelog`
-- `safe/debian/copyright`
-- `safe/debian/README.*`
-- `safe/debian/rules`
-- `safe/debian/source/format`
-- `safe/debian/*.install`
-- `safe/debian/*.links`
-- `safe/debian/*.docs`
-- `safe/debian/*.examples`
-- `safe/debian/*.lintian-overrides`
-- `safe/debian/*.manpages`
-- `safe/debian/*.symbols`
-- `safe/debian/patches/series`
-- `safe/c_shim/forwarders.c`
-- `safe/src/version.rs`
-- `safe/src/slist.rs`
-- `safe/src/mime.rs`
-- `safe/src/form.rs`
-- `safe/src/urlapi.rs`
-- `safe/src/share.rs`
-- `safe/src/easy/mod.rs`
-- `safe/src/easy/options.rs`
-- `safe/src/abi/public_types.rs`
-- `safe/src/abi/easy.rs`
-- `safe/src/abi/share.rs`
-- `safe/src/abi/url.rs`
-- `safe/c_shim/variadic.c`
-- `safe/c_shim/mprintf.c`
-- `safe/tests/public_abi.rs`
-- `safe/tests/abi_layout.rs`
-- `safe/tests/smoke/public_api_smoke.c`
-- `safe/scripts/run-public-abi-smoke.sh`
-- `safe/scripts/verify-abi-manifest.sh`
-- `safe/scripts/vendor-compat-assets.sh`
-- `safe/vendor/upstream/manifest.json`
-- `safe/vendor/upstream/src/*`
-- `safe/vendor/upstream/tests/*`
-- `safe/vendor/upstream/lib/*`
-- `safe/vendor/upstream/.pc/90_gnutls.patch/*`
-- `safe/vendor/upstream/debian/tests/LDAP-bindata.c`
-- `safe/compat/CMakeLists.txt`
-- `safe/compat/generated-sources.cmake`
-- `safe/scripts/export-tracked-tree.sh`
-- `safe/scripts/build-compat-consumers.sh`
-- `safe/scripts/run-upstream-tests.sh`
-- `safe/scripts/run-curl-tool-smoke.sh`
-- `safe/scripts/run-http-client-tests.sh`
-- `safe/scripts/run-ldap-devpkg-test.sh`
-- `safe/scripts/http-fixtures.sh`
-- `safe/scripts/http-fixture.py`
+**Implement Phase ID:** `impl-transfer-core`
 
-## New Outputs
-- `safe/src/easy/perform.rs`
-- `safe/src/multi/mod.rs`
-- `safe/src/multi/state.rs`
-- `safe/src/multi/poll.rs`
-- `safe/src/conn/mod.rs`
-- `safe/src/conn/cache.rs`
-- `safe/src/conn/filter.rs`
-- `safe/src/dns/mod.rs`
-- `safe/src/transfer/mod.rs`
-- `safe/src/abi/multi.rs`
-- `safe/src/abi/connect_only.rs`
+**Verification Phases:**
 
-## File Changes
-- Port `curl_easy_perform` onto a Rust-owned multi/transfer engine instead of a C fallback.
-- Port the multi-handle state machine and wakeup/timer plumbing from `original/lib/multi.c` and `original/lib/multihandle.h`.
-- Port the connection-cache, resolver ownership model, and connection-filter chain.
-- Port share-handle lock callbacks and the shared-resource plumbing required by DNS, cookies, HSTS, and SSL session reuse.
+- `check-transfer-core`
+  - Type: `check`
+  - Fixed `bounce_target`: `impl-transfer-core`
+  - Purpose: verify the safe easy and multi transfer loop for basic HTTP/1.1, file, callbacks, timeout, connect-only, and selected upstream libtests.
+  - Commands:
+    ```bash
+    CARGO_TARGET_DIR=safe/target/check-transfer-openssl \
+      cargo test --manifest-path safe/Cargo.toml --no-default-features --features openssl-flavor --test public_abi
+    CARGO_TARGET_DIR=safe/target/check-transfer-gnutls \
+      cargo test --manifest-path safe/Cargo.toml --no-default-features --features gnutls-flavor --test public_abi
+    bash safe/scripts/run-curated-libtests.sh --flavor openssl --tests 500 501 502 504 509 510 511 512 518 519 520 521 523 524
+    bash safe/scripts/run-curated-libtests.sh --flavor gnutls --tests 500 501 502 504 509 510 511 512 518 519 520 521 523 524
+    ```
 
-## Implementation Details
-- Preserve the upstream easy-perform behavior that internally uses a private multi handle, as implemented in `original/lib/easy.c`.
-- Mirror `MSTATE_*` from `original/lib/multihandle.h` with an explicit Rust enum and state-transition functions so behavior stays inspectable and testable.
-- The connection-cache key must include all fields that affect identity and reuse safety, including host, port, proxy/tunnel state, `conn_to` overrides, TLS peer identity, authentication context, and share-handle state needed to avoid the CVE classes around incorrect reuse.
-- Recreate the connection-filter chain from `original/lib/cfilters.h` using Rust trait objects or enums, with unsafe code only at the raw socket and backend boundaries.
-- Implement `curl_multi_init`, `curl_multi_cleanup`, `curl_multi_add_handle`, `curl_multi_remove_handle`, `curl_multi_fdset`, `curl_multi_perform`, `curl_multi_wait`, `curl_multi_poll`, `curl_multi_timeout`, `curl_multi_wakeup`, `curl_multi_info_read`, `curl_multi_socket`, `curl_multi_socket_all`, `curl_multi_socket_action`, `curl_multi_assign`, `curl_multi_get_handles`, and `curl_multi_strerror`.
-- Implement the transport-facing portions of `curl_easy_pause`, `curl_easy_recv`, `curl_easy_send`, and `curl_easy_upkeep`.
-- Preserve low-speed and timeout semantics from `original/lib/speedcheck.c` and `original/tests/data/test1606`, not just callback wiring.
-- Ensure share-handle locking callbacks and shared-data selections from `curl_share_setopt` remain ABI-compatible even if some shared-resource implementations are completed in later phases.
+- `check-transfer-link-smoke`
+  - Type: `check`
+  - Fixed `bounce_target`: `impl-transfer-core`
+  - Purpose: prove objects compiled against the original libcurl link lines relink and run against safe for representative easy/multi transfer tests.
+  - Commands:
+    ```bash
+    bash safe/scripts/run-link-compat.sh --flavor openssl --target lib500 --target lib526 --target lib547 --target lib670 --target curl
+    bash safe/scripts/run-link-compat.sh --flavor gnutls --target lib500 --target lib526 --target lib547 --target lib670 --target curl
+    ```
 
-## Verification Phases
-### `check-transfer-core-curated`
-- Type: `check`
-- Bounce Target: `impl-transfer-core`
-- Purpose: validate the easy/multi lifecycle, timer handling, poll/wakeup logic, timeout behavior, and connection reuse semantics with focused upstream libtests.
-- Commands it should run:
-```bash
-bash safe/scripts/run-curated-libtests.sh --flavor openssl 530 582 1506 1550 1554 1557 1591 1597 1606 2402 2404
-bash safe/scripts/run-curated-libtests.sh --flavor gnutls 530 582 1506 1550 1554 1557 1591 1597 1606 2402 2404
-```
+**Preexisting Inputs:**
 
-### `check-transfer-core-link`
-- Type: `check`
-- Bounce Target: `impl-transfer-core`
-- Purpose: verify that original object files using easy and multi APIs can be relinked against the safe library without recompilation and that the relinked executables still run correctly.
-- Commands it should run:
-```bash
-bash safe/scripts/run-link-compat.sh --flavor openssl --tests lib500 lib501 lib530 lib582 lib1550 lib1606 lib2402
-bash safe/scripts/run-link-compat.sh --flavor gnutls --tests lib500 lib501 lib530 lib582 lib1550 lib1606 lib2402
-```
+- `safe/scripts/compat_harness.py`, `safe/scripts/build-compat-consumers.sh`, `safe/scripts/run-curated-libtests.sh`, `safe/scripts/run-link-compat.sh`, `safe/scripts/run-upstream-tests.sh`, `safe/scripts/run-curl-tool-smoke.sh`, `safe/scripts/http-fixture.py`, and `safe/scripts/http-fixtures.sh`.
+- `safe/compat/config/openssl/lib/curl_config.h`, `safe/compat/config/openssl/tests/config`, `safe/compat/config/openssl/curl-config`, `safe/compat/config/gnutls/lib/curl_config.h`, `safe/compat/config/gnutls/tests/config`, and `safe/compat/config/gnutls/curl-config`.
+- `safe/vendor/upstream/manifest.json`, `safe/vendor/upstream/`, `safe/compat/link-manifest.json`, and `safe/metadata/test-manifest.json`.
+- `original/lib/easy.c`, `original/lib/multi.c`, `original/lib/transfer.c`, `original/lib/url.c`, `original/lib/connect.c`, `original/lib/conncache.c`, `original/lib/cfilters.h`, `original/lib/hostip*.c`, `original/lib/select.c`, `original/lib/progress.c`, `original/lib/speedcheck.c`, `original/lib/file.c`.
+- Existing `safe/src/easy/perform.rs`, `safe/src/multi/mod.rs`, `safe/src/multi/state.rs`, `safe/src/multi/poll.rs`, `safe/src/transfer/mod.rs`, `safe/src/dns/mod.rs`, `safe/src/conn/cache.rs`, `safe/src/conn/filter.rs`, `safe/src/protocols/mod.rs`, `safe/src/protocols/file.rs`, and `safe/src/abi/connect_only.rs`.
 
-## Success Criteria
-- Every listed `Preexisting Input` is consumed as an existing artifact rather than rediscovered, regenerated, or refetched.
-- Every listed `New Output` for this implement phase exists and is ready for downstream phases in the linear workflow.
-- The verifier phase(s) `check-transfer-core-curated`, `check-transfer-core-link` pass exactly as written for `impl-transfer-core`.
+**New Outputs:**
 
-## Git Commit Requirement
-The implementer must commit this phase's work to git before yielding. Ignored-only or untracked-only outputs are not acceptable.
+- Completed native transfer planning and execution for easy and multi HTTP/1.1 plus file/local protocol paths required by early libtests.
+- Reduced reference-backed fallback use for easy/multi transfer paths.
+- Tests for callbacks, progress, low-speed, timeout, pause, connect-only send/recv, socket callbacks, timers, wakeup, and multi info messages.
+
+**File Changes:**
+
+- `safe/src/easy/perform.rs`: track option state, callbacks, error buffers, read/write/header callbacks, request metadata, and transfer info.
+- `safe/src/transfer/mod.rs`: implement URL parsing, DNS resolution, connection setup, request execution, response parsing, callbacks, body upload/download, ranges, redirects where not HTTP-security-specific, low-speed timeouts, connect-only sessions, and `CURLINFO_*`.
+- `safe/src/multi/mod.rs`: implement add/remove, scheduling, worker lifecycle, fdset/wait/poll/wakeup, socket/timer callbacks, info queue, cleanup, and connection cache handoff.
+- `safe/src/dns/mod.rs`: implement `CURLOPT_RESOLVE`, `CURLOPT_CONNECT_TO`, IPv4/IPv6, DNS ownership, and error mapping.
+- `safe/src/conn/cache.rs`: implement cache keys that isolate scheme, host, port, proxy, TLS/backend, credentials, and share state.
+- `safe/src/protocols/file.rs`: complete local file transfer compatibility for upload/download cases.
+
+**Implementation Details:**
+
+- Native transfer code must not expose Rust panics across C ABI. Convert internal errors to libcurl `CURLcode` or `CURLMcode` and write error buffer text where libcurl would.
+- Multi callbacks must prevent recursive API misuse and preserve message ordering.
+- Connection reuse must be conservative: if a reuse key is uncertain, create a fresh connection rather than leaking credentials or state.
+- Connect-only mode must honor pause/unpause and `CURLE_AGAIN`.
+- Implementer must commit this phase's work before yielding.
+
+**Verification:**
+
+- Run both transfer checks. Any failure must be fixed in this phase, not deferred to HTTP/security phases unless the failing test is explicitly HTTP-policy-specific.
+
+**Success Criteria:**
+
+- Every item listed under `New Outputs` is present, updated, or explicitly left unchanged because it already satisfied the plan.
+- Every required `File Changes` and `Implementation Details` invariant for this phase is satisfied.
+- Every verifier listed under `Verification Phases` passes exactly as written and bounces only to this phase on failure.
+- All listed `Preexisting Inputs` are consumed in place; existing artifacts are not rediscovered, refetched, or regenerated from untracked sources unless this phase explicitly updates a derived safe artifact from them.
+
+**Git Commit Requirement:**
+
+- The implementer must commit this phase's work to git before yielding.
