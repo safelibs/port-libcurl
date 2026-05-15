@@ -381,11 +381,10 @@ def export_tracked_tree(mode: str, dest: Path) -> None:
         destinations = [
             (path, dest / "safe" / path.relative_to(SAFE_DIR)) for path in safe_files
         ]
-        for filename in ("dependents.json", "test-original.sh"):
-            src = REPO_ROOT / filename
-            if not src.exists():
-                raise HarnessError(f"required tracked export input is missing: {src}")
-            destinations.append((src, dest / filename))
+        src = REPO_ROOT / "dependents.json"
+        if not src.exists():
+            raise HarnessError(f"required tracked export input is missing: {src}")
+        destinations.append((src, dest / "dependents.json"))
     else:
         raise HarnessError(f"unsupported export mode: {mode}")
 

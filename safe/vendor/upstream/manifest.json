@@ -44,7 +44,7 @@
     },
     {
       "destination": "safe/vendor/upstream/Makefile",
-      "sha256": "445d50da21ae1d9f20515a449b23eef2bb1530220c7e2578a4be65ec1942945b",
+      "sha256": "276584f242c6843ae4862a85252de91db5236a1b3a63b077679eff6e8b461bf5",
       "source": "original/Makefile",
       "tracked": true
     },
@@ -56,7 +56,7 @@
     },
     {
       "destination": "safe/vendor/upstream/Makefile.in",
-      "sha256": "2818eff6267f7b903571a6a40cf6f5e2f986a65db0a245ccc6b7ae4713bec969",
+      "sha256": "8c18bda5a5d57407c18eb4e072b8a62e1d14fb7c00661feeca6a727c35cce868",
       "source": "original/Makefile.in",
       "tracked": true
     },
@@ -104,7 +104,7 @@
     },
     {
       "destination": "safe/vendor/upstream/configure",
-      "sha256": "bb2920650e0c3f72932dec809dbaa759105dc44710bf65b7c7603f328cf471ef",
+      "sha256": "d4c50e60313050ff9dd8c4c0b016a144b5d5072350d8790e6566f45fbc3cbc6a",
       "source": "original/configure",
       "tracked": true
     },
@@ -9770,7 +9770,7 @@
     },
     {
       "destination": "safe/vendor/upstream/tests/data/DISABLED",
-      "sha256": "b111e10c9fe2cb0e9461400281c24dda26c8a981e0d88dee6d294e138973479d",
+      "sha256": "cdc7697fd4a094e0015caa1855909e604c2690d31fc8ac1fd8e7f3be8d40db42",
       "source": "original/tests/data/DISABLED",
       "tracked": true
     },
@@ -20030,7 +20030,7 @@
     },
     {
       "destination": "safe/vendor/upstream/tests/libtest/Makefile.in",
-      "sha256": "fb755fc13bb5d817de101fb8d2423fd6dd7cdab05e52fdaffc7f5b1a8c7f22a9",
+      "sha256": "2684919e8f75df8fea964bd53910b6b5d69537da94c6104e7954afce1fc22c07",
       "source": "original/tests/libtest/Makefile.in",
       "tracked": true
     },

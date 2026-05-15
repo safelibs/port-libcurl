@@ -5,6 +5,7 @@ usage() {
   echo "usage: $0 --flavor <openssl|gnutls> [--build-state <path>] [--test <n>]... [--tests <n>...] [--require-all-runtests]" >&2
 }
 
+original_args=("$@")
 flavor=""
 build_state=""
 require_all=0
@@ -48,6 +49,19 @@ done
 [[ -z "${flavor}" ]] && usage && exit 2
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 safe_dir="$(cd "${script_dir}/.." && pwd)"
+
+if [[ -z "${SAFELIBS_COMPAT_DETACHED:-}" && -z "${build_state}" ]]; then
+  detached_root="$(mktemp -d)"
+  cleanup_detached() {
+    rm -rf "${detached_root}"
+  }
+  trap cleanup_detached EXIT
+  "${script_dir}/export-tracked-tree.sh" --safe-only --dest "${detached_root}/safe"
+  SAFELIBS_COMPAT_DETACHED=1 \
+    bash "${detached_root}/safe/scripts/run-upstream-tests.sh" "${original_args[@]}"
+  exit $?
+fi
+
 if [[ -z "${build_state}" ]]; then
   build_state="${safe_dir}/.compat/${flavor}/build-state.json"
 fi

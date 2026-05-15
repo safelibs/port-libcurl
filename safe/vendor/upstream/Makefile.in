@@ -660,8 +660,8 @@ CLEANFILES = $(VC14_LIBVCXPROJ) \
  $(VC14_30_LIBVCXPROJ) $(VC14_30_SRCVCXPROJ)
 
 bin_SCRIPTS = curl-config
-SUBDIRS = lib src scripts
-DIST_SUBDIRS = $(SUBDIRS) tests packages include docs
+SUBDIRS = lib src
+DIST_SUBDIRS = $(SUBDIRS) tests packages scripts include docs
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = libcurl.pc
 LIB_VAUTH_CFILES = \

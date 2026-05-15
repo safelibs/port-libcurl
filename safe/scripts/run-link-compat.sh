@@ -189,6 +189,10 @@ if [[ -z "${build_state}" ]]; then
 fi
 
 mapfile -t build_targets < <(jq -r '.[].target_id' <<<"${selection_json}" | sort -u)
+if jq -e 'any(.[]; .runtime.adapter == "libtest")' <<<"${selection_json}" >/dev/null; then
+  build_targets+=("src:curl" "server:disabled" "server:sws" "server:sockfilt")
+fi
+mapfile -t build_targets < <(printf '%s\n' "${build_targets[@]}" | sort -u)
 compat_build_cmd=("${script_dir}/build-compat-consumers.sh" --flavor "${flavor}")
 for target_id in "${build_targets[@]}"; do
   compat_build_cmd+=(--target "${target_id}")

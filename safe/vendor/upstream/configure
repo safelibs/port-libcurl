@@ -26273,8 +26273,7 @@ printf "%s\n" "found" >&6; }
                                  gss_libs=`$GSSAPI_ROOT/bin/$host_alias-krb5-config --libs gssapi`
            LIBS="$gss_libs $LIBS"
         elif test "$PKGCONFIG" != "no" ; then
-           LDFLAGS="$LDFLAGS `$PKGCONFIG --libs-only-L mit-krb5-gssapi`"
-           gss_libs=`$PKGCONFIG --libs-only-l mit-krb5-gssapi`
+           gss_libs=`$PKGCONFIG --libs mit-krb5-gssapi`
            LIBS="$gss_libs $LIBS"
         elif test -f "$KRB5CONFIG"; then
                                  gss_libs=`$KRB5CONFIG --libs gssapi`
