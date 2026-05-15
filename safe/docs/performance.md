@@ -20,7 +20,7 @@ The `core` matrix currently tracks four scenarios:
 
 - `easy-http1-reuse`: sequential HTTP/1.1 GETs over a reused easy handle
 - `multi-http1-parallel`: a single wave of parallel HTTP/1.1 downloads through the multi API over a benchmark-specific 1 MiB loopback asset
-- `h2-download-multiplex`: multiplexed HTTP/2 downloads over the local TLS proxy against a benchmark-specific 8 MiB loopback asset, with four parallel transfers and up to four host connections
+- `h2-download-multiplex`: a single wave of four multiplex-enabled HTTP/2 downloads over the local TLS proxy against a benchmark-specific 8 MiB loopback asset, with up to four host connections
 - `tls-session-reuse`: fresh sequential HTTPS requests that force new connections while reusing the TLS session cache
 
 The workload definitions live in `safe/benchmarks/scenarios.json`, and the allowed median regression budgets live in `safe/benchmarks/thresholds.json`. Those files are version-controlled so any benchmark change is explicit and reviewable.

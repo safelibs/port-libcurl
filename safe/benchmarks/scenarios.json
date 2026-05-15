@@ -22,7 +22,7 @@
       "warmups": 1
     },
     "h2-download-multiplex": {
-      "description": "HTTP/2 multiplexed benchmark downloads through the shared local TLS proxy.",
+      "description": "A single wave of multiplex-enabled HTTP/2 benchmark downloads through the shared local TLS proxy.",
       "fresh_connect": false,
       "harness": "multi_parallel",
       "host": "localhost",
@@ -36,8 +36,8 @@
       "samples": 5,
       "scheme": "https",
       "share_ssl_session": false,
-      "transfers": 8,
-      "warmups": 1
+      "transfers": 4,
+      "warmups": 3
     },
     "multi-http1-parallel": {
       "description": "A single wave of parallel HTTP/1.1 benchmark downloads over the multi API against the loopback fixture.",
