@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,6 +46,16 @@ static void track_ptr(void *ptr) {
   g_tracked = node;
 }
 
+static struct tracked_ptr *find_tracked_ptr(void *ptr) {
+  struct tracked_ptr *node = g_tracked;
+  while(node) {
+    if(node->ptr == ptr)
+      return node;
+    node = node->next;
+  }
+  return NULL;
+}
+
 static void untrack_ptr(void *ptr) {
   struct tracked_ptr **link = &g_tracked;
   while(*link) {
@@ -80,12 +92,14 @@ static void *test_calloc(size_t nmemb, size_t size) {
 }
 
 static void *test_realloc(void *ptr, size_t size) {
+  struct tracked_ptr *node = ptr ? find_tracked_ptr(ptr) : NULL;
   void *new_ptr = realloc(ptr, size);
   if(!new_ptr)
     return NULL;
-  if(ptr)
-    untrack_ptr(ptr);
-  track_ptr(new_ptr);
+  if(node)
+    node->ptr = new_ptr;
+  else
+    track_ptr(new_ptr);
   return new_ptr;
 }
 
