@@ -214,6 +214,7 @@ static int append_certinfo_time(struct certinfo_builder *builder,
 
 struct safe_tls_connection {
   SSL *ssl;
+  SSL_CTX *owned_ctx;
   int negotiated_alpn;
 };
 
@@ -243,6 +244,115 @@ static SSL_CTX *openssl_shared_ctx(int verify_peer)
 {
   pthread_once(&openssl_once, openssl_global_init);
   return verify_peer ? openssl_verify_ctx : openssl_noverify_ctx;
+}
+
+static int openssl_add_ca_blob(SSL_CTX *ctx,
+                               const unsigned char *ca_blob,
+                               size_t ca_blob_len)
+{
+  BIO *bio;
+  X509_STORE *store;
+  X509 *cert;
+  int loaded = 0;
+
+  if(!ctx || !ca_blob || !ca_blob_len)
+    return 0;
+
+  bio = BIO_new_mem_buf(ca_blob, (int)ca_blob_len);
+  if(!bio)
+    return -1;
+
+  store = SSL_CTX_get_cert_store(ctx);
+  while((cert = PEM_read_bio_X509(bio, NULL, NULL, NULL)) != NULL) {
+    if(X509_STORE_add_cert(store, cert) == 1)
+      loaded++;
+    else {
+      unsigned long err = ERR_peek_last_error();
+      if(ERR_GET_LIB(err) == ERR_LIB_X509 &&
+         ERR_GET_REASON(err) == X509_R_CERT_ALREADY_IN_HASH_TABLE)
+        loaded++;
+    }
+    X509_free(cert);
+    ERR_clear_error();
+  }
+  BIO_free(bio);
+
+  if(loaded)
+    return 0;
+
+  {
+    const unsigned char *cursor = ca_blob;
+    cert = d2i_X509(NULL, &cursor, (long)ca_blob_len);
+  }
+  if(cert) {
+    if(X509_STORE_add_cert(store, cert) == 1)
+      loaded++;
+    X509_free(cert);
+  }
+  ERR_clear_error();
+  return loaded ? 0 : -1;
+}
+
+static SSL_CTX *openssl_connection_ctx(int verify_peer,
+                                       const char *ca_info,
+                                       const char *ca_path,
+                                       const unsigned char *ca_blob,
+                                       size_t ca_blob_len,
+                                       char *errbuf,
+                                       size_t errlen)
+{
+  int custom_trust = (ca_info && *ca_info) || (ca_path && *ca_path) ||
+                     (ca_blob && ca_blob_len);
+  SSL_CTX *ctx;
+
+  if(!custom_trust)
+    return openssl_shared_ctx(verify_peer);
+
+  if(!verify_peer)
+    return openssl_shared_ctx(0);
+
+  pthread_once(&openssl_once, openssl_global_init);
+  ctx = SSL_CTX_new(TLS_client_method());
+  if(!ctx) {
+    set_error(errbuf, errlen, "SSL_CTX_new failed");
+    return NULL;
+  }
+  SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_CLIENT);
+  SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+
+  if((ca_info && *ca_info) || (ca_path && *ca_path)) {
+    if(SSL_CTX_load_verify_locations(ctx,
+                                     (ca_info && *ca_info) ? ca_info : NULL,
+                                     (ca_path && *ca_path) ? ca_path : NULL) != 1) {
+      set_error(errbuf, errlen, "failed to load CA trust path");
+      SSL_CTX_free(ctx);
+      return NULL;
+    }
+  }
+  else if(!ca_blob || !ca_blob_len) {
+    SSL_CTX_set_default_verify_paths(ctx);
+  }
+
+  if(ca_blob && ca_blob_len && openssl_add_ca_blob(ctx, ca_blob, ca_blob_len)) {
+    set_error(errbuf, errlen, "failed to load CA trust blob");
+    SSL_CTX_free(ctx);
+    return NULL;
+  }
+
+  return ctx;
+}
+
+static void openssl_connection_free(struct safe_tls_connection *conn)
+{
+  if(!conn)
+    return;
+  if(conn->ssl) {
+    SSL_shutdown(conn->ssl);
+    SSL_free(conn->ssl);
+  }
+  if(conn->owned_ctx)
+    SSL_CTX_free(conn->owned_ctx);
+  free(conn);
 }
 
 static int openssl_export_session(SSL *ssl,
@@ -559,6 +669,10 @@ int port_safe_tls_connect(int fd,
                           int verify_host,
                           int enable_alpn,
                           const char *pinned_public_key,
+                          const char *ca_info,
+                          const char *ca_path,
+                          const unsigned char *ca_blob,
+                          size_t ca_blob_len,
                           const unsigned char *session_data,
                           size_t session_len,
                           struct safe_tls_connection **out,
@@ -568,30 +682,31 @@ int port_safe_tls_connect(int fd,
                           size_t errlen)
 {
   struct safe_tls_connection *conn = NULL;
+  SSL_CTX *ctx;
   SSL_SESSION *session = NULL;
   const unsigned char *session_cursor = session_data;
 
   *out = NULL;
   *out_session_data = NULL;
   *out_session_len = 0;
-  {
-    SSL_CTX *ctx = openssl_shared_ctx(verify_peer);
-    if(!ctx) {
-      set_error(errbuf, errlen, "SSL_CTX_new failed");
-      return -1;
-    }
+  ctx = openssl_connection_ctx(verify_peer, ca_info, ca_path, ca_blob,
+                               ca_blob_len, errbuf, errlen);
+  if(!ctx)
+    return -1;
 
-    conn = calloc(1, sizeof(*conn));
-    if(!conn) {
-      set_error(errbuf, errlen, "out of memory");
-      return -1;
-    }
-
-    conn->ssl = SSL_new(ctx);
+  conn = calloc(1, sizeof(*conn));
+  if(!conn) {
+    set_error(errbuf, errlen, "out of memory");
+    if(ctx != openssl_verify_ctx && ctx != openssl_noverify_ctx)
+      SSL_CTX_free(ctx);
+    return -1;
   }
+  if(ctx != openssl_verify_ctx && ctx != openssl_noverify_ctx)
+    conn->owned_ctx = ctx;
+  conn->ssl = SSL_new(ctx);
   if(!conn->ssl) {
     set_error(errbuf, errlen, "SSL_new failed");
-    free(conn);
+    openssl_connection_free(conn);
     return -1;
   }
 
@@ -622,22 +737,19 @@ int port_safe_tls_connect(int fd,
   }
   if(SSL_set_fd(conn->ssl, fd) != 1) {
     set_error(errbuf, errlen, "SSL_set_fd failed");
-    SSL_free(conn->ssl);
-    free(conn);
+    openssl_connection_free(conn);
     return -1;
   }
   if(SSL_connect(conn->ssl) != 1) {
     char error_text[256];
     ERR_error_string_n(ERR_get_error(), error_text, sizeof(error_text));
     set_error(errbuf, errlen, error_text);
-    SSL_free(conn->ssl);
-    free(conn);
+    openssl_connection_free(conn);
     return -1;
   }
   if(openssl_check_pinned_key(conn->ssl, pinned_public_key)) {
     set_error(errbuf, errlen, "SSL public key does not match pinned public key");
-    SSL_free(conn->ssl);
-    free(conn);
+    openssl_connection_free(conn);
     return -1;
   }
   {
@@ -713,13 +825,7 @@ int port_safe_tls_negotiated_alpn(struct safe_tls_connection *conn)
 
 void port_safe_tls_close(struct safe_tls_connection *conn)
 {
-  if(!conn)
-    return;
-  if(conn->ssl) {
-    SSL_shutdown(conn->ssl);
-    SSL_free(conn->ssl);
-  }
-  free(conn);
+  openssl_connection_free(conn);
 }
 
 #endif
@@ -1035,6 +1141,10 @@ int port_safe_tls_connect(int fd,
                           int verify_host,
                           int enable_alpn,
                           const char *pinned_public_key,
+                          const char *ca_info,
+                          const char *ca_path,
+                          const unsigned char *ca_blob,
+                          size_t ca_blob_len,
                           const unsigned char *session_data,
                           size_t session_len,
                           struct safe_tls_connection **out,
@@ -1062,8 +1172,50 @@ int port_safe_tls_connect(int fd,
     free(conn);
     return -1;
   }
-  if(verify_peer)
-    gnutls_certificate_set_x509_system_trust(conn->creds);
+  if(verify_peer) {
+    int loaded_custom_trust = 0;
+    if(ca_blob && ca_blob_len) {
+      gnutls_datum_t datum;
+      datum.data = (unsigned char *)ca_blob;
+      datum.size = ca_blob_len;
+      rc = gnutls_certificate_set_x509_trust_mem(conn->creds,
+                                                 &datum,
+                                                 GNUTLS_X509_FMT_PEM);
+      if(rc < 0) {
+        set_error(errbuf, errlen, gnutls_strerror(rc));
+        gnutls_certificate_free_credentials(conn->creds);
+        free(conn);
+        return -1;
+      }
+      loaded_custom_trust = 1;
+    }
+    if(ca_info && *ca_info) {
+      rc = gnutls_certificate_set_x509_trust_file(conn->creds,
+                                                  ca_info,
+                                                  GNUTLS_X509_FMT_PEM);
+      if(rc < 0) {
+        set_error(errbuf, errlen, gnutls_strerror(rc));
+        gnutls_certificate_free_credentials(conn->creds);
+        free(conn);
+        return -1;
+      }
+      loaded_custom_trust = 1;
+    }
+    if(ca_path && *ca_path) {
+      rc = gnutls_certificate_set_x509_trust_dir(conn->creds,
+                                                 ca_path,
+                                                 GNUTLS_X509_FMT_PEM);
+      if(rc < 0) {
+        set_error(errbuf, errlen, gnutls_strerror(rc));
+        gnutls_certificate_free_credentials(conn->creds);
+        free(conn);
+        return -1;
+      }
+      loaded_custom_trust = 1;
+    }
+    if(!loaded_custom_trust)
+      gnutls_certificate_set_x509_system_trust(conn->creds);
+  }
 
   rc = gnutls_init(&conn->session, GNUTLS_CLIENT);
   if(rc < 0) {

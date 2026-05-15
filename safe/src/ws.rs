@@ -22,7 +22,7 @@ const CURLWS_PONG: u32 = 1 << 6;
 const CURLWS_RAW_MODE: i64 = 1 << 0;
 const MAX_FRAME_PAYLOAD: usize = 8 * 1024 * 1024;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct PendingFrame {
     flags: u32,
     payload: Vec<u8>,

@@ -55,6 +55,7 @@ const CURLOPT_HTTP_VERSION: CURLoption = 84;
 const CURLOPT_TIMEOUT_MS: CURLoption = 155;
 const CURLOPT_POSTREDIR: CURLoption = 161;
 const CURLOPT_SSL_VERIFYPEER: CURLoption = 64;
+const CURLOPT_CAINFO: CURLoption = 10065;
 const CURLOPT_MAXREDIRS: CURLoption = 68;
 const CURLOPT_MAXCONNECTS: CURLoption = 71;
 const CURLOPT_CERTINFO: CURLoption = 172;
@@ -63,8 +64,10 @@ const CURLOPT_HTTPGET: CURLoption = 80;
 const CURLOPT_COOKIEJAR: CURLoption = 10082;
 const CURLOPT_SSL_VERIFYHOST: CURLoption = 81;
 const CURLOPT_COOKIESESSION: CURLoption = 96;
+const CURLOPT_CAPATH: CURLoption = 10097;
 const CURLOPT_SHARE: CURLoption = 10100;
 const CURLOPT_PRIVATE: CURLoption = 10103;
+const CURLOPT_HTTP200ALIASES: CURLoption = 10104;
 const CURLOPT_UNRESTRICTED_AUTH: CURLoption = 105;
 const CURLOPT_HTTPAUTH: CURLoption = 107;
 const CURLOPT_PROXYAUTH: CURLoption = 111;
@@ -92,6 +95,8 @@ const CURLOPT_CONNECT_TO: CURLoption = 10243;
 const CURLOPT_PRE_PROXY: CURLoption = 10262;
 const CURLOPT_HEADEROPT: CURLoption = 229;
 const CURLOPT_SUPPRESS_CONNECT_HEADERS: CURLoption = 265;
+const CURLOPT_PROXY_CAINFO: CURLoption = 10246;
+const CURLOPT_PROXY_CAPATH: CURLoption = 10247;
 const CURLOPT_REQUEST_TARGET: CURLoption = 10266;
 const CURLOPT_ALTSVC_CTRL: CURLoption = 286;
 const CURLOPT_ALTSVC: CURLoption = 10287;
@@ -437,6 +442,22 @@ unsafe fn configure_reference_handle(
             metadata.pinned_public_key.as_deref(),
         )?
     };
+    unsafe { setopt_string(reference, CURLOPT_CAINFO, metadata.cainfo.as_deref())? };
+    unsafe { setopt_string(reference, CURLOPT_CAPATH, metadata.capath.as_deref())? };
+    unsafe {
+        setopt_string(
+            reference,
+            CURLOPT_PROXY_CAINFO,
+            metadata.proxy_cainfo.as_deref(),
+        )?
+    };
+    unsafe {
+        setopt_string(
+            reference,
+            CURLOPT_PROXY_CAPATH,
+            metadata.proxy_capath.as_deref(),
+        )?
+    };
     unsafe { setopt_string(reference, CURLOPT_DOH_URL, metadata.doh_url.as_deref())? };
     unsafe {
         setopt_string(
@@ -470,6 +491,11 @@ unsafe fn configure_reference_handle(
     if !metadata.proxy_headers.is_empty() {
         let list = unsafe { build_slist(&metadata.proxy_headers)? };
         unsafe { setopt_ptr(reference, CURLOPT_PROXYHEADER, list.cast())? };
+        owned_lists.push(list as usize);
+    }
+    if !metadata.http200_aliases.is_empty() {
+        let list = unsafe { build_slist(&metadata.http200_aliases)? };
+        unsafe { setopt_ptr(reference, CURLOPT_HTTP200ALIASES, list.cast())? };
         owned_lists.push(list as usize);
     }
     if !metadata.resolve_overrides.is_empty() {

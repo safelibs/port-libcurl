@@ -1884,6 +1884,7 @@ fn write_request(stream: &mut TransportStream, request: &RequestContext) -> Resu
     encoded.push_str("Host: ");
     encoded.push_str(&request.host_header);
     encoded.push_str("\r\n");
+    append_matching_headers(&mut encoded, &request.request_headers, "User-Agent");
     if !has_header(&request.request_headers, "Accept") {
         encoded.push_str("Accept: */*\r\n");
     }
@@ -1893,7 +1894,11 @@ fn write_request(stream: &mut TransportStream, request: &RequestContext) -> Resu
     {
         encoded.push_str("Proxy-Connection: Keep-Alive\r\n");
     }
-    append_headers_except(&mut encoded, &request.request_headers, "Trailer");
+    append_headers_except_any(
+        &mut encoded,
+        &request.request_headers,
+        &["Trailer", "User-Agent"],
+    );
     if request.use_chunked_upload {
         encoded.push_str("Transfer-Encoding: chunked\r\n");
     } else if let Some(body_length) = request.body_length {
@@ -1926,6 +1931,18 @@ fn append_headers(encoded: &mut String, headers: &[String]) {
 fn append_headers_except(encoded: &mut String, headers: &[String], excluded_name: &str) {
     for header in headers {
         if header_name_eq(header, excluded_name) {
+            continue;
+        }
+        append_header(encoded, header);
+    }
+}
+
+fn append_headers_except_any(encoded: &mut String, headers: &[String], excluded_names: &[&str]) {
+    for header in headers {
+        if excluded_names
+            .iter()
+            .any(|name| header_name_eq(header, name))
+        {
             continue;
         }
         append_header(encoded, header);
@@ -2628,7 +2645,8 @@ fn process_response_header_block(
     let status_line = lines.first().copied().ok_or(CURLE_READ_ERROR)?;
     let status_text = String::from_utf8_lossy(status_line);
     let status_trimmed = status_text.trim_end_matches(['\r', '\n']);
-    let status_code = parse_status_code(status_trimmed).ok_or(CURLE_READ_ERROR)?;
+    let status_code = parse_status_code_with_aliases(status_trimmed, &metadata.http200_aliases)
+        .ok_or(CURLE_READ_ERROR)?;
     let origin_flag =
         if default_origin == HEADER_ORIGIN_HEADER && status_code < 200 && status_code != 101 {
             HEADER_ORIGIN_1XX
@@ -2698,7 +2716,7 @@ fn process_response_header_block(
 
     Ok(ResponseMeta {
         status_code,
-        http_version: parse_http_version(status_trimmed),
+        http_version: parse_http_version_with_aliases(status_trimmed, &metadata.http200_aliases),
         content_length,
         content_type,
         has_content_range,
@@ -3717,6 +3735,10 @@ fn parse_status_code(line: &str) -> Option<u16> {
     fields.next()?.parse().ok()
 }
 
+fn parse_status_code_with_aliases(line: &str, aliases: &[String]) -> Option<u16> {
+    parse_status_code(line).or_else(|| status_alias_matches(line, aliases).then_some(200))
+}
+
 fn parse_http_version(line: &str) -> c_long {
     let version = line.split_whitespace().next().unwrap_or_default();
     if version.eq_ignore_ascii_case("HTTP/1.0") {
@@ -3726,6 +3748,26 @@ fn parse_http_version(line: &str) -> c_long {
     } else {
         0
     }
+}
+
+fn parse_http_version_with_aliases(line: &str, aliases: &[String]) -> c_long {
+    let version = parse_http_version(line);
+    if version != 0 {
+        version
+    } else if status_alias_matches(line, aliases) {
+        CURL_HTTP_VERSION_1_0
+    } else {
+        0
+    }
+}
+
+fn status_alias_matches(line: &str, aliases: &[String]) -> bool {
+    let line = line.trim_end_matches(['\r', '\n']);
+    aliases
+        .iter()
+        .map(|alias| alias.trim_end_matches(['\r', '\n']))
+        .filter(|alias| !alias.is_empty())
+        .any(|alias| line.starts_with(alias))
 }
 
 fn parse_retry_after(value: &str) -> Option<curl_off_t> {

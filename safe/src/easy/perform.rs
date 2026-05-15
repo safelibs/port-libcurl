@@ -80,6 +80,7 @@ const CURLOPT_HTTP_VERSION: CURLoption = 84;
 const CURLOPT_TIMEOUT_MS: CURLoption = 155;
 const CURLOPT_POSTREDIR: CURLoption = 161;
 const CURLOPT_SSL_VERIFYPEER: CURLoption = 64;
+const CURLOPT_CAINFO: CURLoption = 10065;
 const CURLOPT_MAXREDIRS: CURLoption = 68;
 const CURLOPT_MAXCONNECTS: CURLoption = 71;
 const CURLOPT_BUFFERSIZE: CURLoption = 98;
@@ -89,8 +90,10 @@ const CURLOPT_HTTPGET: CURLoption = 80;
 const CURLOPT_COOKIEJAR: CURLoption = 10082;
 const CURLOPT_SSL_VERIFYHOST: CURLoption = 81;
 const CURLOPT_COOKIESESSION: CURLoption = 96;
+const CURLOPT_CAPATH: CURLoption = 10097;
 const CURLOPT_SHARE: CURLoption = 10100;
 const CURLOPT_PRIVATE: CURLoption = 10103;
+const CURLOPT_HTTP200ALIASES: CURLoption = 10104;
 const CURLOPT_PROXYTYPE: CURLoption = 101;
 const CURLOPT_UNRESTRICTED_AUTH: CURLoption = 105;
 const CURLOPT_HTTPAUTH: CURLoption = 107;
@@ -130,6 +133,8 @@ const CURLOPT_CONNECT_TO: CURLoption = 10243;
 const CURLOPT_PRE_PROXY: CURLoption = 10262;
 const CURLOPT_HEADEROPT: CURLoption = 229;
 const CURLOPT_SUPPRESS_CONNECT_HEADERS: CURLoption = 265;
+const CURLOPT_PROXY_CAINFO: CURLoption = 10246;
+const CURLOPT_PROXY_CAPATH: CURLoption = 10247;
 const CURLOPT_PIPEWAIT: CURLoption = 237;
 const CURLOPT_STREAM_WEIGHT: CURLoption = 239;
 const CURLOPT_SSH_COMPRESSION: CURLoption = 268;
@@ -257,6 +262,7 @@ pub(crate) struct EasyMetadata {
     pub custom_request: Option<String>,
     pub http_headers: Vec<String>,
     pub proxy_headers: Vec<String>,
+    pub http200_aliases: Vec<String>,
     pub user_agent: Option<String>,
     pub referer: Option<String>,
     pub range: Option<String>,
@@ -324,6 +330,10 @@ pub(crate) struct EasyMetadata {
     pub altsvc_ctrl: c_long,
     pub doh_url: Option<String>,
     pub pinned_public_key: Option<String>,
+    pub cainfo: Option<String>,
+    pub capath: Option<String>,
+    pub proxy_cainfo: Option<String>,
+    pub proxy_capath: Option<String>,
     pub sslcert_blob: Option<Vec<u8>>,
     pub sslkey_blob: Option<Vec<u8>>,
     pub proxy_sslcert_blob: Option<Vec<u8>>,
@@ -372,6 +382,7 @@ impl Default for EasyMetadata {
             custom_request: None,
             http_headers: Vec::new(),
             proxy_headers: Vec::new(),
+            http200_aliases: Vec::new(),
             user_agent: None,
             referer: None,
             range: None,
@@ -439,6 +450,10 @@ impl Default for EasyMetadata {
             altsvc_ctrl: 0,
             doh_url: None,
             pinned_public_key: None,
+            cainfo: None,
+            capath: None,
+            proxy_cainfo: None,
+            proxy_capath: None,
             sslcert_blob: None,
             sslkey_blob: None,
             proxy_sslcert_blob: None,
@@ -1231,6 +1246,10 @@ pub(crate) fn easy_setopt_ptr(
             shadow.metadata.proxy_headers = collect_slist_strings(value.cast());
             CURLE_OK
         }
+        CURLOPT_HTTP200ALIASES => {
+            shadow.metadata.http200_aliases = collect_slist_strings(value.cast());
+            CURLE_OK
+        }
         CURLOPT_COOKIEFILE => {
             shadow.metadata.cookie_file = copy_c_string(value.cast());
             CURLE_OK
@@ -1324,6 +1343,22 @@ pub(crate) fn easy_setopt_ptr(
         }
         CURLOPT_PINNEDPUBLICKEY => {
             shadow.metadata.pinned_public_key = copy_c_string(value.cast());
+            CURLE_OK
+        }
+        CURLOPT_CAINFO => {
+            shadow.metadata.cainfo = copy_c_string(value.cast());
+            CURLE_OK
+        }
+        CURLOPT_CAPATH => {
+            shadow.metadata.capath = copy_c_string(value.cast());
+            CURLE_OK
+        }
+        CURLOPT_PROXY_CAINFO => {
+            shadow.metadata.proxy_cainfo = copy_c_string(value.cast());
+            CURLE_OK
+        }
+        CURLOPT_PROXY_CAPATH => {
+            shadow.metadata.proxy_capath = copy_c_string(value.cast());
             CURLE_OK
         }
         CURLOPT_DOH_URL => {

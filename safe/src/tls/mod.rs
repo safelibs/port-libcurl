@@ -32,6 +32,9 @@ pub(crate) struct TlsPolicy {
     pub alpn: c_int,
     pub certinfo: bool,
     pub pinned_public_key: Option<String>,
+    pub ca_info: Option<String>,
+    pub ca_path: Option<String>,
+    pub ca_info_blob: Option<Vec<u8>>,
     pub session_cache_scope: String,
 }
 
@@ -48,6 +51,10 @@ unsafe extern "C" {
         verify_host: c_int,
         enable_alpn: c_int,
         pinned_public_key: *const c_char,
+        ca_info: *const c_char,
+        ca_path: *const c_char,
+        ca_info_blob: *const u8,
+        ca_info_blob_len: usize,
         session_data: *const u8,
         session_len: usize,
         out: *mut *mut SafeTlsConnection,
@@ -263,6 +270,15 @@ pub(crate) fn peer_identity(metadata: &EasyMetadata) -> Option<String> {
     if let Some(pinned_key) = policy.pinned_public_key.as_ref() {
         parts.push(format!("pinned={pinned_key}"));
     }
+    if let Some(ca_info) = policy.ca_info.as_ref() {
+        parts.push(format!("ca-info={ca_info}"));
+    }
+    if let Some(ca_path) = policy.ca_path.as_ref() {
+        parts.push(format!("ca-path={ca_path}"));
+    }
+    if let Some(ca_info_blob) = policy.ca_info_blob.as_ref() {
+        parts.push(format!("ca-info-blob-len={}", ca_info_blob.len()));
+    }
     Some(parts.join(";"))
 }
 
@@ -282,6 +298,18 @@ pub(crate) fn connect(
         .map(|value| std::ffi::CString::new(value.as_str()))
         .transpose()
         .map_err(|_| CURLE_SSL_PINNEDPUBKEYNOTMATCH)?;
+    let ca_info_c = policy
+        .ca_info
+        .as_ref()
+        .map(|value| std::ffi::CString::new(value.as_str()))
+        .transpose()
+        .map_err(|_| CURLE_SSL_CONNECT_ERROR)?;
+    let ca_path_c = policy
+        .ca_path
+        .as_ref()
+        .map(|value| std::ffi::CString::new(value.as_str()))
+        .transpose()
+        .map_err(|_| CURLE_SSL_CONNECT_ERROR)?;
     let mut raw = core::ptr::null_mut();
     let mut new_session = core::ptr::null_mut();
     let mut new_session_len = 0usize;
@@ -297,6 +325,17 @@ pub(crate) fn connect(
             pinned_c
                 .as_ref()
                 .map_or(core::ptr::null(), |value| value.as_ptr()),
+            ca_info_c
+                .as_ref()
+                .map_or(core::ptr::null(), |value| value.as_ptr()),
+            ca_path_c
+                .as_ref()
+                .map_or(core::ptr::null(), |value| value.as_ptr()),
+            policy
+                .ca_info_blob
+                .as_ref()
+                .map_or(core::ptr::null(), |value| value.as_ptr()),
+            policy.ca_info_blob.as_ref().map_or(0, Vec::len),
             cached_session
                 .as_ref()
                 .map_or(core::ptr::null(), |value| value.as_ptr()),
@@ -372,6 +411,32 @@ fn store_cached_session(share_handle: Option<usize>, key: String, session: Vec<u
 
 pub(crate) fn classify_connect_error(message: &str) -> CURLcode {
     current_backend().classify_connect_error(message)
+}
+
+pub(crate) fn trust_cache_fragment(policy: &TlsPolicy) -> String {
+    let mut parts = Vec::new();
+    if let Some(ca_info) = policy.ca_info.as_ref() {
+        parts.push(format!("ca-info={ca_info}"));
+    }
+    if let Some(ca_path) = policy.ca_path.as_ref() {
+        parts.push(format!("ca-path={ca_path}"));
+    }
+    if let Some(ca_info_blob) = policy.ca_info_blob.as_ref() {
+        parts.push(format!(
+            "ca-info-blob={:016x}",
+            stable_bytes_hash(ca_info_blob)
+        ));
+    }
+    parts.join(";")
+}
+
+fn stable_bytes_hash(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
 }
 
 pub(crate) const fn default_connect_error() -> CURLcode {

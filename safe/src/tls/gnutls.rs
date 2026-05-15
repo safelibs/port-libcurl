@@ -30,19 +30,23 @@ impl super::TlsBackendAdapter for GnuTlsBackend {
             alpn: super::enable_http_alpn(scheme, metadata),
             certinfo: super::certinfo::requested(metadata.certinfo),
             pinned_public_key: metadata.pinned_public_key.clone(),
+            ca_info: metadata.cainfo.clone(),
+            ca_path: metadata.capath.clone(),
+            ca_info_blob: metadata.cainfo_blob.clone(),
             session_cache_scope: cache_fragment().to_string(),
         }
     }
 
     fn session_cache_key(&self, policy: &super::TlsPolicy, host: &str, port: u16) -> String {
         format!(
-            "{};gnutls;{};{};verify={};host={};alpn={}",
+            "{};gnutls;{};{};verify={};host={};alpn={};{}",
             policy.session_cache_scope,
             host,
             port,
             policy.verify_peer,
             policy.verify_host,
-            policy.alpn
+            policy.alpn,
+            super::trust_cache_fragment(policy)
         )
     }
 
